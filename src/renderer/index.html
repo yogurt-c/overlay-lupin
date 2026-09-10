@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<title>오버레이 루팡</title>
+<style>
+  html, body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    overflow: hidden;
+    -webkit-app-region: drag;
+    user-select: none;
+    font-family: 'Menlo', 'Consolas', monospace;
+  }
+
+  #field {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  #idle-icon {
+    position: absolute;
+    right: 10px;
+    bottom: 10px;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.92);
+    border: 2.4px solid #14181a;
+    cursor: pointer;
+    -webkit-app-region: no-drag;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+
+  #idle-icon svg { width: 16px; height: 16px; }
+
+  #status-dot {
+    position: absolute;
+    right: 8px;
+    top: 8px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #8a9089;
+    border: 1.4px solid rgba(255, 255, 255, 0.8);
+  }
+  #status-dot[data-state="found"] { background: #2f6b4f; }
+
+  #quit-btn {
+    position: absolute;
+    left: 8px;
+    top: 8px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    -webkit-app-region: no-drag;
+    opacity: 0.16;
+    transition: opacity 150ms ease;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #quit-btn:hover { opacity: 1; }
+  #quit-btn svg { width: 9px; height: 9px; }
+
+  #leave-btn {
+    position: absolute;
+    right: 10px;
+    bottom: 10px;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255, 255, 255, 0.7);
+    cursor: pointer;
+    -webkit-app-region: no-drag;
+    opacity: 0.3;
+    transition: opacity 150ms ease, background 150ms ease;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #leave-btn:hover { opacity: 1; background: rgba(255, 255, 255, 0.92); }
+  #leave-btn[hidden] { display: none; }
+  #leave-btn svg { width: 14px; height: 14px; }
+
+  #panel {
+    position: absolute;
+    right: 10px;
+    bottom: 44px;
+    width: 168px;
+    background: rgba(255, 255, 255, 0.94);
+    border: 1.3px solid rgba(20, 24, 26, 0.45);
+    border-radius: 10px;
+    box-shadow: 0 12px 26px -14px rgba(20, 24, 26, 0.5);
+    padding: 10px;
+    font-size: 11px;
+    color: #14181a;
+    -webkit-app-region: no-drag;
+  }
+  #panel[hidden] { display: none; }
+  #panel h2 {
+    margin: 0 0 8px;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  #peer-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  #peer-list li {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 6px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  #peer-list li:hover { background: rgba(47, 107, 79, 0.12); }
+  #peer-list li.pending { outline: 1.4px dashed #2f6b4f; outline-offset: -1px; }
+  #peer-list .empty { color: #7a827c; padding: 4px 2px; }
+
+  #waiting-box, #incoming-box {
+    position: absolute;
+    right: 10px;
+    bottom: 44px;
+    width: 168px;
+    background: rgba(255, 255, 255, 0.94);
+    border: 1.3px solid rgba(20, 24, 26, 0.45);
+    border-radius: 10px;
+    box-shadow: 0 12px 26px -14px rgba(20, 24, 26, 0.5);
+    padding: 12px;
+    font-size: 11px;
+    color: #14181a;
+    -webkit-app-region: no-drag;
+  }
+  #waiting-box[hidden], #incoming-box[hidden] { display: none; }
+  #waiting-box p, #incoming-box p { margin: 0 0 10px; line-height: 1.4; }
+  #waiting-box p strong, #incoming-box p strong { display: block; margin-bottom: 2px; }
+
+  .btn-row { display: flex; gap: 6px; }
+  .btn-row button {
+    flex: 1;
+    font-family: inherit;
+    font-size: 11px;
+    padding: 6px 0;
+    border-radius: 6px;
+    border: 1.3px solid rgba(20, 24, 26, 0.35);
+    background: rgba(20, 24, 26, 0.04);
+    cursor: pointer;
+  }
+  .btn-row button.primary { background: #2f6b4f; border-color: #2f6b4f; color: #fff; }
+  .btn-row button.danger { color: #9a4a3f; }
+
+  #hud {
+    position: absolute;
+    left: 50%;
+    top: 8px;
+    transform: translateX(-50%);
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.02em;
+    color: #14181a;
+    opacity: 0.55;
+    text-shadow: 0 0 3px rgba(255, 255, 255, 0.85), 0 0 3px rgba(255, 255, 255, 0.85);
+    font-variant-numeric: tabular-nums;
+    transition: opacity 150ms ease;
+  }
+  #hud:hover { opacity: 1; }
+  #hud[hidden] { display: none; }
+
+  #banner {
+    position: absolute;
+    left: 50%;
+    top: 46%;
+    transform: translate(-50%, -50%);
+    font-weight: 700;
+    font-size: 26px;
+    letter-spacing: 0.04em;
+    color: #14181a;
+    opacity: 0.72;
+    pointer-events: none;
+    text-shadow: 0 0 4px #fff, 0 0 4px #fff, 0 0 10px #fff;
+    animation: banner-pop 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  #banner[hidden] { display: none; }
+  #banner[data-kind="kickoff"] { font-size: 36px; opacity: 0.45; }
+  #banner[data-kind="over"] { font-size: 22px; opacity: 0.85; }
+
+  @keyframes banner-pop {
+    from { transform: translate(-50%, -50%) scale(0.82); opacity: 0; }
+    to { transform: translate(-50%, -50%) scale(1); }
+  }
+
+  #hint {
+    margin: 8px 0 0;
+    padding-top: 7px;
+    border-top: 1px solid rgba(20, 24, 26, 0.12);
+    font-size: 9.5px;
+    line-height: 1.5;
+    color: #7a827c;
+  }
+
+  #reconnect-msg {
+    position: absolute;
+    left: 50%;
+    bottom: 10px;
+    transform: translateX(-50%);
+    font-size: 10.5px;
+    color: #14181a;
+    background: rgba(255, 255, 255, 0.85);
+    padding: 4px 9px;
+    border-radius: 999px;
+  }
+  #reconnect-msg[hidden] { display: none; }
+</style>
+</head>
+<body>
+  <canvas id="field"></canvas>
+  <div id="hud" hidden><span id="score">0 : 0</span></div>
+  <div id="banner" hidden></div>
+  <div id="reconnect-msg" hidden>재연결 대기 중…</div>
+
+  <div id="panel" hidden>
+    <h2 id="panel-title">찾는 중…</h2>
+    <ul id="peer-list"></ul>
+    <p id="hint">← → 이동 · ↑ 점프 · Space 슛<br />먼저 5골 넣으면 승리</p>
+  </div>
+
+  <div id="waiting-box" hidden>
+    <p><strong id="waiting-name"></strong>에게 요청을 보냈어요</p>
+    <div class="btn-row">
+      <button id="cancel-invite-btn" class="danger">취소</button>
+    </div>
+  </div>
+
+  <div id="incoming-box" hidden>
+    <p><strong id="incoming-name"></strong>이(가) 대전을 신청했어요</p>
+    <div class="btn-row">
+      <button id="decline-btn" class="danger">거절</button>
+      <button id="accept-btn" class="primary">수락</button>
+    </div>
+  </div>
+
+  <button id="idle-icon" title="상대 찾기">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#14181a" stroke-width="2" stroke-linecap="round">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M6 9 L14 13" />
+      <path d="M8 16 L15 10" />
+    </svg>
+  </button>
+  <span id="status-dot"></span>
+
+  <button id="quit-btn" title="종료">
+    <svg viewBox="0 0 10 10" stroke="#14181a" stroke-width="1.8" stroke-linecap="round">
+      <path d="M1 1 L9 9" />
+      <path d="M9 1 L1 9" />
+    </svg>
+  </button>
+
+  <button id="leave-btn" title="나가기" hidden>
+    <svg viewBox="0 0 16 16" fill="none" stroke="#14181a" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M6 2 H3 a1 1 0 0 0 -1 1 v10 a1 1 0 0 0 1 1 h3" />
+      <path d="M6 8 H14" />
+      <path d="M11 5 L14 8 L11 11" />
+    </svg>
+  </button>
+
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

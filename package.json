@@ -1,0 +1,37 @@
+{
+  "name": "overlay-lupin",
+  "version": "0.1.0",
+  "description": "졸라맨 대두축구 스타일의 투명 오버레이 1:1 LAN 대전 미니게임",
+  "author": "hyungi",
+  "private": true,
+  "main": "dist/main/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.main.json && tsc -p tsconfig.renderer.json && npm run copy-assets",
+    "copy-assets": "node -e \"const fs=require('fs');fs.mkdirSync('dist/renderer',{recursive:true});fs.copyFileSync('src/renderer/index.html','dist/renderer/index.html')\"",
+    "test": "npm run build && node tests/simulation.test.mjs",
+    "dev": "npm run build && electron .",
+    "start": "electron .",
+    "release:mac": "npm run build && electron-builder --mac --publish=never"
+  },
+  "devDependencies": {
+    "@types/node": "*",
+    "electron": "*",
+    "electron-builder": "*",
+    "typescript": "*"
+  },
+  "build": {
+    "appId": "com.hyungi.overlaylupin",
+    "productName": "오버레이 루팡",
+    "files": ["dist/**/*", "package.json"],
+    "directories": {
+      "output": "release"
+    },
+    "mac": {
+      "icon": "build/icon.icns",
+      "target": [
+        { "target": "dmg", "arch": ["universal"] }
+      ],
+      "category": "public.app-category.games"
+    }
+  }
+}
