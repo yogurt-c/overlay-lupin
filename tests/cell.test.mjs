@@ -81,6 +81,7 @@ function check(name, cond, extra = '') {
   small.y = big.y;
   e.step();
   small.respawnAt = Date.now() - 1; // force the delay to have already elapsed
+  e.food.length = 0; // a random respawn spot can land on a pellet and eat it in the same tick
   e.step();
   const snap = e.snapshot();
   const s = snap.players.find((p) => p.id === 'small');
