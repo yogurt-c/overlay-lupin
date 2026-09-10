@@ -1,8 +1,8 @@
 import { PLAYER_HALF } from './field.js';
 import { collideBallWithFigure, integrateBall, keepBallAbovePitch } from './ball.js';
 import type { Figure } from './ball.js';
-import { RULES } from './games/index.js';
-import type { GameRules, RuleActor } from './games/rules.js';
+import { RULES } from './index.js';
+import type { GameRules, RuleActor } from './rules.js';
 import type { BallState, MatchPhase, OpponentPacket, PlayerState, Pose, WorldState } from './types.js';
 
 /** The simulation advances in fixed 1/60s ticks; every constant below is per tick. */
@@ -112,6 +112,11 @@ export class Game {
 
   private get mySide(): 1 | -1 {
     return this.isHost ? 1 : -1;
+  }
+
+  /** This match's active ruleset, so the caller can draw the right field decorations. */
+  get drawField(): GameRules['drawField'] {
+    return this.rules.drawField;
   }
 
   startMatch(isHost: boolean, gameId: string = 'soccer'): void {

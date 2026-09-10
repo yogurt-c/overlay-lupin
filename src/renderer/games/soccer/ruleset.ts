@@ -1,10 +1,10 @@
-import { BALL_RADIUS, CEILING_Y, KICK_FOOT, PLAYER_HALF, WORLD_WIDTH } from '../field.js';
-import { BODY_BOUNCE, BODY_PUSH, WALL_BOUNCE } from '../ball.js';
-import { drawGoal } from '../draw.js';
-import { INK } from '../scene.js';
-import type { BallState, Pose } from '../types.js';
+import { BALL_RADIUS, CEILING_Y, KICK_FOOT, PLAYER_HALF, WORLD_WIDTH } from './field.js';
+import { BODY_BOUNCE, BODY_PUSH, WALL_BOUNCE } from './ball.js';
+import { drawGoal } from './draw.js';
+import { INK } from './scene.js';
+import type { BallState, Pose } from './types.js';
 import type { ActivePartSpec, GameRules, RuleActor } from './rules.js';
-import type { Input } from '../game.js';
+import type { Input } from './engine.js';
 
 export const GOAL_MARGIN = 14;
 export const GOAL_DEPTH = 24;

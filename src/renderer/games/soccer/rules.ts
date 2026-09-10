@@ -1,6 +1,6 @@
-import type { Figure } from '../ball.js';
-import type { BallState, Pose } from '../types.js';
-import type { Input } from '../game.js';
+import type { Figure } from './ball.js';
+import type { BallState, Pose } from './types.js';
+import type { Input } from './engine.js';
 
 /** A body part a game can put "in play" for the current tick (a kick foot, a dive reach, ...). */
 export interface ActivePartSpec {
