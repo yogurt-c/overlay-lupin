@@ -34,6 +34,8 @@ function check(name, cond, extra = '') {
 {
   const e = new CellEngine();
   e.ensurePlayer('a', '민지');
+  // Start at center: a random spawn near the right wall gets clamped and never moves right.
+  Object.assign(e.players.get('a'), { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT / 2 });
   e.setInput('a', { ...NO_INPUT, right: true });
   const before = e.snapshot().players[0].x;
   for (let i = 0; i < 30; i++) e.step();
