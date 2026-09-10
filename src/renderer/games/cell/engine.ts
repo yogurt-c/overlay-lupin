@@ -11,8 +11,10 @@ import {
   FOOD_MASS,
   RESPAWN_MS,
   START_MASS,
+  TARGET_POPULATION,
   radiusFor
 } from './arena.js';
+import { computeBotInput, randomBotName } from './bot.js';
 import type { CellInput, CellWorld, FoodDot } from './types.js';
 
 const MOVE_ACCEL = 0.6;
@@ -32,6 +34,8 @@ interface EnginePlayer {
   alive: boolean;
   input: CellInput;
   respawnAt: number;
+  /** Piloted by `computeBotInput` each tick instead of a network packet. */
+  isBot?: boolean;
 }
 
 const NO_INPUT: CellInput = { up: false, down: false, left: false, right: false, boost: false };
@@ -48,6 +52,7 @@ export class CellEngine {
   players = new Map<string, EnginePlayer>();
   food: FoodDot[] = [];
   private nextBigFoodAt: number;
+  private nextBotSeq = 1;
 
   constructor() {
     for (let i = 0; i < FOOD_COUNT; i++) this.food.push(randomSpot());
@@ -74,14 +79,59 @@ export class CellEngine {
     this.players.delete(id);
   }
 
+  /**
+   * Tops the room up with bots until `TARGET_POPULATION` cells are alive. It
+   * only ever adds — a bot that's already alive is never pulled out from
+   * under a player just because more humans joined; the population target
+   * is only re-checked once that bot actually dies (see `step`). A match
+   * opts into this explicitly (see `CellMatch`) — plain `step()` never
+   * spawns one on its own, so a bare `new CellEngine()` used in isolation
+   * (tests) stays exactly as deterministic as before.
+   */
+  syncBotPopulation(): void {
+    const bots = Array.from(this.players.values()).filter((p) => p.isBot);
+    const humanCount = this.players.size - bots.length;
+    const target = Math.max(0, TARGET_POPULATION - humanCount);
+    for (let i = bots.length; i < target; i++) this.spawnBot();
+  }
+
+  private spawnBot(): void {
+    const id = `bot-${this.nextBotSeq++}`;
+    this.ensurePlayer(id, randomBotName());
+    this.players.get(id)!.isBot = true;
+  }
+
+  private botInputFor(p: EnginePlayer): CellInput {
+    const neighbors = Array.from(this.players.values())
+      .filter((o) => o !== p && o.alive)
+      .map((o) => ({ x: o.x, y: o.y, mass: o.mass }));
+    return computeBotInput(p, neighbors, this.food);
+  }
+
+  /** True if bringing this dead bot back wouldn't push the room over `TARGET_POPULATION` for its current human count. */
+  private hasRoomToRespawn(bot: EnginePlayer): boolean {
+    let humanCount = 0;
+    let otherBotCount = 0;
+    for (const p of this.players.values()) {
+      if (p.id === bot.id) continue;
+      if (p.isBot) otherBotCount++;
+      else humanCount++;
+    }
+    return otherBotCount < Math.max(0, TARGET_POPULATION - humanCount);
+  }
+
   /** Advances the simulation by exactly one tick. */
   step(): void {
     const now = Date.now();
     for (const p of this.players.values()) {
       if (!p.alive) {
-        if (now >= p.respawnAt) this.respawn(p);
+        if (now < p.respawnAt) continue;
+        // Population is only re-checked at the moment a bot would come back — never by yanking a live one out.
+        if (p.isBot && !this.hasRoomToRespawn(p)) this.players.delete(p.id);
+        else this.respawn(p);
         continue;
       }
+      if (p.isBot) p.input = this.botInputFor(p);
       const boosting = p.input.boost && p.mass > START_MASS;
       this.stepMovement(p, boosting);
       this.decay(p, boosting);

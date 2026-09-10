@@ -66,7 +66,7 @@ export function renderCellScene(
 
   // Draw smallest-first so a big cell never hides one it's about to pass.
   const alive = world.players.filter((p) => p.alive).sort((a, b) => a.mass - b.mass);
-  for (const p of alive) drawCell(ctx, p.x, p.y, radiusFor(p.mass), colorFor(p.id, myId));
+  for (const p of alive) drawCell(ctx, p.x, p.y, radiusFor(p.mass), colorFor(p.id, myId), p.name);
 
   ctx.restore();
 }

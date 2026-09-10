@@ -37,6 +37,7 @@ class CellMatch implements GameMatch {
     this.lastInput = input as CellInput;
     if (!this.engine) return;
     this.engine.setInput(this.myId, this.lastInput);
+    this.engine.syncBotPopulation();
     this.engine.step();
   }
 

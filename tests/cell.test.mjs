@@ -9,6 +9,7 @@ import {
   START_MASS,
   RESPAWN_MS,
   BIG_FOOD_MASS,
+  TARGET_POPULATION,
   radiusFor
 } from '../dist/renderer/games/cell/arena.js';
 
@@ -204,6 +205,73 @@ function check(name, cond, extra = '') {
   const before = a.mass;
   e.step();
   check('큰 먹이를 먹으면 질량이 크게 늘어난다', a.mass >= before + BIG_FOOD_MASS - 0.01, `before=${before} after=${a.mass}`);
+}
+
+// 14. Plain step() never spawns a bot on its own — only an explicit syncBotPopulation() call opts in.
+{
+  const e = new CellEngine();
+  e.ensurePlayer('a', 'A');
+  for (let i = 0; i < 5; i++) e.step();
+  check('syncBotPopulation을 부르지 않으면 봇이 생기지 않는다', e.snapshot().players.length === 1, `count=${e.snapshot().players.length}`);
+}
+
+// 15. Alone, syncBotPopulation tops the room up to TARGET_POPULATION.
+{
+  const e = new CellEngine();
+  e.ensurePlayer('a', 'A');
+  e.syncBotPopulation();
+  const snap = e.snapshot();
+  check(
+    '혼자면 목표 인원수까지 봇으로 채운다',
+    snap.players.length === TARGET_POPULATION,
+    `count=${snap.players.length}`
+  );
+}
+
+// 16. A second real player arriving does NOT yank a live bot out — syncBotPopulation only ever adds.
+{
+  const e = new CellEngine();
+  e.ensurePlayer('a', 'A');
+  e.syncBotPopulation();
+  const beforeCount = e.players.size;
+  e.ensurePlayer('b', 'B');
+  e.syncBotPopulation();
+  check(
+    '사람이 늘어도 살아있는 봇은 즉시 제거되지 않는다',
+    e.players.size === beforeCount + 1,
+    `before=${beforeCount} after=${e.players.size}`
+  );
+}
+
+// 17. Once that room-is-full bot dies and its respawn timer elapses, it's culled instead of coming back.
+{
+  const e = new CellEngine();
+  e.ensurePlayer('a', 'A');
+  e.syncBotPopulation();
+  const bot = Array.from(e.players.values()).find((p) => p.isBot);
+  bot.alive = false;
+  bot.respawnAt = Date.now() - 1;
+  e.ensurePlayer('b', 'B'); // now 2 humans -> bot target drops to 2, one bot is now surplus
+  e.step();
+  const bots = Array.from(e.players.values()).filter((p) => p.isBot);
+  check(
+    '리스폰 시점에 인원이 초과 상태면 되살리는 대신 정리한다',
+    !e.players.has(bot.id) && bots.length === TARGET_POPULATION - 2,
+    `hasBot=${e.players.has(bot.id)} bots=${bots.length}`
+  );
+}
+
+// 18. A bot actually steers toward food instead of sitting still.
+{
+  const e = new CellEngine();
+  e.ensurePlayer('a', 'A');
+  e.syncBotPopulation();
+  const bot = Array.from(e.players.values()).find((p) => p.isBot);
+  e.food.length = 0;
+  e.food.push({ x: bot.x + 200, y: bot.y });
+  const startX = bot.x;
+  for (let i = 0; i < 30; i++) e.step();
+  check('봇은 가장 가까운 먹이 쪽으로 움직인다', bot.x > startX, `${startX} -> ${bot.x}`);
 }
 
 console.log(failures === 0 ? '전부 통과' : `${failures}개 실패`);
