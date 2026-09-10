@@ -2,6 +2,14 @@ import { jitter, roughSegment } from '../../lib/sketch.js';
 import { ARENA_HEIGHT, ARENA_WIDTH } from './arena.js';
 
 const HALO = 'rgba(255,255,255,0.85)';
+const NAME_COLOR = 'rgba(255,255,255,0.92)';
+/** Below this on-screen radius a name would overflow the blot, so it's skipped rather than clipped. */
+const MIN_RADIUS_FOR_NAME = 14;
+const NAME_MAX_CHARS = 8;
+
+function truncateName(name: string): string {
+  return name.length > NAME_MAX_CHARS ? `${name.slice(0, NAME_MAX_CHARS - 1)}…` : name;
+}
 
 /** A 2D grid of small dots fixed in arena space, so a panning camera reads as motion. */
 export function drawArenaDots(
@@ -40,8 +48,15 @@ export function drawFoodDot(ctx: CanvasRenderingContext2D, x: number, y: number,
   ctx.fill();
 }
 
-/** A cell: a wobbly ink blot, same hand-drawn technique as the soccer ball. */
-export function drawCell(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, color: string): void {
+/** A cell: a wobbly ink blot, same hand-drawn technique as the soccer ball. `name` is whose cell this is — not who's a bot. */
+export function drawCell(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  radius: number,
+  color: string,
+  name?: string
+): void {
   ctx.save();
   ctx.translate(x, y);
 
@@ -63,6 +78,14 @@ export function drawCell(ctx: CanvasRenderingContext2D, x: number, y: number, ra
   ctx.lineWidth = 1.4;
   ctx.strokeStyle = HALO;
   ctx.stroke();
+
+  if (name && radius >= MIN_RADIUS_FOR_NAME) {
+    ctx.font = `${Math.max(9, Math.min(13, radius * 0.42))}px Menlo, Consolas, monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = NAME_COLOR;
+    ctx.fillText(truncateName(name), 0, 0);
+  }
 
   ctx.restore();
 }
