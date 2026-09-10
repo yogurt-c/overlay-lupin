@@ -1,39 +1,21 @@
-import { BALL_RADIUS, GROUND_Y, HEAD, KICK_FOOT, WORLD_WIDTH } from './field.js';
-import { jitter, roughLimb, roughSegment, roughStroke } from '../../lib/sketch.js';
+import { GROUND_Y } from '../../lib/ballsport/field.js';
+import { roughStroke } from '../../lib/sketch.js';
+import type { Limbs } from '../../lib/ballsport/draw.js';
+import { KICK_FOOT } from './field.js';
 import type { Pose } from './types.js';
 
-export interface DrawPlayer {
-  /** Ground-relative feet position: x in world units, y as the simulation's negative-is-up offset. */
-  x: number;
-  y: number;
-  facing: 1 | -1;
-  pose: Pose;
-  /** Running animation phase, in radians. */
-  anim: number;
-  color: string;
-}
-
-const HALO = 'rgba(255,255,255,0.92)';
-
-const HIP_Y = -16;
 const CHEST_Y = -32;
 const LEG_LENGTH = 11;
 const ARM_LENGTH = 10;
 /** How far below the shoulder a relaxed hand hangs. */
 const ARM_DROP = 14;
 
-interface Limbs {
-  legs: [number, number][];
-  hands: [number, number][];
-  lean: number;
-}
-
-/** Limb targets for each pose, in feet-space with +x already meaning "forward". */
-function limbsFor(pose: Pose, anim: number): Limbs {
+/** Limb targets for each of soccer's poses, in feet-space with +x already meaning "forward". */
+export function limbsFor(pose: string, anim: number): Limbs {
   const swing = Math.sin(anim);
   const lift = Math.cos(anim);
 
-  switch (pose) {
+  switch (pose as Pose) {
     case 'run':
       return {
         legs: [
@@ -87,112 +69,7 @@ function limbsFor(pose: Pose, anim: number): Limbs {
   }
 }
 
-function drawShadow(ctx: CanvasRenderingContext2D, x: number, height: number, radius: number): void {
-  const fade = Math.max(0, 1 - height / 120);
-  if (fade <= 0.02) return;
-  ctx.save();
-  ctx.globalAlpha = 0.14 * fade;
-  ctx.fillStyle = '#14181a';
-  ctx.beginPath();
-  ctx.ellipse(x, GROUND_Y + 1, radius * (0.6 + fade * 0.5), 2.4 * fade + 1, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-}
-
-/** Draws a big-headed stick figure standing on (x, GROUND_Y + y). */
-export function drawPlayer(ctx: CanvasRenderingContext2D, player: DrawPlayer): void {
-  const { x, y, facing, pose, anim, color } = player;
-  drawShadow(ctx, x, -y, 11);
-
-  ctx.save();
-  ctx.translate(x, GROUND_Y + y);
-  ctx.scale(facing, 1);
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-
-  const { legs, hands, lean } = limbsFor(pose, anim);
-
-  for (const [fx, fy] of legs) {
-    roughLimb(ctx, 0, HIP_Y, fx * 0.55 + 2, (HIP_Y + fy) / 2, fx, fy, 3.4, color, HALO);
-  }
-  roughStroke(ctx, lean, CHEST_Y, 0, HIP_Y, 4, color, HALO);
-  for (const [hx, hy] of hands) {
-    roughLimb(ctx, lean, CHEST_Y, (lean + hx) / 2 + 1, CHEST_Y + 5, hx, hy, 2.8, color, HALO);
-  }
-
-  drawHead(ctx, lean * 1.2, HEAD.y, HEAD.r, color);
-  ctx.restore();
-}
-
-function drawHead(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, color: string): void {
-  ctx.beginPath();
-  ctx.arc(cx, cy, r + 1.5, 0, Math.PI * 2);
-  ctx.fillStyle = HALO;
-  ctx.fill();
-
-  for (let i = 0; i < 2; i++) {
-    ctx.beginPath();
-    ctx.arc(cx + jitter(1.3), cy + jitter(1.3), r, 0, Math.PI * 2);
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2.6;
-    ctx.stroke();
-  }
-
-  // A face pointing the way the figure faces: reads as a character rather than a blob.
-  ctx.fillStyle = color;
-  for (const eyeX of [cx + r * 0.24, cx + r * 0.62]) {
-    ctx.beginPath();
-    ctx.arc(eyeX, cy - r * 0.12, 1.25, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  roughSegment(ctx, cx + r * 0.2, cy + r * 0.45, cx + r * 0.66, cy + r * 0.42, 1.6, color, 1);
-}
-
-/**
- * A grid of small dots fixed in world space, so panning the camera along a
- * wide field reads as motion instead of the pitch silently teleporting.
- * Only draws the slice currently in view.
- */
-export function drawBackgroundDots(
-  ctx: CanvasRenderingContext2D,
-  cameraX: number,
-  viewWidth: number,
-  spacing: number,
-  color: string
-): void {
-  const startX = Math.floor(cameraX / spacing) * spacing;
-  const endX = cameraX + viewWidth + spacing;
-  ctx.fillStyle = color;
-  for (let x = startX; x < endX; x += spacing) {
-    for (let y = spacing / 2; y < GROUND_Y; y += spacing) {
-      ctx.beginPath();
-      ctx.arc(x, y, 1.5, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-}
-
-/** Ground line plus a halfway marker, drawn only for the slice in view. */
-export function drawPitch(ctx: CanvasRenderingContext2D, cameraX: number, viewWidth: number, color: string): void {
-  const dashLen = 10;
-  const gapLen = 8;
-  const stride = dashLen + gapLen;
-  const start = Math.max(0, Math.floor(cameraX / stride) * stride);
-  const end = Math.min(WORLD_WIDTH, cameraX + viewWidth + stride);
-  for (let x = start; x < end; x += stride) {
-    roughSegment(ctx, x, GROUND_Y, Math.min(x + dashLen, WORLD_WIDTH), GROUND_Y, 2, color, 1);
-  }
-
-  const mid = WORLD_WIDTH / 2;
-  if (mid > cameraX - 20 && mid < cameraX + viewWidth + 20) {
-    ctx.save();
-    ctx.globalAlpha = 0.5;
-    for (let y = GROUND_Y - 64; y < GROUND_Y; y += 12) {
-      roughSegment(ctx, mid, y, mid, y + 6, 1.4, color, 1);
-    }
-    ctx.restore();
-  }
-}
+const HALO = 'rgba(255,255,255,0.92)';
 
 /** A hand-drawn goal: two uprights, a crossbar, and a light net hatch. */
 export function drawGoal(
@@ -228,38 +105,4 @@ export function drawGoal(
   roughStroke(ctx, frontX, GROUND_Y, frontX, top, 3, color, HALO);
   roughStroke(ctx, backX, GROUND_Y, backX, top, 2.2, color, HALO);
   roughStroke(ctx, frontX, top, backX, top, 3, color, HALO);
-}
-
-/** The ball: a wobbly ink blot whose marks rotate so its spin is visible. */
-export function drawBall(ctx: CanvasRenderingContext2D, x: number, y: number, spin: number, color: string): void {
-  drawShadow(ctx, x, -y - BALL_RADIUS, BALL_RADIUS);
-
-  ctx.save();
-  ctx.translate(x, GROUND_Y + y);
-
-  ctx.beginPath();
-  const steps = 11;
-  for (let i = 0; i <= steps; i++) {
-    const angle = (i / steps) * Math.PI * 2;
-    const rr = BALL_RADIUS + jitter(BALL_RADIUS * 0.28);
-    const px = Math.cos(angle) * rr;
-    const py = Math.sin(angle) * rr;
-    if (i === 0) ctx.moveTo(px, py);
-    else ctx.lineTo(px, py);
-  }
-  ctx.closePath();
-  ctx.fillStyle = color;
-  ctx.fill();
-  ctx.lineWidth = 1.6;
-  ctx.strokeStyle = HALO;
-  ctx.stroke();
-
-  ctx.rotate(spin);
-  ctx.fillStyle = HALO;
-  for (const angle of [0, (Math.PI * 2) / 3, (Math.PI * 4) / 3]) {
-    ctx.beginPath();
-    ctx.arc(Math.cos(angle) * BALL_RADIUS * 0.45, Math.sin(angle) * BALL_RADIUS * 0.45, 1.5, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  ctx.restore();
 }

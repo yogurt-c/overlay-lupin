@@ -1,9 +1,7 @@
-import { PLAYER_HALF } from './field.js';
+import { DEFAULT_BALL_RADIUS, PLAYER_HALF } from './field.js';
 import { collideBallWithFigure, integrateBall, keepBallAbovePitch } from './ball.js';
-import type { Figure } from './ball.js';
-import { RULES } from './index.js';
+import type { BallState, Figure } from './ball.js';
 import type { GameRules, RuleActor } from './rules.js';
-import type { BallState, MatchPhase, OpponentPacket, PlayerState, Pose, WorldState } from './types.js';
 
 /** The simulation advances in fixed 1/60s ticks; every constant below is per tick. */
 export const STEP_MS = 1000 / 60;
@@ -31,11 +29,17 @@ const BALL_SNAP_DISTANCE = 70;
 
 const RUN_ANIM_PER_PIXEL = 0.34;
 
+/**
+ * The shared button vocabulary every game sharing this engine reads from.
+ * `action` is the one game-specific button (a kick, a dive/spike, ...); `down`
+ * is a plain directional signal, independent of whatever `action` means.
+ */
 export interface Input {
   left: boolean;
   right: boolean;
   jump: boolean;
-  kick: boolean;
+  down: boolean;
+  action: boolean;
 }
 
 interface LocalPlayer extends RuleActor {
@@ -43,7 +47,7 @@ interface LocalPlayer extends RuleActor {
 }
 
 interface RemotePlayer extends Figure {
-  pose: Pose;
+  pose: string;
   anim: number;
 }
 
@@ -58,15 +62,44 @@ interface Snapshot {
 
 /** Positions handed to the renderer, interpolated between the last two simulation ticks. */
 export interface ViewState {
-  local: { x: number; y: number; facing: 1 | -1; pose: Pose; anim: number };
-  remote: { x: number; y: number; facing: 1 | -1; pose: Pose; anim: number };
-  ball: { x: number; y: number; spin: number };
+  local: { x: number; y: number; facing: 1 | -1; pose: string; anim: number };
+  remote: { x: number; y: number; facing: 1 | -1; pose: string; anim: number };
+  ball: { x: number; y: number; r: number; spin: number };
+}
+
+/** Phases of a single match, driven by the host and mirrored by the client — the same for every game. */
+export type MatchPhase = 'kickoff' | 'play' | 'goal' | 'over';
+
+export interface PlayerState {
+  x: number;
+  y: number;
+  facing: 1 | -1;
+  pose: string;
+}
+
+/** The authoritative slice of the simulation: only the host produces this. */
+export interface WorldState {
+  ball: BallState;
+  phase: MatchPhase;
+  timer: number;
+}
+
+export interface OpponentPacket {
+  player: PlayerState;
+  world?: WorldState;
+  score: [number, number];
 }
 
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
 }
 
+/**
+ * The physics/scorekeeping engine shared by every "two figures + one ball"
+ * game. It owns movement, gravity, remote interpolation, ball flight, and
+ * match bookkeeping; a `GameRules` (injected at construction) supplies
+ * everything that's specific to one game.
+ */
 export class Game {
   isHost = false;
   phase: MatchPhase = 'kickoff';
@@ -89,13 +122,19 @@ export class Game {
     activePart: undefined
   };
   remote: RemotePlayer = { x: 0, y: 0, vx: 0, vy: 0, facing: -1, pose: 'idle', anim: 0 };
-  ball: BallState = { x: 0, y: 0, vx: 0, vy: 0, spin: 0 };
+  ball: BallState = { x: 0, y: 0, vx: 0, vy: 0, spin: 0, r: DEFAULT_BALL_RADIUS };
 
   /** The active ruleset for this match — everything game-specific is delegated here. */
-  private rules: GameRules = RULES.soccer;
+  private readonly rules: GameRules;
 
   private remoteTarget: PlayerState = { x: 0, y: 0, facing: -1, pose: 'idle' };
   private prev: Snapshot = this.snapshot();
+  /** Where the ball was parked at the last reset — cached so the kickoff hold doesn't re-roll a random serve spot every tick. */
+  private serveBallX = 0;
+
+  constructor(rules: GameRules) {
+    this.rules = rules;
+  }
 
   get isOver(): boolean {
     return this.phase === 'over' && this.phaseTimer <= 0;
@@ -119,9 +158,8 @@ export class Game {
     return this.rules.drawField;
   }
 
-  startMatch(isHost: boolean, gameId: string = 'soccer'): void {
+  startMatch(isHost: boolean): void {
     this.isHost = isHost;
-    this.rules = RULES[gameId] ?? RULES.soccer;
     this.score = [0, 0];
     this.lastScorer = null;
     this.resetPositions();
@@ -153,7 +191,8 @@ export class Game {
     this.remote.pose = 'idle';
     this.remoteTarget = { x: this.remote.x, y: this.remote.y, facing: this.remote.facing, pose: 'idle' };
 
-    this.ball = { x: pos.ballX, y: pos.ballY, vx: 0, vy: 0, spin: 0 };
+    this.ball = { x: pos.ballX, y: pos.ballY, vx: 0, vy: 0, spin: 0, r: pos.ballR };
+    this.serveBallX = pos.ballX;
   }
 
   /** Advances the simulation by exactly one tick. */
@@ -163,7 +202,7 @@ export class Game {
     this.trackRemote();
 
     const celebrating = this.phase === 'goal' || this.phase === 'over';
-    this.stepPlayer(celebrating ? { left: false, right: false, jump: false, kick: false } : input);
+    this.stepPlayer(celebrating ? { left: false, right: false, jump: false, down: false, action: false } : input);
 
     if (this.phase === 'play') {
       this.stepBall(true);
@@ -172,10 +211,9 @@ export class Game {
       this.stepBall(false);
     } else if (this.phase === 'kickoff') {
       // The ball hangs at its serve spot and only drops once the whistle goes.
-      const pos = this.rules.resetPositions(this.mySide);
       this.ball.vx = 0;
       this.ball.vy = 0;
-      this.ball.x = pos.ballX;
+      this.ball.x = this.serveBallX;
     }
   }
 
@@ -224,8 +262,8 @@ export class Game {
     p.x = Math.max(bounds.min, Math.min(bounds.max, p.x));
 
     if (onGround) p.anim += Math.abs(p.vx) * RUN_ANIM_PER_PIXEL;
-    p.pose = p.y < -1 ? 'jump' : Math.abs(p.vx) > 0.4 ? 'run' : 'idle';
-    p.activePart = this.rules.stepAction(p, input);
+    const defaultPose = p.y < -1 ? 'jump' : Math.abs(p.vx) > 0.4 ? 'run' : 'idle';
+    p.activePart = this.rules.stepAction(p, input, this.mySide, defaultPose);
   }
 
   /** Keeps the two figures from occupying the same spot without needing a shared physics owner. */
@@ -255,8 +293,13 @@ export class Game {
   private stepBall(scoring: boolean): void {
     integrateBall(this.ball);
     collideBallWithFigure(this.ball, this.local, this.local.activePart);
-    collideBallWithFigure(this.ball, this.remote, this.rules.activePartFor(this.remote.pose, this.remote.facing));
+    collideBallWithFigure(
+      this.ball,
+      this.remote,
+      this.rules.activePartFor(this.remote.pose, this.remote.facing, (this.mySide * -1) as 1 | -1)
+    );
     keepBallAbovePitch(this.ball);
+    this.rules.stepBallExtra?.(this.ball);
     if (scoring) {
       const scorer = this.rules.resolveRound(this.ball);
       if (scorer !== null) this.awardPoint(scorer);
@@ -356,6 +399,7 @@ export class Game {
       ball: {
         x: lerp(p.ballX, this.ball.x, alpha),
         y: lerp(p.ballY, this.ball.y, alpha),
+        r: this.ball.r,
         spin: this.ball.spin
       }
     };

@@ -2,12 +2,12 @@ import { Game } from '../../lib/ballsport/engine.js';
 import type { Input, OpponentPacket } from '../../lib/ballsport/engine.js';
 import { cameraTarget, followCamera, renderScene } from '../../lib/ballsport/scene.js';
 import { limbsFor } from './draw.js';
-import { soccerRules } from './ruleset.js';
+import { volleyballRules } from './ruleset.js';
 import { createInputSource } from './input.js';
 import type { GameMatch, GameModule, MatchHud, Viewport } from '../types.js';
 
-class SoccerMatch implements GameMatch {
-  private game = new Game(soccerRules);
+class VolleyballMatch implements GameMatch {
+  private game = new Game(volleyballRules);
   private cameraX = 0;
   private snapCamera = true;
 
@@ -51,7 +51,7 @@ class SoccerMatch implements GameMatch {
       case 'kickoff':
         return String(Math.max(1, Math.ceil(this.game.phaseTimer / 60)));
       case 'goal':
-        return this.scoredByMe() ? '골!' : '실점';
+        return this.scoredByMe() ? '득점!' : '실점';
       case 'over':
         return this.game.myScore > this.game.theirScore ? '승리' : '패배';
       default:
@@ -65,10 +65,10 @@ class SoccerMatch implements GameMatch {
   }
 }
 
-export const soccerModule: GameModule = {
-  id: 'soccer',
-  label: '축구',
-  hint: '← → 이동 · ↑ 점프 · Space 슛 · 먼저 5골 넣으면 승리',
-  createMatch: (isHost) => new SoccerMatch(isHost),
+export const volleyballModule: GameModule = {
+  id: 'volleyball',
+  label: '배구',
+  hint: '← → 이동 · ↑ 점프 · Space 다이빙/스파이크(공중 ↓·전진 방향으로 세게) · 먼저 5점 내면 승리',
+  createMatch: (isHost) => new VolleyballMatch(isHost),
   createInputSource: (target) => createInputSource(target)
 };

@@ -1,14 +1,20 @@
 /**
- * Headless checks for the match simulation, run against the compiled renderer
- * output (`npm test` builds first). The simulation deliberately has no DOM or
- * network dependency, so it can be stepped tick by tick from plain Node.
+ * Headless checks for the soccer match simulation, run against the compiled
+ * renderer output (`npm test` builds first). The simulation deliberately has
+ * no DOM or network dependency, so it can be stepped tick by tick from plain
+ * Node.
  */
-import { Game, STEP_MS, WIN_SCORE } from '../dist/renderer/games/soccer/engine.js';
-import { BALL_RADIUS, WORLD_WIDTH, HEAD, CEILING_Y } from '../dist/renderer/games/soccer/field.js';
-import { GOAL_LINE_LEFT, GOAL_LINE_RIGHT } from '../dist/renderer/games/soccer/ruleset.js';
+import { Game, STEP_MS, WIN_SCORE } from '../dist/renderer/lib/ballsport/engine.js';
+import { DEFAULT_BALL_RADIUS, WORLD_WIDTH, HEAD, CEILING_Y } from '../dist/renderer/lib/ballsport/field.js';
+import { GOAL_LINE_LEFT, GOAL_LINE_RIGHT, soccerRules } from '../dist/renderer/games/soccer/ruleset.js';
 
-const NONE = { left: false, right: false, jump: false, kick: false };
+const BALL_RADIUS = DEFAULT_BALL_RADIUS;
+const NONE = { left: false, right: false, jump: false, down: false, action: false };
 let failures = 0;
+
+function newGame() {
+  return new Game(soccerRules);
+}
 
 function check(name, cond, extra = '') {
   const mark = cond ? 'PASS' : 'FAIL';
@@ -27,7 +33,7 @@ function toPlay(game) {
 
 // 1. Ball settles on the ground line, not half-buried in it.
 {
-  const g = new Game();
+  const g = newGame();
   g.startMatch(true);
   toPlay(g);
   g.remote.x = WORLD_WIDTH - 40;
@@ -38,11 +44,11 @@ function toPlay(game) {
 
 // 2. Heading launches the ball; it does not stick to the player.
 {
-  const g = new Game();
+  const g = newGame();
   g.startMatch(true);
   toPlay(g);
   g.remote.x = WORLD_WIDTH - 40;
-  g.ball = { x: g.local.x + 2, y: HEAD.y - HEAD.r - BALL_RADIUS + 3, vx: 0, vy: 2, spin: 0 };
+  g.ball = { x: g.local.x + 2, y: HEAD.y - HEAD.r - BALL_RADIUS + 3, vx: 0, vy: 2, spin: 0, r: BALL_RADIUS };
   run(g, 1);
   const launched = g.ball.vy < -1;
   run(g, 30);
@@ -54,13 +60,13 @@ function toPlay(game) {
 // 3. A kick drives the ball forward much harder than a passive touch.
 {
   const kickSpeed = (kick) => {
-    const g = new Game();
+    const g = newGame();
     g.startMatch(true);
     toPlay(g);
     g.remote.x = WORLD_WIDTH - 40;
     g.local.vx = 0;
-    g.ball = { x: g.local.x + 20, y: -8, vx: 0, vy: 0, spin: 0 };
-    run(g, 6, { ...NONE, kick });
+    g.ball = { x: g.local.x + 20, y: -8, vx: 0, vy: 0, spin: 0, r: BALL_RADIUS };
+    run(g, 6, { ...NONE, action: kick });
     return g.ball.vx;
   };
   const withKick = kickSpeed(true);
@@ -72,7 +78,7 @@ function toPlay(game) {
 // 3b. Dribbling the ball into a standing opponent should be a soft block, not
 // a rocket back toward your own goal at higher speed than you were carrying it.
 {
-  const g = new Game();
+  const g = newGame();
   g.startMatch(true);
   toPlay(g);
   g.remote.x = 500;
@@ -81,7 +87,7 @@ function toPlay(game) {
   g.remoteTarget = { x: 500, y: 0, facing: -1, pose: 'idle' };
   g.local.x = 440;
   g.local.vx = 3.1;
-  g.ball = { x: 460, y: -9, vx: 3.1, vy: 0, spin: 0 };
+  g.ball = { x: 460, y: -9, vx: 3.1, vy: 0, spin: 0, r: BALL_RADIUS };
 
   let sawCollision = false;
   let worstReboundSpeed = 0;
@@ -103,32 +109,32 @@ function toPlay(game) {
 
 // 4. Goals only count under the crossbar; above it the frame is solid.
 {
-  const g = new Game();
+  const g = newGame();
   g.startMatch(true);
   toPlay(g);
   g.remote.x = WORLD_WIDTH - 40;
   g.local.x = WORLD_WIDTH * 0.8;
-  g.ball = { x: GOAL_LINE_LEFT + 30, y: -20, vx: -8, vy: 0, spin: 0 };
+  g.ball = { x: GOAL_LINE_LEFT + 30, y: -20, vx: -8, vy: 0, spin: 0, r: BALL_RADIUS };
   run(g, 12);
   check('크로스바 아래로 들어가면 득점', g.score[1] === 1 && g.phase === 'goal', `score=${g.score}, phase=${g.phase}`);
 
-  const h = new Game();
+  const h = newGame();
   h.startMatch(true);
   toPlay(h);
   h.remote.x = WORLD_WIDTH - 40;
   h.local.x = WORLD_WIDTH * 0.8;
-  h.ball = { x: GOAL_LINE_LEFT + 30, y: -120, vx: -8, vy: 0, spin: 0 };
+  h.ball = { x: GOAL_LINE_LEFT + 30, y: -120, vx: -8, vy: 0, spin: 0, r: BALL_RADIUS };
   run(h, 12);
   check('크로스바 위는 골대에 맞고 튕긴다', h.score[1] === 0 && h.ball.vx > 0, `score=${h.score}, vx=${h.ball.vx.toFixed(2)}`);
 }
 
 // 5. Goal freeze returns to kickoff with fresh positions.
 {
-  const g = new Game();
+  const g = newGame();
   g.startMatch(true);
   toPlay(g);
   g.remote.x = WORLD_WIDTH - 40;
-  g.ball = { x: GOAL_LINE_RIGHT - 30, y: -20, vx: 9, vy: 0, spin: 0 };
+  g.ball = { x: GOAL_LINE_RIGHT - 30, y: -20, vx: 9, vy: 0, spin: 0, r: BALL_RADIUS };
   run(g, 12);
   check('반대편 골도 득점된다', g.score[0] === 1, `score=${g.score}`);
   run(g, 40);
@@ -141,12 +147,12 @@ function toPlay(game) {
 
 // 6. Reaching the win score ends the match.
 {
-  const g = new Game();
+  const g = newGame();
   g.startMatch(true);
   g.score = [WIN_SCORE - 1, 0];
   toPlay(g);
   g.remote.x = WORLD_WIDTH - 40;
-  g.ball = { x: GOAL_LINE_RIGHT - 30, y: -20, vx: 9, vy: 0, spin: 0 };
+  g.ball = { x: GOAL_LINE_RIGHT - 30, y: -20, vx: 9, vy: 0, spin: 0, r: BALL_RADIUS };
   run(g, 12);
   check(`${WIN_SCORE}골이면 경기가 끝난다`, g.phase === 'over', `phase=${g.phase}`);
   check('종료 직후에는 isOver가 아직 false', g.isOver === false);
@@ -157,11 +163,13 @@ function toPlay(game) {
 // 7. Simulation is framerate-independent: the tick count is what matters, not wall time.
 {
   const play = () => {
-    const g = new Game();
+    const g = newGame();
     g.startMatch(true);
     toPlay(g);
     g.remote.x = WORLD_WIDTH - 40;
-    for (let i = 0; i < 200; i++) g.step({ left: false, right: true, jump: i % 40 === 0, kick: i % 25 === 0 });
+    for (let i = 0; i < 200; i++) {
+      g.step({ left: false, right: true, jump: i % 40 === 0, down: false, action: i % 25 === 0 });
+    }
     return `${g.local.x.toFixed(4)}|${g.ball.x.toFixed(4)}|${g.ball.y.toFixed(4)}`;
   };
   check('같은 틱 수는 같은 결과를 낸다', play() === play(), play());
@@ -170,12 +178,12 @@ function toPlay(game) {
 
 // 8. Ball stays inside the pitch under sustained abuse.
 {
-  const g = new Game();
+  const g = newGame();
   g.startMatch(true);
   toPlay(g);
   let inside = true;
   for (let i = 0; i < 3000; i++) {
-    g.step({ left: i % 90 < 45, right: i % 90 >= 45, jump: i % 17 === 0, kick: i % 13 === 0 });
+    g.step({ left: i % 90 < 45, right: i % 90 >= 45, jump: i % 17 === 0, down: false, action: i % 13 === 0 });
     g.remote.x = 400 + Math.sin(i / 20) * 200;
     if (
       g.ball.x < -1 ||
@@ -193,21 +201,21 @@ function toPlay(game) {
 
 // 8b. A figure standing right on top of the ball can't press it through the pitch.
 {
-  const g = new Game();
+  const g = newGame();
   g.startMatch(true);
   toPlay(g);
   g.remote.x = WORLD_WIDTH - 40;
   g.local.x = 300;
-  g.ball = { x: 300, y: -BALL_RADIUS, vx: 0, vy: 0, spin: 0 };
+  g.ball = { x: 300, y: -BALL_RADIUS, vx: 0, vy: 0, spin: 0, r: BALL_RADIUS };
   run(g, 60);
   check('선수 밑에 깔린 공이 지면 아래로 안 내려간다', g.ball.y <= -BALL_RADIUS + 0.01, `y=${g.ball.y.toFixed(2)}`);
 }
 
 // 9. Client mirrors the host's score from its own point of view.
 {
-  const host = new Game();
+  const host = newGame();
   host.startMatch(true);
-  const client = new Game();
+  const client = newGame();
   client.startMatch(false);
   host.score = [3, 1];
   const packet = host.buildOutgoingPacket();
@@ -220,13 +228,13 @@ function toPlay(game) {
 
 // 10. Client ball reconciliation converges instead of teleporting every packet.
 {
-  const client = new Game();
+  const client = newGame();
   client.startMatch(false);
   client.phase = 'play';
-  client.ball = { x: 400, y: -30, vx: 0, vy: 0, spin: 0 };
+  client.ball = { x: 400, y: -30, vx: 0, vy: 0, spin: 0, r: BALL_RADIUS };
   const authoritative = {
     player: { x: 300, y: 0, facing: 1, pose: 'run' },
-    world: { ball: { x: 420, y: -30, vx: 1, vy: 0, spin: 0 }, phase: 'play', timer: 0 },
+    world: { ball: { x: 420, y: -30, vx: 1, vy: 0, spin: 0, r: BALL_RADIUS }, phase: 'play', timer: 0 },
     score: [0, 0]
   };
   client.applyOpponentPacket(authoritative);
