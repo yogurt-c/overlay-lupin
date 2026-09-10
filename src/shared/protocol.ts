@@ -8,3 +8,29 @@ export interface PeerInfo {
   name: string;
   address: string;
 }
+
+/** One room advertised on the LAN — shown in the matching panel's room list. */
+export interface RoomInfo {
+  id: string;
+  name: string;
+  gameId: string;
+  hostId: string;
+  memberCount: number;
+  capacity: number;
+}
+
+export interface RoomMember {
+  id: string;
+  name: string;
+}
+
+/** The full membership snapshot the host keeps every member's panel in sync with. */
+export interface RoomRoster {
+  id: string;
+  name: string;
+  gameId: string;
+  hostId: string;
+  capacity: number;
+  members: RoomMember[];
+  status: 'lobby' | 'playing';
+}

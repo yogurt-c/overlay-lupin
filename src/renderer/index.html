@@ -132,20 +132,24 @@
   #game-tabs button.active { background: #2f6b4f; border-color: #2f6b4f; color: #fff; }
   #game-tabs button:disabled { opacity: 0.4; cursor: default; }
 
-  #peer-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-  #peer-list li {
+  #peer-list, #room-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  #peer-list[hidden], #room-list[hidden] { display: none; }
+  #peer-list li, #room-list li {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 6px;
     padding: 5px 6px;
     border-radius: 6px;
     cursor: pointer;
   }
-  #peer-list li:hover { background: rgba(47, 107, 79, 0.12); }
+  #peer-list li:hover, #room-list li:hover { background: rgba(47, 107, 79, 0.12); }
   #peer-list li.pending { outline: 1.4px dashed #2f6b4f; outline-offset: -1px; }
-  #peer-list .empty { color: #7a827c; padding: 4px 2px; }
+  #peer-list .empty, #room-list .empty { color: #7a827c; padding: 4px 2px; }
+  #room-list li.create { color: #2f6b4f; font-weight: 600; }
+  #room-list li .count { color: #7a827c; font-variant-numeric: tabular-nums; }
 
-  #waiting-box, #incoming-box {
+  #waiting-box, #incoming-box, #lobby-box {
     position: absolute;
     right: 10px;
     bottom: 44px;
@@ -159,9 +163,23 @@
     color: #14181a;
     -webkit-app-region: no-drag;
   }
-  #waiting-box[hidden], #incoming-box[hidden] { display: none; }
+  #waiting-box[hidden], #incoming-box[hidden], #lobby-box[hidden] { display: none; }
   #waiting-box p, #incoming-box p { margin: 0 0 10px; line-height: 1.4; }
   #waiting-box p strong, #incoming-box p strong { display: block; margin-bottom: 2px; }
+
+  #lobby-box h2 {
+    margin: 0 0 8px;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  #lobby-members { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+  #lobby-members li { display: flex; align-items: center; justify-content: space-between; padding: 3px 2px; }
+  #lobby-members li[data-host] { color: #2f6b4f; }
+  #lobby-members .tag { font-size: 9.5px; color: #2f6b4f; }
+  #lobby-wait { color: #7a827c; padding: 6px 0 0; text-align: center; }
+  #lobby-wait[hidden] { display: none; }
+  #lobby-start-btn[hidden] { display: none; }
 
   .btn-row { display: flex; gap: 6px; }
   .btn-row button {
@@ -250,6 +268,7 @@
     <h2 id="panel-title">찾는 중…</h2>
     <div id="game-tabs"></div>
     <ul id="peer-list"></ul>
+    <ul id="room-list" hidden></ul>
     <p id="hint"></p>
   </div>
 
@@ -265,6 +284,18 @@
     <div class="btn-row">
       <button id="decline-btn" class="danger">거절</button>
       <button id="accept-btn" class="primary">수락</button>
+    </div>
+  </div>
+
+  <div id="lobby-box" hidden>
+    <h2 id="lobby-title"></h2>
+    <ul id="lobby-members"></ul>
+    <div class="btn-row">
+      <button id="lobby-start-btn" class="primary">시작</button>
+    </div>
+    <p id="lobby-wait">방장이 시작하기를 기다리는 중…</p>
+    <div class="btn-row">
+      <button id="lobby-leave-btn" class="danger">나가기</button>
     </div>
   </div>
 
