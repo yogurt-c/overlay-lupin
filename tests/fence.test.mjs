@@ -7,6 +7,7 @@
  * describe what the opponent is doing.
  */
 import { FenceEngine } from '../dist/renderer/games/fence/engine.js';
+import { woundedInk } from '../dist/renderer/games/fence/draw.js';
 import {
   ACTIVE,
   DOJO_X,
@@ -269,6 +270,21 @@ for (const [label, attack, guardLow, expected] of MATRIX) {
   const e = playing(60);
   e.step(NO_INPUT);
   check('상대를 향해 자동으로 돌아선다', e.local.facing === -1, `facing=${e.local.facing}`);
+}
+
+/* ------------------------------------------------------------ 6. 부상 표현 */
+
+// 19. Lives are shown by staining the figure, so the ink has to redden every step.
+{
+  const reds = [];
+  for (let w = 0; w <= LIVES; w++) {
+    const c = woundedInk('#14181a', w);
+    reds.push(w === 0 ? 20 : Number(c.slice(4, -1).split(',')[0]));
+  }
+  const rising = reds.every((r, i) => i === 0 || r > reds[i - 1]);
+  check('베인 횟수만큼 잉크가 붉어진다', rising, reds.join(' < '));
+  check('멀쩡할 때는 원래 먹색 그대로다', woundedInk('#14181a', 0) === '#14181a');
+  check('상대의 갈색도 같은 방식으로 물든다', woundedInk('#7a5433', 4) !== woundedInk('#7a5433', 0));
 }
 
 console.log(failures === 0 ? '전부 통과' : `${failures}개 실패`);
