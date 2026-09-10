@@ -1,6 +1,6 @@
 {
   "name": "overlay-lupin",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "같은 Wi-Fi/LAN에서 즉석으로 붙는, 화면 위에 몰래 떠 있는 미니게임 모음 오버레이",
   "author": "hyungi",
   "private": true,
@@ -11,7 +11,8 @@
     "test": "npm run build && node tests/simulation.test.mjs && node tests/cell.test.mjs",
     "dev": "npm run build && electron .",
     "start": "electron .",
-    "release:mac": "npm run build && electron-builder --mac --publish=never"
+    "release:mac": "npm run build && electron-builder --mac --publish=never",
+    "release:win": "npm run build && electron-builder --win --publish=never"
   },
   "devDependencies": {
     "@types/node": "*",
@@ -32,6 +33,16 @@
         { "target": "dmg", "arch": ["universal"] }
       ],
       "category": "public.app-category.games"
+    },
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        { "target": "nsis", "arch": ["x64"] }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
     }
   }
 }
