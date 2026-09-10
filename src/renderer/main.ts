@@ -2,6 +2,7 @@ import { Game, STEP_MS, WIN_SCORE } from './game.js';
 import { advanceSketchSeed } from './draw.js';
 import { cameraTarget, followCamera, renderScene } from './scene.js';
 import { createInputSource } from './input.js';
+import { GAMES } from './games.js';
 import type { PeerInfo } from './types.js';
 
 /** How often the hand-drawn jitter is re-rolled. Slow enough to read as ink, not noise. */
@@ -16,6 +17,7 @@ const idleIcon = document.getElementById('idle-icon') as HTMLButtonElement;
 const statusDot = document.getElementById('status-dot') as HTMLSpanElement;
 const panel = document.getElementById('panel') as HTMLDivElement;
 const panelTitle = document.getElementById('panel-title') as HTMLHeadingElement;
+const gameTabsEl = document.getElementById('game-tabs') as HTMLDivElement;
 const peerListEl = document.getElementById('peer-list') as HTMLUListElement;
 const hud = document.getElementById('hud') as HTMLDivElement;
 const scoreEl = document.getElementById('score') as HTMLSpanElement;
@@ -37,6 +39,7 @@ const game = new Game();
 const input = createInputSource();
 
 let uiState: UiState = 'idle';
+let selectedGameId = GAMES[0].id;
 let peers: PeerInfo[] = [];
 let incomingPeerId: string | null = null;
 let cameraX = 0;
@@ -101,6 +104,21 @@ function endMatch(): void {
   setUiState('idle');
 }
 
+function renderGameTabs(): void {
+  gameTabsEl.innerHTML = '';
+  for (const gameDef of GAMES) {
+    const btn = document.createElement('button');
+    btn.textContent = gameDef.label;
+    btn.classList.toggle('active', gameDef.id === selectedGameId);
+    btn.disabled = GAMES.length === 1;
+    btn.addEventListener('click', () => {
+      selectedGameId = gameDef.id;
+      renderGameTabs();
+    });
+    gameTabsEl.appendChild(btn);
+  }
+}
+
 function renderPeerList(): void {
   panelTitle.textContent = peers.length === 0 ? '찾는 중…' : `${peers.length}명 찾음`;
 
@@ -124,6 +142,7 @@ quitBtn.addEventListener('click', () => window.overlayLupin.quit());
 leaveBtn.addEventListener('click', endMatch);
 
 idleIcon.addEventListener('click', () => {
+  renderGameTabs();
   renderPeerList();
   setUiState('panel');
 });
