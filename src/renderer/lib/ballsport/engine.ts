@@ -64,7 +64,7 @@ interface Snapshot {
 export interface ViewState {
   local: { x: number; y: number; facing: 1 | -1; pose: string; anim: number };
   remote: { x: number; y: number; facing: 1 | -1; pose: string; anim: number };
-  ball: { x: number; y: number; r: number; spin: number };
+  ball: { x: number; y: number; r: number; spin: number; vx: number; vy: number };
 }
 
 /** Phases of a single match, driven by the host and mirrored by the client — the same for every game. */
@@ -191,7 +191,7 @@ export class Game {
     this.remote.pose = 'idle';
     this.remoteTarget = { x: this.remote.x, y: this.remote.y, facing: this.remote.facing, pose: 'idle' };
 
-    this.ball = { x: pos.ballX, y: pos.ballY, vx: 0, vy: 0, spin: 0, r: pos.ballR };
+    this.ball = { x: pos.ballX, y: pos.ballY, vx: 0, vy: 0, spin: 0, r: pos.ballR, gravityScale: pos.ballGravityScale };
     this.serveBallX = pos.ballX;
   }
 
@@ -400,7 +400,9 @@ export class Game {
         x: lerp(p.ballX, this.ball.x, alpha),
         y: lerp(p.ballY, this.ball.y, alpha),
         r: this.ball.r,
-        spin: this.ball.spin
+        spin: this.ball.spin,
+        vx: this.ball.vx,
+        vy: this.ball.vy
       }
     };
   }

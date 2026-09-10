@@ -45,6 +45,8 @@ export interface GameRules {
     ballX: number;
     ballY: number;
     ballR: number;
+    /** Passed straight through to the ball's own `gravityScale` — omit for a normal fall. */
+    ballGravityScale?: number;
   };
 
   /** The local player's allowed x range this tick. */

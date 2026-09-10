@@ -18,6 +18,8 @@ export interface BallState {
   vy: number;
   spin: number;
   r: number;
+  /** Multiplies gravity for this ball only — a lighter/floatier ball for a game that wants a slower fall. Defaults to 1. */
+  gravityScale?: number;
 }
 
 const GRAVITY = 0.4;
@@ -49,7 +51,7 @@ function restY(b: BallState): number {
 
 /** Integrates one tick of free flight: gravity, drag, ground and ceiling. */
 export function integrateBall(b: BallState): void {
-  b.vy += GRAVITY;
+  b.vy += GRAVITY * (b.gravityScale ?? 1);
   b.vx *= AIR_DRAG;
 
   const speed = Math.hypot(b.vx, b.vy);

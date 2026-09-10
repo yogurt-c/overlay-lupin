@@ -11,7 +11,7 @@ import type { Pose } from './types.js';
 const ACTIVE_FRAMES = 10;
 const RECOVER_FRAMES = 18;
 /** Sustained for the whole dive window, not just the trigger tick, so the lunge actually covers ground. */
-const DIVE_LUNGE_SPEED = 3.6;
+const DIVE_LUNGE_SPEED = 6.2;
 
 /**
  * Power/lift per aerial variant. `lift` is subtracted from vy (see ball.ts),
@@ -103,8 +103,9 @@ function resetPositions(mySide: 1 | -1) {
     remoteX: WORLD_WIDTH - localX,
     remoteY: 0,
     ballX: NET_X + jitter,
-    ballY: CEILING_Y * 0.55,
-    ballR: BALL_RADIUS
+    ballY: CEILING_Y * 0.85,
+    ballR: BALL_RADIUS,
+    ballGravityScale: 0.6
   };
 }
 

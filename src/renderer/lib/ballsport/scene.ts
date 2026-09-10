@@ -67,7 +67,7 @@ export function renderScene(
 
   drawPlayer(ctx, { ...view.remote, color: OPPONENT_INK }, hooks.limbsFor);
   drawPlayer(ctx, { ...view.local, color: INK }, hooks.limbsFor);
-  drawBall(ctx, view.ball.x, view.ball.y, view.ball.r, view.ball.spin, INK);
+  drawBall(ctx, view.ball.x, view.ball.y, view.ball.r, view.ball.spin, INK, view.ball.vx, view.ball.vy);
 
   ctx.restore();
 }
