@@ -1,5 +1,5 @@
-import { GOAL_LINE_LEFT, GOAL_LINE_RIGHT, GOAL_MARGIN, LOGICAL_HEIGHT, WORLD_WIDTH } from './field.js';
-import { beginSketchFrame, drawBackgroundDots, drawBall, drawGoal, drawPitch, drawPlayer } from './draw.js';
+import { LOGICAL_HEIGHT, WORLD_WIDTH } from './field.js';
+import { beginSketchFrame, drawBackgroundDots, drawBall, drawPitch, drawPlayer } from './draw.js';
 import type { ViewState } from './game.js';
 
 /** Width of the camera's visible slice of the wide world — not the field itself. */
@@ -46,7 +46,8 @@ export function renderScene(
   ctx: CanvasRenderingContext2D,
   view: ViewState,
   cameraX: number,
-  viewport: Viewport
+  viewport: Viewport,
+  drawField: (ctx: CanvasRenderingContext2D, cameraX: number, viewWidth: number) => void
 ): void {
   ctx.setTransform(viewport.pixelRatio, 0, 0, viewport.pixelRatio, 0, 0);
   ctx.clearRect(0, 0, viewport.width, viewport.height);
@@ -60,8 +61,7 @@ export function renderScene(
   beginSketchFrame();
   drawBackgroundDots(ctx, cameraX, VIEW_WIDTH, DOT_SPACING, 'rgba(20,24,26,0.16)');
   drawPitch(ctx, cameraX, VIEW_WIDTH, 'rgba(20,24,26,0.4)');
-  drawGoal(ctx, GOAL_LINE_LEFT, GOAL_MARGIN, INK);
-  drawGoal(ctx, GOAL_LINE_RIGHT, WORLD_WIDTH - GOAL_MARGIN, INK);
+  drawField(ctx, cameraX, VIEW_WIDTH);
 
   drawPlayer(ctx, { ...view.remote, color: OPPONENT_INK });
   drawPlayer(ctx, { ...view.local, color: INK });

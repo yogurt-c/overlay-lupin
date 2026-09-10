@@ -1,6 +1,7 @@
 import { Game, STEP_MS, WIN_SCORE } from './game.js';
 import { advanceSketchSeed } from './draw.js';
 import { cameraTarget, followCamera, renderScene } from './scene.js';
+import { RULES } from './games/index.js';
 import { createInputSource } from './input.js';
 import { GAMES } from './games.js';
 import type { PeerInfo } from './types.js';
@@ -213,7 +214,7 @@ function drawFrame(alpha: number): void {
   const view = game.view(alpha);
   cameraX = snapCamera ? cameraTarget(view) : followCamera(cameraX, view);
   snapCamera = false;
-  renderScene(ctx, view, cameraX, { width: viewWidthPx, height: viewHeightPx, pixelRatio });
+  renderScene(ctx, view, cameraX, { width: viewWidthPx, height: viewHeightPx, pixelRatio }, RULES.soccer.drawField);
 }
 
 /* ---------------------------------------------------------------------- HUD */

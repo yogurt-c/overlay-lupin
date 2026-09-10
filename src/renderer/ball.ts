@@ -1,16 +1,6 @@
-import {
-  BALL_RADIUS,
-  CEILING_Y,
-  GOAL_LINE_LEFT,
-  GOAL_LINE_RIGHT,
-  GOAL_MARGIN,
-  HEAD,
-  KICK_FOOT,
-  LEGS,
-  TORSO,
-  WORLD_WIDTH
-} from './field.js';
+import { BALL_RADIUS, CEILING_Y, HEAD, LEGS, TORSO } from './field.js';
 import type { BallState } from './types.js';
+import type { ActivePartSpec } from './games/rules.js';
 
 /** Anything the ball can bounce off: a player, with the motion it carries. */
 export interface Figure {
@@ -31,11 +21,8 @@ const SPIN_PER_PIXEL = 0.05;
 
 /** The ball rests on the ground line rather than sinking half of itself into it. */
 export const REST_Y = -BALL_RADIUS;
-/** Restitution against a goal frame or touchline. */
+/** Restitution against a rigid barrier — a goal frame, a net, a touchline. */
 export const WALL_BOUNCE = 0.55;
-
-const NET_DRAG = 0.78;
-const NET_BOUNCE = 0.15;
 
 const HEAD_BOUNCE = 1.12;
 /**
@@ -44,11 +31,9 @@ const HEAD_BOUNCE = 1.12;
  * an oncoming dribble harder than it arrived, so running the ball into a
  * standing opponent would rocket it back toward your own goal.
  */
-const BODY_BOUNCE = 0.25;
+export const BODY_BOUNCE = 0.25;
 const HEAD_PUSH = 1.7;
-const BODY_PUSH = 0.9;
-const KICK_POWER = 8.4;
-const KICK_LIFT = 4.6;
+export const BODY_PUSH = 0.9;
 
 /** Integrates one tick of free flight: gravity, drag, ground and ceiling. */
 export function integrateBall(b: BallState): void {
@@ -96,23 +81,27 @@ interface BodyPart {
   r: number;
   bounce: number;
   push: number;
-  isKick: boolean;
+  /** Present only for parts that redirect the ball outright, like a shot — absent means a normal bounce. */
+  shot?: { power: number; lift: number; spin: number };
 }
 
-function partsOf(p: Figure, kicking: boolean): BodyPart[] {
+/** The third body part is either a game-supplied active part (a kick foot, a dive reach, ...) or the default legs. */
+function partsOf(p: Figure, active?: ActivePartSpec): BodyPart[] {
+  const thirdPart: BodyPart = active
+    ? {
+        x: p.x + p.facing * active.anchor.x,
+        y: p.y + active.anchor.y,
+        r: active.anchor.r,
+        bounce: active.bounce,
+        push: active.push,
+        shot: active.shot
+      }
+    : { x: p.x, y: p.y + LEGS.y, r: LEGS.r, bounce: BODY_BOUNCE, push: BODY_PUSH };
+
   return [
-    { x: p.x, y: p.y + HEAD.y, r: HEAD.r, bounce: HEAD_BOUNCE, push: HEAD_PUSH, isKick: false },
-    { x: p.x, y: p.y + TORSO.y, r: TORSO.r, bounce: BODY_BOUNCE, push: BODY_PUSH, isKick: false },
-    kicking
-      ? {
-          x: p.x + p.facing * KICK_FOOT.x,
-          y: p.y + KICK_FOOT.y,
-          r: KICK_FOOT.r,
-          bounce: BODY_BOUNCE,
-          push: BODY_PUSH,
-          isKick: true
-        }
-      : { x: p.x, y: p.y + LEGS.y, r: LEGS.r, bounce: BODY_BOUNCE, push: BODY_PUSH, isKick: false }
+    { x: p.x, y: p.y + HEAD.y, r: HEAD.r, bounce: HEAD_BOUNCE, push: HEAD_PUSH },
+    { x: p.x, y: p.y + TORSO.y, r: TORSO.r, bounce: BODY_BOUNCE, push: BODY_PUSH },
+    thirdPart
   ];
 }
 
@@ -121,12 +110,12 @@ function partsOf(p: Figure, kicking: boolean): BodyPart[] {
  * head and torso in the same tick would otherwise double the impulse and send
  * the ball off unpredictably.
  */
-export function collideBallWithFigure(b: BallState, p: Figure, kicking: boolean): void {
+export function collideBallWithFigure(b: BallState, p: Figure, active?: ActivePartSpec): void {
   let hit: BodyPart | null = null;
   let deepest = 0;
   let hitDistance = 0;
 
-  for (const part of partsOf(p, kicking)) {
+  for (const part of partsOf(p, active)) {
     const distance = Math.hypot(b.x - part.x, b.y - part.y);
     const depth = part.r + BALL_RADIUS - distance;
     if (depth > deepest) {
@@ -143,11 +132,11 @@ export function collideBallWithFigure(b: BallState, p: Figure, kicking: boolean)
   b.x = hit.x + nx * (hit.r + BALL_RADIUS);
   b.y = hit.y + ny * (hit.r + BALL_RADIUS);
 
-  if (hit.isKick) {
-    // A kick is a shot, not a bounce: it overrides whatever the ball was doing.
-    b.vx = p.facing * KICK_POWER + p.vx;
-    b.vy = -KICK_LIFT + Math.min(0, ny * 3);
-    b.spin += p.facing * 0.6;
+  if (hit.shot) {
+    // A shot overrides whatever the ball was doing, rather than just bouncing off it.
+    b.vx = p.facing * hit.shot.power + p.vx;
+    b.vy = -hit.shot.lift + Math.min(0, ny * 3);
+    b.spin += p.facing * hit.shot.spin;
     return;
   }
 
@@ -164,25 +153,4 @@ export function collideBallWithFigure(b: BallState, p: Figure, kicking: boolean)
   }
   b.vx += nx * hit.push;
   b.vy += ny * hit.push;
-}
-
-/**
- * The netting during a goal celebration: it swallows the ball's momentum so it
- * comes to rest inside the goal instead of rebounding back onto the pitch.
- */
-export function settleBallInNet(b: BallState): void {
-  if (b.x < GOAL_LINE_LEFT || b.x > GOAL_LINE_RIGHT) {
-    b.vx *= NET_DRAG;
-    b.vy *= NET_DRAG;
-  }
-
-  const backOfLeftNet = GOAL_MARGIN + BALL_RADIUS;
-  const backOfRightNet = WORLD_WIDTH - GOAL_MARGIN - BALL_RADIUS;
-  if (b.x <= backOfLeftNet) {
-    b.x = backOfLeftNet;
-    b.vx = Math.abs(b.vx) * NET_BOUNCE;
-  } else if (b.x >= backOfRightNet) {
-    b.x = backOfRightNet;
-    b.vx = -Math.abs(b.vx) * NET_BOUNCE;
-  }
 }

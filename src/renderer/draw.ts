@@ -1,4 +1,4 @@
-import { BALL_RADIUS, GOAL_HEIGHT, GROUND_Y, HEAD, KICK_FOOT, WORLD_WIDTH } from './field.js';
+import { BALL_RADIUS, GROUND_Y, HEAD, KICK_FOOT, WORLD_WIDTH } from './field.js';
 import type { Pose } from './types.js';
 
 export interface DrawPlayer {
@@ -284,22 +284,28 @@ export function drawPitch(ctx: CanvasRenderingContext2D, cameraX: number, viewWi
 }
 
 /** A hand-drawn goal: two uprights, a crossbar, and a light net hatch. */
-export function drawGoal(ctx: CanvasRenderingContext2D, frontX: number, backX: number, color: string): void {
-  const top = GROUND_Y - GOAL_HEIGHT;
+export function drawGoal(
+  ctx: CanvasRenderingContext2D,
+  frontX: number,
+  backX: number,
+  height: number,
+  color: string
+): void {
+  const top = GROUND_Y - height;
   const left = Math.min(frontX, backX);
   const right = Math.max(frontX, backX);
 
   ctx.save();
   ctx.beginPath();
-  ctx.rect(left, top, right - left, GOAL_HEIGHT);
+  ctx.rect(left, top, right - left, height);
   ctx.clip();
   ctx.globalAlpha = 0.38;
   ctx.strokeStyle = color;
   ctx.lineWidth = 0.9;
   ctx.beginPath();
-  for (let i = -GOAL_HEIGHT; i <= right - left; i += 8) {
+  for (let i = -height; i <= right - left; i += 8) {
     ctx.moveTo(left + i, top);
-    ctx.lineTo(left + i + GOAL_HEIGHT, GROUND_Y);
+    ctx.lineTo(left + i + height, GROUND_Y);
   }
   for (let y = top; y <= GROUND_Y; y += 8) {
     ctx.moveTo(left, y);
