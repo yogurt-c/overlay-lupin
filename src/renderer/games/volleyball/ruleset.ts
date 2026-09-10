@@ -71,21 +71,47 @@ function stepAction(p: RuleActor, input: Input, side: 1 | -1, defaultPose: strin
   return activePartFor(p.pose, p.facing, side);
 }
 
+/**
+ * Which side of the net a ball was last confirmed to be on while below the
+ * net's top edge — keyed by ball object identity (each match/reset gets a
+ * fresh BallState, so this never leaks across matches or games).
+ *
+ * A single overlap check (does the ball's circle currently straddle the net
+ * line?) isn't enough: a hard shove from a player standing right at the net
+ * gap can reposition the ball fully past the net line in one tick, so there's
+ * nothing left overlapping to catch. Remembering which side it's allowed to
+ * be on and snapping back to it — regardless of how far it jumped — closes
+ * that hole.
+ */
+const netSide = new WeakMap<BallState, 1 | -1>();
+
 /** A net collision is just a one-sided wall: solid below its top edge, open above it. */
 function stepBallExtra(b: BallState): void {
   bounceOffWalls(b, WALL_LEFT, WALL_RIGHT);
 
   const netTop = -NET_HEIGHT;
-  if (b.y <= netTop + b.r) return;
-  if (b.x + b.r <= NET_X || b.x - b.r >= NET_X) return;
-
-  if (b.x < NET_X) {
-    b.x = NET_X - b.r;
-    b.vx = -Math.abs(b.vx) * WALL_BOUNCE;
-  } else {
-    b.x = NET_X + b.r;
-    b.vx = Math.abs(b.vx) * WALL_BOUNCE;
+  if (b.y <= netTop + b.r) {
+    // Clear of the net's top edge — free to cross. Forget the old side so
+    // wherever it comes back down becomes the fresh baseline.
+    netSide.delete(b);
+    return;
   }
+
+  const rawSide: 1 | -1 = b.x < NET_X ? -1 : 1;
+  const side = netSide.get(b) ?? rawSide;
+  const straddling = b.x + b.r > NET_X && b.x - b.r < NET_X;
+
+  if (rawSide !== side || straddling) {
+    if (side < 0) {
+      b.x = NET_X - b.r;
+      b.vx = -Math.abs(b.vx) * WALL_BOUNCE;
+    } else {
+      b.x = NET_X + b.r;
+      b.vx = Math.abs(b.vx) * WALL_BOUNCE;
+    }
+  }
+
+  netSide.set(b, side);
 }
 
 /** Whoever's court the ball lands on failed to return it — the other side scores. */
