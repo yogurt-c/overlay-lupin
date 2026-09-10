@@ -21,7 +21,7 @@
   },
   "build": {
     "appId": "com.hyungi.overlaylupin",
-    "productName": "오버레이 루팡",
+    "productName": "Overlay Lupin",
     "files": ["dist/**/*", "package.json"],
     "directories": {
       "output": "release"
