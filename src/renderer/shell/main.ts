@@ -1,7 +1,7 @@
 import { advanceSketchSeed } from '../lib/sketch.js';
 import { GAME_MODULES } from '../games/registry.js';
-import type { GameMatch } from '../games/types.js';
-import type { PeerInfo } from '../types.js';
+import type { GameMatch, GameModule } from '../games/types.js';
+import type { PeerInfo, RoomInfo, RoomRoster } from '../types.js';
 
 /** The simulation advances in fixed 1/60s ticks; every constant below is per tick. */
 const STEP_MS = 1000 / 60;
@@ -20,6 +20,7 @@ const panelTitle = document.getElementById('panel-title') as HTMLHeadingElement;
 const gameTabsEl = document.getElementById('game-tabs') as HTMLDivElement;
 const hintEl = document.getElementById('hint') as HTMLParagraphElement;
 const peerListEl = document.getElementById('peer-list') as HTMLUListElement;
+const roomListEl = document.getElementById('room-list') as HTMLUListElement;
 const hud = document.getElementById('hud') as HTMLDivElement;
 const scoreEl = document.getElementById('score') as HTMLSpanElement;
 const bannerEl = document.getElementById('banner') as HTMLDivElement;
@@ -33,17 +34,28 @@ const incomingName = document.getElementById('incoming-name') as HTMLElement;
 const acceptBtn = document.getElementById('accept-btn') as HTMLButtonElement;
 const declineBtn = document.getElementById('decline-btn') as HTMLButtonElement;
 const leaveBtn = document.getElementById('leave-btn') as HTMLButtonElement;
+const lobbyBox = document.getElementById('lobby-box') as HTMLDivElement;
+const lobbyTitle = document.getElementById('lobby-title') as HTMLHeadingElement;
+const lobbyMembersEl = document.getElementById('lobby-members') as HTMLUListElement;
+const lobbyStartBtn = document.getElementById('lobby-start-btn') as HTMLButtonElement;
+const lobbyWait = document.getElementById('lobby-wait') as HTMLParagraphElement;
+const lobbyLeaveBtn = document.getElementById('lobby-leave-btn') as HTMLButtonElement;
 
-type UiState = 'idle' | 'panel' | 'waiting' | 'incoming' | 'play' | 'reconnecting';
+type UiState = 'idle' | 'panel' | 'waiting' | 'incoming' | 'lobby' | 'play' | 'reconnecting';
 
 /** One input source per game, created once so listeners aren't re-attached every match. */
 const inputSources = new Map(GAME_MODULES.map((m) => [m.id, m.createInputSource(window)]));
 
+let myId = '';
+let myName = '';
 let uiState: UiState = 'idle';
 let selectedGameId = GAME_MODULES[0].id;
 let activeMatch: GameMatch | null = null;
+let activeMatchMode: 'duel' | 'room' | null = null;
 let activeInput: { read(): unknown; clear(): void } | null = null;
 let peers: PeerInfo[] = [];
+let rooms: RoomInfo[] = [];
+let currentRoster: RoomRoster | null = null;
 let incomingPeerId: string | null = null;
 let lastScoreText = '';
 let lastBannerText = '';
@@ -66,15 +78,25 @@ function resizeCanvas(): void {
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
+window.overlayLupin.whoAmI().then((me) => {
+  myId = me.id;
+  myName = me.name;
+});
+
+function currentModule(): GameModule {
+  return GAME_MODULES.find((m) => m.id === selectedGameId) ?? GAME_MODULES[0];
+}
+
 /* ---------------------------------------------------------------- UI shell */
 
 function setUiState(next: UiState): void {
   uiState = next;
-  idleIcon.hidden = next !== 'idle';
+  idleIcon.hidden = next !== 'idle' && next !== 'panel';
   statusDot.hidden = next === 'play';
   panel.hidden = next !== 'panel';
   waitingBox.hidden = next !== 'waiting';
   incomingBox.hidden = next !== 'incoming';
+  lobbyBox.hidden = next !== 'lobby';
   leaveBtn.hidden = next !== 'play';
   hud.hidden = next !== 'play';
   reconnectMsg.hidden = next !== 'reconnecting';
@@ -93,10 +115,20 @@ function clearCanvas(): void {
  * invitee it's whatever the host actually invited to, which may differ from
  * whatever tab they last had open. */
 function beginMatch(isHost: boolean, gameId: string): void {
-  const module = GAME_MODULES.find((m) => m.id === gameId) ?? GAME_MODULES[0];
   incomingPeerId = null;
+  startMatch('duel', isHost, gameId);
+}
+
+function beginRoomMatch(isHost: boolean, gameId: string): void {
+  currentRoster = null;
+  startMatch('room', isHost, gameId);
+}
+
+function startMatch(mode: 'duel' | 'room', isHost: boolean, gameId: string): void {
+  const module = GAME_MODULES.find((m) => m.id === gameId) ?? GAME_MODULES[0];
   selectedGameId = module.id;
-  activeMatch = module.createMatch(isHost);
+  activeMatchMode = mode;
+  activeMatch = module.createMatch(isHost, myId, myName);
   activeInput = inputSources.get(module.id) ?? null;
   stepAccumulator = 0;
   lastFrameAt = performance.now();
@@ -106,8 +138,10 @@ function beginMatch(isHost: boolean, gameId: string): void {
 }
 
 function endMatch(): void {
-  window.overlayLupin.leaveMatch();
+  if (activeMatchMode === 'room') window.overlayLupin.leaveRoom();
+  else window.overlayLupin.leaveMatch();
   activeMatch = null;
+  activeMatchMode = null;
   setUiState('idle');
 }
 
@@ -121,10 +155,20 @@ function renderGameTabs(): void {
     btn.addEventListener('click', () => {
       selectedGameId = module.id;
       renderGameTabs();
+      renderMatchingList();
     });
     gameTabsEl.appendChild(btn);
   }
-  hintEl.textContent = GAME_MODULES.find((m) => m.id === selectedGameId)?.hint ?? '';
+  hintEl.textContent = currentModule().hint;
+}
+
+/** Shows the peer list (1:1 duel games) or the room list (room games) for whichever game tab is selected. */
+function renderMatchingList(): void {
+  const isRoomGame = currentModule().matching === 'room';
+  peerListEl.hidden = isRoomGame;
+  roomListEl.hidden = !isRoomGame;
+  if (isRoomGame) renderRoomList();
+  else renderPeerList();
 }
 
 function renderPeerList(): void {
@@ -146,12 +190,64 @@ function renderPeerList(): void {
   }
 }
 
+function renderRoomList(): void {
+  const gameRooms = rooms.filter((r) => r.gameId === selectedGameId);
+  panelTitle.textContent = gameRooms.length === 0 ? '열린 방 없음' : `열린 방 ${gameRooms.length}개`;
+
+  roomListEl.innerHTML = '';
+  const create = document.createElement('li');
+  create.className = 'create';
+  create.textContent = '+ 새 방 만들기';
+  create.addEventListener('click', () => window.overlayLupin.createRoom(selectedGameId, currentModule().roomCapacity));
+  roomListEl.appendChild(create);
+
+  for (const room of gameRooms) {
+    const li = document.createElement('li');
+    const name = document.createElement('span');
+    name.textContent = room.name;
+    const count = document.createElement('span');
+    count.className = 'count';
+    count.textContent = `${room.memberCount}/${room.capacity}`;
+    li.append(name, count);
+    li.addEventListener('click', () => window.overlayLupin.joinRoom(room.id));
+    roomListEl.appendChild(li);
+  }
+}
+
+function renderLobby(roster: RoomRoster): void {
+  lobbyTitle.textContent = `${roster.name} · ${roster.members.length}/${roster.capacity}`;
+  lobbyMembersEl.innerHTML = '';
+  for (const member of roster.members) {
+    const li = document.createElement('li');
+    const isHostMember = member.id === roster.hostId;
+    if (isHostMember) li.dataset.host = '';
+    const name = document.createElement('span');
+    name.textContent = member.name;
+    li.appendChild(name);
+    if (isHostMember) {
+      const tag = document.createElement('span');
+      tag.className = 'tag';
+      tag.textContent = '방장';
+      li.appendChild(tag);
+    }
+    lobbyMembersEl.appendChild(li);
+  }
+
+  const iAmHost = roster.hostId === myId;
+  lobbyStartBtn.hidden = !iAmHost;
+  lobbyWait.hidden = iAmHost;
+}
+
 quitBtn.addEventListener('click', () => window.overlayLupin.quit());
 leaveBtn.addEventListener('click', endMatch);
 
 idleIcon.addEventListener('click', () => {
+  if (uiState === 'panel') {
+    setUiState('idle');
+    return;
+  }
   renderGameTabs();
-  renderPeerList();
+  renderMatchingList();
   setUiState('panel');
 });
 
@@ -170,18 +266,33 @@ declineBtn.addEventListener('click', () => {
   setUiState('idle');
 });
 
-document.addEventListener('click', (e) => {
-  if (uiState !== 'panel') return;
-  const target = e.target as HTMLElement;
-  if (!panel.contains(target) && !idleIcon.contains(target)) setUiState('idle');
+lobbyStartBtn.addEventListener('click', () => window.overlayLupin.startRoom());
+lobbyLeaveBtn.addEventListener('click', () => {
+  window.overlayLupin.leaveRoom();
+  currentRoster = null;
+  setUiState('idle');
 });
+
+// Capture phase, so this runs before a tab button's own click handler can
+// rebuild #game-tabs and detach the very node `e.target` points at — checked
+// afterward (bubble phase), `panel.contains(target)` would wrongly read false
+// and close the panel on every tab switch.
+document.addEventListener(
+  'click',
+  (e) => {
+    if (uiState !== 'panel') return;
+    const target = e.target as HTMLElement;
+    if (!panel.contains(target) && !idleIcon.contains(target)) setUiState('idle');
+  },
+  true
+);
 
 /* --------------------------------------------------------------- Networking */
 
 window.overlayLupin.onPeers((list) => {
   peers = list;
   statusDot.dataset.state = list.length > 0 ? 'found' : '';
-  if (uiState === 'panel') renderPeerList();
+  if (uiState === 'panel') renderMatchingList();
 });
 
 window.overlayLupin.onInviteSent((peer) => {
@@ -214,6 +325,38 @@ window.overlayLupin.onMatchLost((reason) => {
 });
 
 window.overlayLupin.onOpponentState((packet) => activeMatch?.applyOpponentPacket(packet));
+
+window.overlayLupin.onRooms((list) => {
+  rooms = list;
+  if (uiState === 'panel') renderMatchingList();
+});
+
+window.overlayLupin.onRoomRoster((roster) => {
+  currentRoster = roster;
+  if (uiState !== 'play') {
+    renderLobby(roster);
+    setUiState('lobby');
+  }
+});
+
+window.overlayLupin.onRoomStarted((isHost, gameId) => beginRoomMatch(isHost, gameId));
+
+window.overlayLupin.onRoomLost(() => {
+  currentRoster = null;
+  if (uiState === 'lobby' || uiState === 'play') {
+    activeMatch = null;
+    activeMatchMode = null;
+    setUiState('idle');
+  }
+});
+
+window.overlayLupin.onRoomMemberState((fromId, payload) => {
+  activeMatch?.applyOpponentPacket({ from: fromId, ...(payload as Record<string, unknown>) });
+});
+
+window.overlayLupin.onRoomWorld((payload) => activeMatch?.applyOpponentPacket(payload));
+
+window.overlayLupin.onRoomMemberLeft((peerId) => activeMatch?.removePeer?.(peerId));
 
 /* ------------------------------------------------------------------ Drawing */
 
@@ -267,7 +410,9 @@ function frame(now: number): void {
 
     if (now - lastSentAt >= SEND_INTERVAL_MS) {
       lastSentAt = now;
-      window.overlayLupin.sendLocalState(activeMatch.buildOutgoingPacket());
+      const packet = activeMatch.buildOutgoingPacket();
+      if (activeMatchMode === 'room') window.overlayLupin.sendRoomState(packet);
+      else window.overlayLupin.sendLocalState(packet);
     }
 
     if (activeMatch.isOver()) endMatch();

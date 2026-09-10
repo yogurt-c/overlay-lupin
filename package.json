@@ -1,14 +1,14 @@
 {
   "name": "overlay-lupin",
   "version": "0.1.0",
-  "description": "졸라맨 대두축구 스타일의 투명 오버레이 1:1 LAN 대전 미니게임",
+  "description": "같은 Wi-Fi/LAN에서 즉석으로 붙는, 화면 위에 몰래 떠 있는 미니게임 모음 오버레이",
   "author": "hyungi",
   "private": true,
   "main": "dist/main/main.js",
   "scripts": {
     "build": "tsc -p tsconfig.main.json && tsc -p tsconfig.renderer.json && npm run copy-assets",
     "copy-assets": "node -e \"const fs=require('fs');fs.mkdirSync('dist/renderer',{recursive:true});fs.copyFileSync('src/renderer/index.html','dist/renderer/index.html')\"",
-    "test": "npm run build && node tests/simulation.test.mjs",
+    "test": "npm run build && node tests/simulation.test.mjs && node tests/cell.test.mjs",
     "dev": "npm run build && electron .",
     "start": "electron .",
     "release:mac": "npm run build && electron-builder --mac --publish=never"

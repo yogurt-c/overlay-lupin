@@ -68,6 +68,7 @@ export const soccerModule: GameModule = {
   id: 'soccer',
   label: '축구',
   hint: '← → 이동 · ↑ 점프 · Space 슛 · 먼저 5골 넣으면 승리',
+  matching: 'duel',
   createMatch: (isHost) => new SoccerMatch(isHost),
   createInputSource: (target) => createInputSource(target)
 };
