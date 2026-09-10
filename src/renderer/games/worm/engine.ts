@@ -4,11 +4,6 @@ import {
   AIM_SPEED_DEG,
   AIM_START_DEG,
   BARREL_LENGTH,
-  BLAST_RADIUS,
-  CHARGE_FRAMES,
-  CRATER_RADIUS,
-  DAMAGE_MAX,
-  DAMAGE_MIN,
   FALL_DAMAGE_MAX,
   FALL_DAMAGE_PER_PX,
   JUMP_VELOCITY,
@@ -16,21 +11,33 @@ import {
   MAX_HP,
   MOVE_SPEED,
   MUZZLE_GRACE,
-  RELOAD_FRAMES,
   RESPAWN_MS,
   SAFE_FALL,
-  SHELL_GRAVITY,
   SHELL_MAX_AGE,
-  SHELL_SPEED_MIN,
-  SHELL_SPEED_RANGE,
   WIN_KILLS,
   WORLD_WIDTH,
   WORM_GRAVITY,
   WORM_HALF_W,
   WORM_HEIGHT
 } from './arena.js';
+import {
+  HEAL_AMOUNT,
+  ITEM_MAX,
+  ITEM_PICKUP_RADIUS,
+  ITEM_RADIUS,
+  ITEM_SPAWN_CLEARANCE,
+  ITEM_SPAWN_MAX_FRAMES,
+  ITEM_SPAWN_MIN_FRAMES,
+  MAX_SHELLS,
+  SHIELD_FRAMES
+} from './arena.js';
 import { carveCrater, generateTerrain, randomSeed, surfaceY } from './terrain.js';
 import type { Terrain } from './terrain.js';
+import { WEAPONS, weaponIndex } from './weapons.js';
+import type { Weapon, WeaponId } from './weapons.js';
+import { itemIndex, rollItemKind, weaponFor } from './items.js';
+import type { ItemKind } from './items.js';
+import { poseIndex } from './types.js';
 import type { CraterEvent, Pose, WormInput, WormWorld } from './types.js';
 
 /** How many recent craters ride along in every snapshot, so a lost packet self-heals. */
@@ -71,6 +78,10 @@ interface EngineWorm {
   /** Who gets the kill if this worm dies now; null after self-inflicted damage. */
   lastHitBy: string | null;
   input: WormInput;
+  weapon: WeaponId;
+  /** Rounds left in a picked-up weapon; meaningless while on the default one. */
+  rounds: number;
+  shieldFrames: number;
 }
 
 interface EngineShell {
@@ -80,6 +91,15 @@ interface EngineShell {
   vx: number;
   vy: number;
   age: number;
+  weapon: WeaponId;
+  /** Cluster rounds split exactly once, at the top of their arc. */
+  hasSplit: boolean;
+}
+
+interface EngineItem {
+  kind: ItemKind;
+  x: number;
+  y: number;
 }
 
 /**
@@ -95,8 +115,10 @@ export class WormEngine {
   craterSeq = 0;
   phase: 'play' | 'over' = 'play';
   winnerId: string | null = null;
+  items: EngineItem[] = [];
 
   private overTimer = 0;
+  private itemTimer = ITEM_SPAWN_MIN_FRAMES;
 
   constructor(seed: number = randomSeed()) {
     this.terrain = generateTerrain(seed);
@@ -139,7 +161,10 @@ export class WormEngine {
       fellFrom: 0,
       respawnAt: 0,
       lastHitBy: null,
-      input: NO_INPUT
+      input: NO_INPUT,
+      weapon: 'basic',
+      rounds: 0,
+      shieldFrames: 0
     });
   }
 
@@ -170,6 +195,7 @@ export class WormEngine {
       this.stepWorm(worm);
     }
     this.stepShells();
+    this.stepItems();
   }
 
   /* ------------------------------------------------------------ the worm */
@@ -177,6 +203,7 @@ export class WormEngine {
   private stepWorm(worm: EngineWorm): void {
     if (worm.poseTimer > 0) worm.poseTimer -= 1;
     if (worm.reload > 0) worm.reload -= 1;
+    if (worm.shieldFrames > 0) worm.shieldFrames -= 1;
 
     this.stepWalk(worm);
     this.stepJump(worm);
@@ -273,34 +300,59 @@ export class WormEngine {
     worm.aim = Math.max(AIM_MIN_DEG, Math.min(AIM_MAX_DEG, worm.aim + direction * AIM_SPEED_DEG));
   }
 
-  /** Holding fire fills the gauge; releasing launches, and a full gauge launches itself. */
+  /**
+   * Holding fire fills the gauge and nothing else — a full gauge sits there
+   * until the key comes up. Firing itself at full would take the decision of
+   * *when* to shoot away from the player, which is most of the aiming.
+   */
   private stepFire(worm: EngineWorm): void {
+    const weapon = WEAPONS[worm.weapon];
     if (worm.input.fire && worm.reload <= 0) {
-      worm.charge = Math.min(CHARGE_FRAMES, worm.charge + 1);
-      if (worm.charge >= CHARGE_FRAMES) this.launch(worm);
+      worm.charge = Math.min(weapon.chargeFrames, worm.charge + 1);
       return;
     }
-    if (worm.charge > 0) this.launch(worm);
+    if (worm.charge > 0) this.launch(worm, weapon);
   }
 
-  private launch(worm: EngineWorm): void {
-    const power = worm.charge / CHARGE_FRAMES;
-    const speed = SHELL_SPEED_MIN + power * SHELL_SPEED_RANGE;
-    const radians = (worm.aim * Math.PI) / 180;
-    const dirX = Math.cos(radians) * worm.facing;
-    const dirY = -Math.sin(radians);
+  /** Fires whatever is held, then hands the worm back its default weapon once the rounds run out. */
+  private launch(worm: EngineWorm, weapon: Weapon): void {
+    const power = worm.charge / weapon.chargeFrames;
+    const speed = weapon.speedMin + power * weapon.speedRange;
 
-    this.shells.push({
-      ownerId: worm.id,
-      x: worm.x + dirX * BARREL_LENGTH,
-      y: worm.y - WORM_HEIGHT / 2 + dirY * BARREL_LENGTH,
-      vx: dirX * speed,
-      vy: dirY * speed,
-      age: 0
-    });
+    for (let i = 0; i < weapon.shots; i++) {
+      // Fan the shots evenly around the aim; a single shot lands dead centre.
+      const offset = weapon.shots === 1 ? 0 : (i / (weapon.shots - 1) - 0.5) * weapon.spreadDeg;
+      const radians = ((worm.aim + offset) * Math.PI) / 180;
+      const dirX = Math.cos(radians) * worm.facing;
+      const dirY = -Math.sin(radians);
+      this.spawnShell({
+        ownerId: worm.id,
+        x: worm.x + dirX * BARREL_LENGTH,
+        y: worm.y - WORM_HEIGHT / 2 + dirY * BARREL_LENGTH,
+        vx: dirX * speed,
+        vy: dirY * speed,
+        age: 0,
+        weapon: weapon.id,
+        hasSplit: false
+      });
+    }
 
     worm.charge = 0;
-    worm.reload = RELOAD_FRAMES;
+    worm.reload = weapon.reloadFrames;
+
+    if (weapon.rounds > 0) {
+      worm.rounds -= 1;
+      if (worm.rounds <= 0) {
+        worm.weapon = 'basic';
+        worm.rounds = 0;
+      }
+    }
+  }
+
+  /** The one place shells enter the world, so the cap can't be bypassed. */
+  private spawnShell(shell: EngineShell): void {
+    if (this.shells.length >= MAX_SHELLS) return;
+    this.shells.push(shell);
   }
 
   private settlePose(worm: EngineWorm): void {
@@ -317,12 +369,20 @@ export class WormEngine {
     const survivors: EngineShell[] = [];
 
     for (const shell of this.shells) {
+      const weapon = WEAPONS[shell.weapon];
       shell.age += 1;
-      shell.vy += SHELL_GRAVITY;
+      shell.vy += weapon.gravity;
       shell.x += shell.vx;
       shell.y += shell.vy;
 
       if (shell.x < 0 || shell.x > WORLD_WIDTH || shell.age > SHELL_MAX_AGE) continue;
+
+      // A cluster round opens at the top of its arc, where the payload has the
+      // most room to spread before anything is in the way.
+      if (weapon.splitInto && !shell.hasSplit && shell.vy >= 0) {
+        this.split(shell, weapon.splitInto);
+        continue;
+      }
 
       // The sky is open — a steep shot may leave the top of the world and come back.
       if (shell.y >= surfaceY(this.terrain, shell.x)) {
@@ -354,8 +414,26 @@ export class WormEngine {
     return null;
   }
 
+  /** Replaces a cluster round with its payload, fanned out and still carrying its speed. */
+  private split(shell: EngineShell, count: number): void {
+    for (let i = 0; i < count; i++) {
+      const spread = (i / (count - 1) - 0.5) * 3.4;
+      this.spawnShell({
+        ownerId: shell.ownerId,
+        x: shell.x,
+        y: shell.y,
+        vx: shell.vx * 0.6 + spread,
+        vy: 0.6,
+        age: 0,
+        weapon: 'clusterlet',
+        hasSplit: true
+      });
+    }
+  }
+
   private detonate(shell: EngineShell): void {
     const { ownerId } = shell;
+    const weapon = WEAPONS[shell.weapon];
     // Round once, then use that point for everything. Members only ever receive
     // the rounded centre, so carving here with the raw float would leave every
     // client's ground a fraction off the host's — and drifting further with
@@ -364,22 +442,99 @@ export class WormEngine {
     const y = Math.round(shell.y);
 
     this.craterSeq += 1;
-    this.craters.push({ seq: this.craterSeq, x, y, r: CRATER_RADIUS });
+    this.craters.push({ seq: this.craterSeq, x, y, r: weapon.craterRadius });
     if (this.craters.length > CRATER_WINDOW) this.craters.shift();
-    this.terrain = carveCrater(this.terrain, x, y, CRATER_RADIUS);
+    this.terrain = carveCrater(this.terrain, x, y, weapon.craterRadius);
 
     for (const worm of this.worms.values()) {
       if (!worm.alive) continue;
       const distance = Math.hypot(x - worm.x, y - (worm.y - WORM_HEIGHT / 2));
-      if (distance > BLAST_RADIUS) continue;
-      const falloff = distance / BLAST_RADIUS;
-      this.applyDamage(worm, DAMAGE_MAX + (DAMAGE_MIN - DAMAGE_MAX) * falloff, ownerId);
+      if (distance > weapon.blastRadius) continue;
+      const falloff = distance / weapon.blastRadius;
+      this.applyDamage(worm, weapon.damageMax + (weapon.damageMin - weapon.damageMax) * falloff, ownerId);
     }
+
+    // A blast takes any pickup it reaches with it, so a contested drop can be denied.
+    this.items = this.items.filter((item) => Math.hypot(x - item.x, y - item.y) > weapon.blastRadius + ITEM_RADIUS);
+  }
+
+  /* ------------------------------------------------------------- pickups */
+
+  /**
+   * Pickups sit on the surface and are collected by walking over them. They
+   * re-seat on the ground every tick, so blowing a hole under one drops it into
+   * the crater instead of leaving it floating.
+   */
+  private stepItems(): void {
+    if (this.itemTimer > 0) this.itemTimer -= 1;
+    if (this.itemTimer <= 0) {
+      this.itemTimer =
+        ITEM_SPAWN_MIN_FRAMES + Math.floor(Math.random() * (ITEM_SPAWN_MAX_FRAMES - ITEM_SPAWN_MIN_FRAMES));
+      if (this.items.length < ITEM_MAX) this.spawnItem();
+    }
+
+    const remaining: EngineItem[] = [];
+    for (const item of this.items) {
+      item.y = surfaceY(this.terrain, item.x);
+      const taker = this.collectorOf(item);
+      if (taker) this.grant(taker, item.kind);
+      else remaining.push(item);
+    }
+    this.items = remaining;
+  }
+
+  private collectorOf(item: EngineItem): EngineWorm | null {
+    for (const worm of this.worms.values()) {
+      if (!worm.alive) continue;
+      if (Math.hypot(worm.x - item.x, worm.y - item.y) <= ITEM_PICKUP_RADIUS) return worm;
+    }
+    return null;
+  }
+
+  private grant(worm: EngineWorm, kind: ItemKind): void {
+    if (kind === 'heal') {
+      worm.hp = Math.min(MAX_HP, worm.hp + HEAL_AMOUNT);
+      return;
+    }
+    if (kind === 'shield') {
+      worm.shieldFrames = SHIELD_FRAMES;
+      return;
+    }
+    const weapon = weaponFor(kind);
+    if (!weapon) return;
+    worm.weapon = weapon;
+    worm.rounds = WEAPONS[weapon].rounds;
+  }
+
+  /** Drops a pickup somewhere nobody is currently standing. */
+  private spawnItem(): void {
+    const margin = WORM_HALF_W * 4;
+    const span = WORLD_WIDTH - margin * 2;
+    let best = margin + Math.random() * span;
+    let bestGap = -Infinity;
+
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const candidate = margin + Math.random() * span;
+      let nearest = Infinity;
+      for (const worm of this.worms.values()) {
+        if (worm.alive) nearest = Math.min(nearest, Math.abs(worm.x - candidate));
+      }
+      for (const item of this.items) nearest = Math.min(nearest, Math.abs(item.x - candidate));
+      if (nearest > bestGap) {
+        bestGap = nearest;
+        best = candidate;
+      }
+      if (nearest >= ITEM_SPAWN_CLEARANCE) break;
+    }
+
+    this.items.push({ kind: rollItemKind(Math.random), x: best, y: surfaceY(this.terrain, best) });
   }
 
   /* --------------------------------------------------------- consequence */
 
   private applyDamage(worm: EngineWorm, amount: number, byId: string | null): void {
+    // A shield stops everything, gravity and your own shells included.
+    if (worm.shieldFrames > 0) return;
     worm.hp -= amount;
     worm.lastHitBy = byId === worm.id ? null : byId;
     worm.pose = 'hit';
@@ -427,6 +582,9 @@ export class WormEngine {
     worm.airborne = false;
     worm.jumpHeld = false;
     worm.lastHitBy = null;
+    worm.weapon = 'basic';
+    worm.rounds = 0;
+    worm.shieldFrames = 0;
   }
 
   /** Picks the emptiest of a few candidate spots, so a respawn rarely lands in someone's lap. */
@@ -468,18 +626,24 @@ export class WormEngine {
         aim: Math.round(worm.aim),
         facing: worm.facing,
         hp: Math.max(0, Math.round(worm.hp)),
-        alive: worm.alive,
         kills: worm.kills,
-        charge: Math.round((worm.charge / CHARGE_FRAMES) * 100),
-        pose: worm.pose,
-        respawnInMs: worm.alive ? undefined : Math.max(0, worm.respawnAt - now)
+        charge: Math.round((worm.charge / WEAPONS[worm.weapon].chargeFrames) * 100),
+        p: poseIndex(worm.pose),
+        d: worm.alive ? undefined : Math.max(0, worm.respawnAt - now),
+        // Left out entirely on the default weapon with no shield, which is most
+        // worms most of the time — that is what keeps the packet small.
+        w: worm.weapon === 'basic' ? undefined : weaponIndex(worm.weapon),
+        a: worm.rounds > 0 ? worm.rounds : undefined,
+        s: worm.shieldFrames > 0 ? worm.shieldFrames : undefined
       })),
-      shells: this.shells.map((shell) => ({
-        x: Math.round(shell.x),
-        y: Math.round(shell.y),
-        o: indexOf.get(shell.ownerId) ?? -1
-      })),
-      craters: this.craters.map((crater) => ({ ...crater }))
+      shells: this.shells.flatMap((shell) => [
+        Math.round(shell.x),
+        Math.round(shell.y),
+        indexOf.get(shell.ownerId) ?? -1,
+        weaponIndex(shell.weapon)
+      ]),
+      items: this.items.flatMap((item) => [itemIndex(item.kind), Math.round(item.x), Math.round(item.y)]),
+      craters: this.craters.flatMap((crater) => [crater.seq, crater.x, crater.y, crater.r])
     };
   }
 }

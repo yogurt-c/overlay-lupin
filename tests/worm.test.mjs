@@ -10,12 +10,22 @@ import {
   COLUMN_W,
   CRATER_RADIUS,
   MAX_CLIMB,
+  HEAL_AMOUNT,
+  ITEM_MAX,
+  ITEM_PICKUP_RADIUS,
+  MAX_SHELLS,
+  ROCK_DEPTH,
+  SHIELD_FRAMES,
   SKY_MARGIN,
+  TERRAIN_FLOOR_Y,
   WORLD_WIDTH
 } from '../dist/renderer/games/worm/arena.js';
 import { carveCrater, createRng, generateTerrain, surfaceY } from '../dist/renderer/games/worm/terrain.js';
 import { WormEngine } from '../dist/renderer/games/worm/engine.js';
 import { wormModule } from '../dist/renderer/games/worm/module.js';
+import { WEAPONS } from '../dist/renderer/games/worm/weapons.js';
+import { ITEM_ORDER, rollItemKind } from '../dist/renderer/games/worm/items.js';
+import { decodeCraters, decodeShells } from '../dist/renderer/games/worm/types.js';
 import {
   BLAST_RADIUS,
   CHARGE_FRAMES,
@@ -77,7 +87,12 @@ function steepestStep(terrain) {
     }
   }
   check('지형이 하늘 여백을 침범하지 않는다', worstHigh >= SKY_MARGIN, `최고점 y=${worstHigh.toFixed(1)}`);
-  check('지형이 암반을 뚫지 않는다', worstLow <= BEDROCK_Y, `최저점 y=${worstLow.toFixed(1)}`);
+  check('지형이 밴드 아래로 생성되지 않는다', worstLow <= TERRAIN_FLOOR_Y, `최저점 y=${worstLow.toFixed(1)}`);
+  check(
+    '가장 낮은 골짜기 밑에도 굴착할 암석이 남는다',
+    BEDROCK_Y - worstLow >= ROCK_DEPTH,
+    `두께 ${(BEDROCK_Y - worstLow).toFixed(0)}px`
+  );
 }
 
 // 4. "지형지물좀 있고" — a map with no cliffs is just a hill, so check they exist.
@@ -135,6 +150,28 @@ function steepestStep(terrain) {
   check('반복 폭격에도 암반은 남는다', surfaceY(t, x) <= BEDROCK_Y + 1e-9, `y=${surfaceY(t, x).toFixed(1)}`);
 }
 
+// 9b. A blast buried in a cliff face must not take the clifftop with it.
+{
+  const before = generateTerrain(12345);
+  let wall = -1;
+  for (let i = 1; i < before.heights.length - 1; i++) {
+    if (before.heights[i] - before.heights[i + 1] > 40) { wall = i + 1; break; }
+  }
+  check('테스트용 높은 절벽을 찾았다 (지형)', wall > 0, `column=${wall}`);
+
+  // Detonate partway down the face — far below that column's own surface.
+  const cliffTop = before.heights[wall];
+  const faceY = cliffTop + 60;
+  const after = carveCrater(before, wall * COLUMN_W, faceY, CRATER_RADIUS);
+  const lost = after.heights[wall] - cliffTop;
+  check(
+    '절벽 옆면을 때려도 위쪽 땅이 통째로 사라지지 않는다',
+    lost <= CRATER_RADIUS * 2 + 0.01,
+    `${lost.toFixed(1)}px 깎임 (제한 ${CRATER_RADIUS * 2})`
+  );
+  check('그래도 절벽이 조금은 깎인다', lost > 0, `${lost.toFixed(1)}px`);
+}
+
 // 10. An airburst well above the ground doesn't scoop anything out.
 {
   const before = generateTerrain(4321);
@@ -154,7 +191,16 @@ const JUMP_RIGHT = { left: false, right: true, aimUp: false, aimDown: false, jum
 
 /** Drops a live shell right on top of a worm, past the muzzle grace window. */
 function shellOn(engine, worm, ownerId) {
-  engine.shells.push({ ownerId, x: worm.x, y: worm.y - WORM_HEIGHT / 2, vx: 0, vy: 1, age: MUZZLE_GRACE + 1 });
+  engine.shells.push({
+    ownerId,
+    x: worm.x,
+    y: worm.y - WORM_HEIGHT / 2,
+    vx: 0,
+    vy: 1,
+    age: MUZZLE_GRACE + 1,
+    weapon: 'basic',
+    hasSplit: false
+  });
 }
 
 function ready(seed, ids) {
@@ -176,6 +222,25 @@ function place(engine, id, x) {
   return worm;
 }
 
+/**
+ * The flattest stretch on the map. A firing test needs one: the lowest point is
+ * the bottom of a valley, where a lobbed shot hits the wall beside it instead
+ * of ever reaching its arc.
+ */
+function flatGround(engine) {
+  let bestX = 0;
+  let bestScore = Infinity;
+  for (let i = 10; i < engine.terrain.heights.length - 10; i++) {
+    let roughness = 0;
+    for (let k = -8; k <= 8; k++) roughness += Math.abs(engine.terrain.heights[i + k] - engine.terrain.heights[i]);
+    if (roughness < bestScore) {
+      bestScore = roughness;
+      bestX = i * COLUMN_W;
+    }
+  }
+  return bestX;
+}
+
 /** The lowest ground on the map — the most open sky to fire a test shot into. */
 function openGround(engine) {
   let bestX = 0;
@@ -189,23 +254,29 @@ function openGround(engine) {
   return bestX;
 }
 
-// 11. Holding fire fills the gauge and the shot leaves on its own at full power.
+// 11. The gauge fills and then waits. Only letting go fires.
 {
   const e = ready(101, ['a']);
-  const a = place(e, 'a', openGround(e));
+  const a = place(e, 'a', flatGround(e));
   e.setInput('a', HOLD);
-  for (let i = 0; i < CHARGE_FRAMES - 1; i++) e.step();
-  const beforeLaunch = e.shells.length;
+  for (let i = 0; i < CHARGE_FRAMES; i++) e.step();
+  check('충전 중에는 발사되지 않는다', e.shells.length === 0);
+  check('게이지가 꽉 찼다', a.charge === CHARGE_FRAMES, `charge=${a.charge}`);
+
+  // Keep holding well past full — it must still sit there.
+  for (let i = 0; i < 120; i++) e.step();
+  check('꽉 차도 안 떼면 안 나간다', e.shells.length === 0 && a.charge === CHARGE_FRAMES);
+
+  e.setInput('a', IDLE);
   e.step();
-  check('충전 중에는 발사되지 않는다', beforeLaunch === 0);
-  check('게이지가 꽉 차면 자동으로 나간다', e.shells.length === 1);
+  check('떼는 순간 나간다', e.shells.length === 1);
   check('발사 후 재장전이 걸린다', a.reload > 0, `reload=${a.reload}`);
 }
 
 // 12. Releasing early fires a weaker shot than holding to full.
 {
   const weak = ready(101, ['a']);
-  place(weak, 'a', openGround(weak));
+  place(weak, 'a', flatGround(weak));
   weak.setInput('a', HOLD);
   for (let i = 0; i < 20; i++) weak.step();
   weak.setInput('a', IDLE);
@@ -213,9 +284,11 @@ function openGround(engine) {
   const weakSpeed = Math.hypot(weak.shells[0].vx, weak.shells[0].vy);
 
   const strong = ready(101, ['a']);
-  place(strong, 'a', openGround(strong));
+  place(strong, 'a', flatGround(strong));
   strong.setInput('a', HOLD);
   for (let i = 0; i < CHARGE_FRAMES; i++) strong.step();
+  strong.setInput('a', IDLE);
+  strong.step();
   const strongSpeed = Math.hypot(strong.shells[0].vx, strong.shells[0].vy);
 
   check('빨리 떼면 약하게 나간다', weakSpeed < strongSpeed, `${weakSpeed.toFixed(2)} < ${strongSpeed.toFixed(2)}`);
@@ -225,7 +298,7 @@ function openGround(engine) {
 {
   const e = ready(202, ['a']);
   const a = place(e, 'a', openGround(e));
-  e.shells.push({ ownerId: 'a', x: a.x, y: a.y - WORM_HEIGHT / 2, vx: 0, vy: 0, age: 0 });
+  e.shells.push({ ownerId: 'a', x: a.x, y: a.y - WORM_HEIGHT / 2, vx: 0, vy: 0, age: 0, weapon: 'basic', hasSplit: false });
   e.step();
   check('발사 직후에는 자기 포탄에 안 터진다', e.shells.length === 1 && a.hp === MAX_HP, `hp=${a.hp}`);
 
@@ -376,6 +449,184 @@ function openGround(engine) {
   check('높은 데서 뛰어내리면 여전히 다친다', a.hp < MAX_HP, `hp=${a.hp.toFixed(1)}`);
 }
 
+// 23b. "바닥이 금방 드러난다" — the same spot has to swallow a real barrage first.
+{
+  const e = ready(2468, ['a']);
+  const x = openGround(e);
+  let shots = 0;
+  while (surfaceY(e.terrain, x) < BEDROCK_Y - 0.5 && shots < 200) {
+    e.shells.push({ ownerId: 'ghost', x, y: surfaceY(e.terrain, x), vx: 0, vy: 2, age: MUZZLE_GRACE + 1, weapon: 'basic', hasSplit: false });
+    e.step();
+    shots += 1;
+  }
+  check('가장 낮은 지점도 암반까지 여러 발이 필요하다', shots >= 9, `${shots}발`);
+}
+
+/* ------------------------------------------------------- 아이템과 무기 */
+
+/** Drops a pickup right where a worm stands and lets the next tick collect it. */
+function giveItem(engine, worm, kind) {
+  engine.items.push({ kind, x: worm.x, y: worm.y });
+  engine.step();
+}
+
+// 24. Picking a weapon up loads it; firing it dry hands the default back.
+{
+  const e = ready(1111, ['a']);
+  const a = place(e, 'a', flatGround(e));
+  giveItem(e, a, 'rocket');
+  check('무기를 주우면 장착된다', a.weapon === 'rocket', `weapon=${a.weapon}`);
+  check('탄약이 함께 들어온다', a.rounds === WEAPONS.rocket.rounds, `${a.rounds}발`);
+
+  const seen = [];
+  for (let shot = 0; shot < WEAPONS.rocket.rounds; shot++) {
+    seen.push(a.rounds);
+    e.setInput('a', HOLD);
+    for (let i = 0; i < WEAPONS.rocket.chargeFrames; i++) e.step();
+    e.setInput('a', IDLE);
+    e.step();
+    for (let i = 0; i < WEAPONS.rocket.reloadFrames + 2; i++) e.step();
+  }
+  check('쏠 때마다 탄약이 줄어든다', seen.join(',') === '3,2,1', seen.join(','));
+  check('다 쓰면 기본 무기로 돌아온다', a.weapon === 'basic' && a.rounds === 0, `weapon=${a.weapon}`);
+}
+
+// 25. A shotgun is several shells from one press; a rocket is one.
+{
+  const e = ready(2222, ['a']);
+  const a = place(e, 'a', flatGround(e));
+  giveItem(e, a, 'shotgun');
+  e.setInput('a', HOLD);
+  for (let i = 0; i < WEAPONS.shotgun.chargeFrames; i++) e.step();
+  e.setInput('a', IDLE);
+  e.step();
+  check('산탄은 한 번에 여러 발이 나간다', e.shells.length === WEAPONS.shotgun.shots, `${e.shells.length}발`);
+  const angles = e.shells.map((sh) => Math.atan2(sh.vy, sh.vx));
+  check('산탄이 부채꼴로 퍼진다', Math.max(...angles) - Math.min(...angles) > 0.1);
+}
+
+// 26. A cluster opens once, at the top of its arc, and its payload doesn't re-split.
+{
+  const e = ready(3333, ['a']);
+  const a = place(e, 'a', flatGround(e));
+  giveItem(e, a, 'cluster');
+  e.setInput('a', HOLD);
+  for (let i = 0; i < WEAPONS.cluster.chargeFrames; i++) e.step();
+  e.setInput('a', IDLE);
+  e.step();
+  check('클러스터는 한 발로 나간다', e.shells.length === 1);
+
+  let peak = 0;
+  for (let i = 0; i < 400 && e.shells.length > 0; i++) {
+    e.step();
+    peak = Math.max(peak, e.shells.length);
+  }
+  check('정점에서 분열한다', peak >= WEAPONS.cluster.splitInto, `최대 ${peak}발`);
+  check('파편은 다시 분열하지 않는다', peak <= WEAPONS.cluster.splitInto + 1, `최대 ${peak}발`);
+}
+
+// 27. Heal tops you up without overfilling.
+{
+  const e = ready(4444, ['a']);
+  const a = place(e, 'a', openGround(e));
+  a.hp = 30;
+  giveItem(e, a, 'heal');
+  check('회복 아이템이 HP를 올린다', a.hp === 30 + HEAL_AMOUNT, `hp=${a.hp}`);
+
+  a.hp = MAX_HP - 5;
+  giveItem(e, a, 'heal');
+  check('최대치를 넘지 않는다', a.hp === MAX_HP, `hp=${a.hp}`);
+}
+
+// 28. The shield is total, and it runs out.
+{
+  const e = ready(5555, ['a']);
+  const a = place(e, 'a', openGround(e));
+  giveItem(e, a, 'shield');
+  check('쉴드가 10초로 걸린다', a.shieldFrames > SHIELD_FRAMES - 5, `${a.shieldFrames}프레임`);
+
+  shellOn(e, a, 'ghost');
+  e.step();
+  check('쉴드 중에는 피해가 0이다', a.hp === MAX_HP, `hp=${a.hp}`);
+
+  a.shieldFrames = 0;
+  shellOn(e, a, 'ghost');
+  e.step();
+  check('쉴드가 끝나면 다시 아프다', a.hp < MAX_HP, `hp=${a.hp.toFixed(1)}`);
+}
+
+// 29. "포탄으로 맞추면 사라지도록" — a blast has to deny the pickup.
+{
+  const e = ready(6666, ['a']);
+  const a = place(e, 'a', 200);
+  const spot = 900;
+  e.items.push({ kind: 'rocket', x: spot, y: surfaceY(e.terrain, spot) });
+  check('아이템이 맵에 있다', e.items.length === 1);
+
+  e.shells.push({
+    ownerId: 'ghost',
+    x: spot,
+    y: surfaceY(e.terrain, spot) - 2,
+    vx: 0,
+    vy: 2,
+    age: MUZZLE_GRACE + 1,
+    weapon: 'basic',
+    hasSplit: false
+  });
+  e.step();
+  check('폭발이 아이템을 없앤다', e.items.length === 0);
+  void a;
+}
+
+// 30. Spawning stays rare and capped, however long a match runs.
+{
+  const e = ready(7777, ['a']);
+  place(e, 'a', openGround(e));
+  let peak = 0;
+  // Ten minutes of match time.
+  for (let i = 0; i < 60 * 60 * 10; i++) {
+    e.step();
+    peak = Math.max(peak, e.items.length);
+    // Nobody walks over them, so they only ever accumulate.
+    if (e.items.length > ITEM_MAX) break;
+  }
+  check('동시에 뜨는 아이템 수가 상한을 넘지 않는다', peak <= ITEM_MAX, `최대 ${peak}개`);
+  check('10분이면 상한까지는 찬다', peak === ITEM_MAX, `최대 ${peak}개`);
+}
+
+// 31. The weight table has to reach every kind, and only those.
+{
+  const counts = new Map(ITEM_ORDER.map((k) => [k, 0]));
+  let seed = 99;
+  const rng = () => {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    return seed / 2147483648;
+  };
+  for (let i = 0; i < 4000; i++) counts.set(rollItemKind(rng), counts.get(rollItemKind(rng)) ?? 0);
+  const fresh = new Map(ITEM_ORDER.map((k) => [k, 0]));
+  for (let i = 0; i < 4000; i++) {
+    const kind = rollItemKind(rng);
+    fresh.set(kind, fresh.get(kind) + 1);
+  }
+  check('모든 종류가 등장한다', ITEM_ORDER.every((k) => fresh.get(k) > 0), [...fresh].map(([k, v]) => `${k}:${v}`).join(' '));
+  check('쉴드가 제일 드물다', ITEM_ORDER.every((k) => k === 'shield' || fresh.get(k) > fresh.get('shield')));
+  void counts;
+}
+
+// 32. The shell cap is what keeps a six-way shotgun volley from blowing the packet.
+{
+  const ids = Array.from({ length: 6 }, (_, i) => `p${i}`);
+  const e = ready(8888, ids);
+  for (const id of ids) {
+    const worm = e.worms.get(id);
+    worm.weapon = 'shotgun';
+    worm.rounds = 4;
+    e.setInput(id, HOLD);
+  }
+  for (let i = 0; i < 600; i++) e.step();
+  check('동시 비행 포탄이 상한을 넘지 않는다', e.shells.length <= MAX_SHELLS, `${e.shells.length}발`);
+}
+
 /* ------------------------------------------------------- 호스트 ↔ 멤버 */
 
 // 24. The whole terrain sync rests on this: a member growing the map from the
@@ -386,20 +637,21 @@ function openGround(engine) {
   const spots = [300, 720, 1100, 305];
 
   for (const x of spots) {
-    host.shells.push({ ownerId: 'ghost', x, y: surfaceY(host.terrain, x) - 2, vx: 0, vy: 2, age: MUZZLE_GRACE + 1 });
+    host.shells.push({ ownerId: 'ghost', x, y: surfaceY(host.terrain, x) - 2, vx: 0, vy: 2, age: MUZZLE_GRACE + 1, weapon: 'basic', hasSplit: false });
     host.step();
   }
 
   const snapshot = host.snapshot();
   // A member starts from the seed alone and replays whatever the window carries.
   let mirrored = generateTerrain(snapshot.seed);
-  for (const crater of snapshot.craters) {
+  for (const crater of decodeCraters(snapshot.craters)) {
     mirrored = carveCrater(mirrored, crater.x, crater.y, crater.r);
   }
 
   const identical = mirrored.heights.every((h, i) => h === host.terrain.heights[i]);
   check('멤버 지형이 호스트와 정확히 일치한다', identical, `크레이터 ${snapshot.craters.length}개 재생`);
   check('시드가 스냅샷에 실려 간다', snapshot.seed === 31337);
+  check('스냅샷에 크레이터가 담겼다', decodeCraters(snapshot.craters).length === 4);
 }
 
 // 25. The crater window is the packet-loss insurance — it has to re-send, not just announce once.
@@ -409,11 +661,11 @@ function openGround(engine) {
   const first = [];
   for (let n = 0; n < 3; n++) {
     const x = 400 + n * 90;
-    host.shells.push({ ownerId: 'ghost', x, y: surfaceY(host.terrain, x) - 2, vx: 0, vy: 2, age: MUZZLE_GRACE + 1 });
+    host.shells.push({ ownerId: 'ghost', x, y: surfaceY(host.terrain, x) - 2, vx: 0, vy: 2, age: MUZZLE_GRACE + 1, weapon: 'basic', hasSplit: false });
     host.step();
     first.push(host.snapshot().craters.length);
   }
-  const latest = host.snapshot().craters;
+  const latest = decodeCraters(host.snapshot().craters);
   check('오래된 크레이터가 다음 스냅샷에도 계속 실린다', latest.length === 3 && latest[0].seq === 1, `seq=${latest.map((c) => c.seq).join(',')}`);
 
   // A member that missed the first two snapshots still catches up from the latest one alone.
@@ -457,16 +709,26 @@ function openGround(engine) {
 {
   const ids = Array.from({ length: 6 }, () => crypto.randomUUID());
   const e = ready(909, ids);
-  for (const id of ids) e.worms.get(id).name = 'MacBook-Pro-of-Someone';
+  for (const id of ids) {
+    const worm = e.worms.get(id);
+    worm.name = 'MacBook-Pro-of-Someone';
+    worm.weapon = 'cluster';
+    worm.rounds = 3;
+    worm.shieldFrames = SHIELD_FRAMES;
+  }
+  for (let i = 0; i < ITEM_MAX; i++) e.items.push({ kind: 'shield', x: 400 + i * 90, y: 300 });
   // 1472 is the largest UDP payload that still fits one 1500-byte Ethernet
   // frame; past it every snapshot fragments, and Wi-Fi loses fragments.
   const MTU_PAYLOAD = 1472;
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < MAX_SHELLS; i++) {
     const worm = e.worms.get(ids[i % ids.length]);
-    e.shells.push({ ownerId: worm.id, x: worm.x + i, y: worm.y - 40, vx: 3, vy: -2, age: 10 });
-    e.craters.push({ seq: i + 1, x: 700 + i * 13, y: 300, r: 22 });
+    e.shells.push({ ownerId: worm.id, x: worm.x + i, y: worm.y - 40, vx: 3, vy: -2, age: 10, weapon: 'shotgun', hasSplit: false });
+    if (i < 8) e.craters.push({ seq: i + 1, x: 700 + i * 13, y: 300, r: 22 });
   }
-  const bytes = Buffer.byteLength(JSON.stringify(e.snapshot()));
+  const snap = e.snapshot();
+  const bytes = Buffer.byteLength(JSON.stringify(snap));
+  check('평면 배열이 제대로 복원된다', decodeShells(snap.shells).length === snap.shells.length / 4);
+  check('크레이터도 복원된다', decodeCraters(snap.craters).length === snap.craters.length / 4);
   check('6인 최악 스냅샷이 MTU 안에 들어간다', bytes < MTU_PAYLOAD, `${bytes} / ${MTU_PAYLOAD} bytes`);
 }
 
