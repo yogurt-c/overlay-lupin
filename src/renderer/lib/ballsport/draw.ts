@@ -18,6 +18,8 @@ export interface Limbs {
   legs: [number, number][];
   hands: [number, number][];
   lean: number;
+  /** A held weapon as hilt then tip. Games whose figures carry nothing omit it. */
+  blade?: [number, number][];
 }
 
 const HALO = 'rgba(255,255,255,0.92)';
@@ -56,7 +58,7 @@ export function drawPlayer(
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 
-  const { legs, hands, lean } = limbsFor(pose, anim);
+  const { legs, hands, lean, blade } = limbsFor(pose, anim);
 
   for (const [fx, fy] of legs) {
     roughLimb(ctx, 0, HIP_Y, fx * 0.55 + 2, (HIP_Y + fy) / 2, fx, fy, 3.4, color, HALO);
@@ -67,7 +69,27 @@ export function drawPlayer(
   }
 
   drawHead(ctx, lean * 1.2, HEAD.y, HEAD.r, color);
+  // Last, so a weapon reads as held in front of the body rather than behind it.
+  if (blade) drawBlade(ctx, blade, color);
   ctx.restore();
+}
+
+/** A slightly curved blade with a short crossguard, drawn hilt-to-tip. */
+function drawBlade(ctx: CanvasRenderingContext2D, blade: [number, number][], color: string): void {
+  const [[x1, y1], [x2, y2]] = blade;
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const len = Math.hypot(dx, dy) || 1;
+  const nx = -dy / len;
+  const ny = dx / len;
+  // The curve comes from bowing the midpoint off the hilt-tip line.
+  const mx = (x1 + x2) / 2 + nx * 2.2;
+  const my = (y1 + y2) / 2 + ny * 2.2;
+
+  roughStroke(ctx, x1, y1, mx, my, 2.4, color, HALO);
+  roughStroke(ctx, mx, my, x2, y2, 2, color, HALO);
+  roughSegment(ctx, x1 + nx * 4, y1 + ny * 4, x1 - nx * 4, y1 - ny * 4, 2, color, 2);
+  roughSegment(ctx, x1, y1, x1 - (dx / len) * 7, y1 - (dy / len) * 7, 2.6, color, 2);
 }
 
 function drawHead(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, color: string): void {
