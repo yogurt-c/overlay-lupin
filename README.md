@@ -1,15 +1,18 @@
 <div align="center">
 
+<img src="assets/hero.png" alt="오버레이 루팡" width="140" />
+
 # 오버레이 루팡
 ### Overlay Lupin
 
-같은 Wi-Fi/LAN에서 즉석으로 붙는, 화면 위에 몰래 떠 있는 미니게임 모음 (Electron) — 1:1 대두축구, 최대 6인 세포키우기
+화면 한구석에 숨어 있다가, 옆자리 사람이랑 슬쩍 한 판 붙고 싶을 때만 꺼내 쓰는 미니게임 모음.
+같은 Wi-Fi에만 있으면 서버도, 계정도 없이 바로 매칭됩니다.
 
-[![Platform](https://img.shields.io/badge/platform-macOS-lightgrey?logo=apple&logoColor=white)](#)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey?logo=apple&logoColor=white)](#)
 [![Electron](https://img.shields.io/badge/built%20with-Electron-47848F?logo=electron&logoColor=white)](#)
 [![Notarized](https://img.shields.io/badge/Apple-Notarized-000000?logo=apple&logoColor=white)](#)
 
-### [⬇️ Mac용 최신 버전 다운로드](https://github.com/yogurt-c/overlay-lupin/releases/latest)
+### [오버레이 루팡 다운로드](https://github.com/yogurt-c/overlay-lupin/releases/latest)
 
 <br/>
 
@@ -21,23 +24,17 @@
 
 ---
 
-## 특징
+## 뭐가 들어있나요
 
-- 화면 위에 떠 있는 투명 오버레이 — 다른 작업 하면서 바로 대전
-- 같은 Wi-Fi/LAN에서 서버 없이 즉석 매칭 (UDP 브로드캐스트)
-- **대두축구** — 손그림 스타일 1:1 대전, 5골 선취 매치
-- **세포키우기** — 최대 6인, 방장이 방을 열면 자유롭게 참가·중도 합류. 점을 먹으며 커지고 나보다 작은 세포를 흡수, 큰 세포는 피하기. 제한시간 없이 방에 한 명이라도 남아있으면 계속 진행
+- **존재감 없는 오버레이** — 다른 창 위에 투명하게 떠 있어서, 일하는 척 하면서 바로 한 판
+- **즉석 매칭** — 같은 Wi-Fi에 연결돼 있으면 서버 없이 자동으로 서로를 찾아줌
+- **대두축구** — 손그림 스타일 1:1 대전, 5골 먼저 넣으면 승리
+- **세포키우기** — 최대 6명, 방장이 방 열면 누구나 자유롭게 참가·중도 합류. 점을 먹고 커지고, 나보다 작은 세포는 삼키고 큰 세포는 도망 — 끝나는 판 없이 방에 한 명이라도 남아있으면 계속
 
-## 개발
+---
 
-```
-npm install
-npm run dev      # 빌드 후 실행
-npm test         # 시뮬레이션 물리 테스트 (39개 체크: 대두축구 + 세포키우기)
-```
+<div align="center">
 
-상대 찾기는 UDP 브로드캐스트(포트 47474) 방식이라 **같은 Wi-Fi/LAN**에 있어야 매칭됩니다.
+개발/빌드 이야기는 [docs](docs) 폴더에.
 
-## 배포 빌드
-
-macOS 서명/공증 절차와 배포 방법은 [docs/RELEASE.md](docs/RELEASE.md) 참고.
+</div>
