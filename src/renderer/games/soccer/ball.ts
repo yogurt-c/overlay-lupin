@@ -1,6 +1,6 @@
 import { BALL_RADIUS, CEILING_Y, HEAD, LEGS, TORSO } from './field.js';
 import type { BallState } from './types.js';
-import type { ActivePartSpec } from './games/rules.js';
+import type { ActivePartSpec } from './rules.js';
 
 /** Anything the ball can bounce off: a player, with the motion it carries. */
 export interface Figure {

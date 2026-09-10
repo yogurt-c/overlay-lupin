@@ -1,4 +1,4 @@
-import type { Input } from './game.js';
+import type { Input } from './engine.js';
 
 const LEFT_KEYS = ['ArrowLeft', 'KeyA'];
 const RIGHT_KEYS = ['ArrowRight', 'KeyD'];

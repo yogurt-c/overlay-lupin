@@ -1,6 +1,8 @@
 import { LOGICAL_HEIGHT, WORLD_WIDTH } from './field.js';
-import { beginSketchFrame, drawBackgroundDots, drawBall, drawPitch, drawPlayer } from './draw.js';
-import type { ViewState } from './game.js';
+import { drawBackgroundDots, drawBall, drawPitch, drawPlayer } from './draw.js';
+import { beginSketchFrame } from '../../lib/sketch.js';
+import type { ViewState } from './engine.js';
+import type { Viewport } from '../types.js';
 
 /** Width of the camera's visible slice of the wide world — not the field itself. */
 export const VIEW_WIDTH = 320;
@@ -12,13 +14,6 @@ const BALL_WEIGHT = 0.65;
 
 export const INK = '#14181a';
 export const OPPONENT_INK = '#7a5433';
-
-export interface Viewport {
-  /** CSS pixel size of the canvas. */
-  width: number;
-  height: number;
-  pixelRatio: number;
-}
 
 /** Where the camera wants to be for this frame, clamped to the pitch. */
 export function cameraTarget(view: ViewState): number {

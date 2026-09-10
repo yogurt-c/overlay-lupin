@@ -1,4 +1,5 @@
 import { BALL_RADIUS, GROUND_Y, HEAD, KICK_FOOT, WORLD_WIDTH } from './field.js';
+import { jitter, roughLimb, roughSegment, roughStroke } from '../../lib/sketch.js';
 import type { Pose } from './types.js';
 
 export interface DrawPlayer {
@@ -13,96 +14,6 @@ export interface DrawPlayer {
 }
 
 const HALO = 'rgba(255,255,255,0.92)';
-
-/*
- * The sketch look comes from jittering every stroke. Doing that with
- * Math.random() on every frame makes the whole scene vibrate at 60Hz, which
- * both looks broken and gives away that something is animating. Instead the
- * jitter is driven by a seeded generator that is reset to the same value for
- * every frame within a "boil" interval, so the drawing holds still and only
- * redraws itself a few times a second, like ink on paper.
- */
-let rngState = 1;
-let frameSeed = 1;
-
-/** Advances the sketch's jitter pattern. Call this only a handful of times per second. */
-export function advanceSketchSeed(): void {
-  frameSeed = (frameSeed * 1664525 + 1013904223) >>> 0 || 1;
-}
-
-/** Resets the jitter generator so this frame reproduces the previous one exactly. */
-export function beginSketchFrame(): void {
-  rngState = frameSeed || 1;
-}
-
-function rnd(): number {
-  rngState ^= rngState << 13;
-  rngState ^= rngState >>> 17;
-  rngState ^= rngState << 5;
-  rngState >>>= 0;
-  return rngState / 4294967296;
-}
-
-function jitter(amount: number): number {
-  return (rnd() - 0.5) * amount;
-}
-
-function roughSegment(
-  ctx: CanvasRenderingContext2D,
-  x1: number,
-  y1: number,
-  x2: number,
-  y2: number,
-  width: number,
-  color: string,
-  passes: number
-): void {
-  for (let p = 0; p < passes; p++) {
-    const j = 1.3;
-    ctx.beginPath();
-    ctx.moveTo(x1 + jitter(j), y1 + jitter(j));
-    ctx.quadraticCurveTo(
-      (x1 + x2) / 2 + jitter(j * 1.3),
-      (y1 + y2) / 2 + jitter(j * 1.3),
-      x2 + jitter(j),
-      y2 + jitter(j)
-    );
-    ctx.lineWidth = width;
-    ctx.strokeStyle = color;
-    ctx.stroke();
-  }
-}
-
-/** A hand-drawn line with a white halo behind it, so it stays legible over any desktop. */
-function roughStroke(
-  ctx: CanvasRenderingContext2D,
-  x1: number,
-  y1: number,
-  x2: number,
-  y2: number,
-  width: number,
-  color: string
-): void {
-  roughSegment(ctx, x1, y1, x2, y2, width + 4.5, HALO, 1);
-  roughSegment(ctx, x1, y1, x2, y2, width, color, 2);
-}
-
-function roughLimb(
-  ctx: CanvasRenderingContext2D,
-  ax: number,
-  ay: number,
-  bx: number,
-  by: number,
-  cx: number,
-  cy: number,
-  width: number,
-  color: string
-): void {
-  roughSegment(ctx, ax, ay, bx, by, width + 4.5, HALO, 1);
-  roughSegment(ctx, bx, by, cx, cy, width + 4.5, HALO, 1);
-  roughSegment(ctx, ax, ay, bx, by, width, color, 2);
-  roughSegment(ctx, bx, by, cx, cy, width, color, 2);
-}
 
 const HIP_Y = -16;
 const CHEST_Y = -32;
@@ -202,11 +113,11 @@ export function drawPlayer(ctx: CanvasRenderingContext2D, player: DrawPlayer): v
   const { legs, hands, lean } = limbsFor(pose, anim);
 
   for (const [fx, fy] of legs) {
-    roughLimb(ctx, 0, HIP_Y, fx * 0.55 + 2, (HIP_Y + fy) / 2, fx, fy, 3.4, color);
+    roughLimb(ctx, 0, HIP_Y, fx * 0.55 + 2, (HIP_Y + fy) / 2, fx, fy, 3.4, color, HALO);
   }
-  roughStroke(ctx, lean, CHEST_Y, 0, HIP_Y, 4, color);
+  roughStroke(ctx, lean, CHEST_Y, 0, HIP_Y, 4, color, HALO);
   for (const [hx, hy] of hands) {
-    roughLimb(ctx, lean, CHEST_Y, (lean + hx) / 2 + 1, CHEST_Y + 5, hx, hy, 2.8, color);
+    roughLimb(ctx, lean, CHEST_Y, (lean + hx) / 2 + 1, CHEST_Y + 5, hx, hy, 2.8, color, HALO);
   }
 
   drawHead(ctx, lean * 1.2, HEAD.y, HEAD.r, color);
@@ -314,9 +225,9 @@ export function drawGoal(
   ctx.stroke();
   ctx.restore();
 
-  roughStroke(ctx, frontX, GROUND_Y, frontX, top, 3, color);
-  roughStroke(ctx, backX, GROUND_Y, backX, top, 2.2, color);
-  roughStroke(ctx, frontX, top, backX, top, 3, color);
+  roughStroke(ctx, frontX, GROUND_Y, frontX, top, 3, color, HALO);
+  roughStroke(ctx, backX, GROUND_Y, backX, top, 2.2, color, HALO);
+  roughStroke(ctx, frontX, top, backX, top, 3, color, HALO);
 }
 
 /** The ball: a wobbly ink blot whose marks rotate so its spin is visible. */

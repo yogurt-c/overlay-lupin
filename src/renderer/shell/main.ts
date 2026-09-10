@@ -1,11 +1,10 @@
-import { Game, STEP_MS, WIN_SCORE } from './game.js';
-import { advanceSketchSeed } from './draw.js';
-import { cameraTarget, followCamera, renderScene } from './scene.js';
-import { RULES } from './games/index.js';
-import { createInputSource } from './input.js';
-import { GAMES } from './games.js';
-import type { PeerInfo } from './types.js';
+import { advanceSketchSeed } from '../lib/sketch.js';
+import { GAME_MODULES } from '../games/registry.js';
+import type { GameMatch } from '../games/types.js';
+import type { PeerInfo } from '../types.js';
 
+/** The simulation advances in fixed 1/60s ticks; every constant below is per tick. */
+const STEP_MS = 1000 / 60;
 /** How often the hand-drawn jitter is re-rolled. Slow enough to read as ink, not noise. */
 const BOIL_MS = 90;
 const SEND_INTERVAL_MS = 1000 / 30;
@@ -19,6 +18,7 @@ const statusDot = document.getElementById('status-dot') as HTMLSpanElement;
 const panel = document.getElementById('panel') as HTMLDivElement;
 const panelTitle = document.getElementById('panel-title') as HTMLHeadingElement;
 const gameTabsEl = document.getElementById('game-tabs') as HTMLDivElement;
+const hintEl = document.getElementById('hint') as HTMLParagraphElement;
 const peerListEl = document.getElementById('peer-list') as HTMLUListElement;
 const hud = document.getElementById('hud') as HTMLDivElement;
 const scoreEl = document.getElementById('score') as HTMLSpanElement;
@@ -36,15 +36,15 @@ const leaveBtn = document.getElementById('leave-btn') as HTMLButtonElement;
 
 type UiState = 'idle' | 'panel' | 'waiting' | 'incoming' | 'play' | 'reconnecting';
 
-const game = new Game();
-const input = createInputSource();
+/** One input source per game, created once so listeners aren't re-attached every match. */
+const inputSources = new Map(GAME_MODULES.map((m) => [m.id, m.createInputSource(window)]));
 
 let uiState: UiState = 'idle';
-let selectedGameId = GAMES[0].id;
+let selectedGameId = GAME_MODULES[0].id;
+let activeMatch: GameMatch | null = null;
+let activeInput: { read(): unknown; clear(): void } | null = null;
 let peers: PeerInfo[] = [];
 let incomingPeerId: string | null = null;
-let cameraX = 0;
-let snapCamera = true;
 let lastScoreText = '';
 let lastBannerText = '';
 let stepAccumulator = 0;
@@ -79,7 +79,7 @@ function setUiState(next: UiState): void {
   hud.hidden = next !== 'play';
   reconnectMsg.hidden = next !== 'reconnecting';
   if (next !== 'play') {
-    input.clear();
+    for (const src of inputSources.values()) src.clear();
     clearCanvas();
   }
 }
@@ -89,12 +89,17 @@ function clearCanvas(): void {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 }
 
-function beginMatch(isHost: boolean): void {
+/** `gameId` is authoritative — for the host it's whatever was selected; for the
+ * invitee it's whatever the host actually invited to, which may differ from
+ * whatever tab they last had open. */
+function beginMatch(isHost: boolean, gameId: string): void {
+  const module = GAME_MODULES.find((m) => m.id === gameId) ?? GAME_MODULES[0];
   incomingPeerId = null;
-  game.startMatch(isHost);
+  selectedGameId = module.id;
+  activeMatch = module.createMatch(isHost);
+  activeInput = inputSources.get(module.id) ?? null;
   stepAccumulator = 0;
   lastFrameAt = performance.now();
-  snapCamera = true;
   lastScoreText = '';
   lastBannerText = '';
   setUiState('play');
@@ -102,22 +107,24 @@ function beginMatch(isHost: boolean): void {
 
 function endMatch(): void {
   window.overlayLupin.leaveMatch();
+  activeMatch = null;
   setUiState('idle');
 }
 
 function renderGameTabs(): void {
   gameTabsEl.innerHTML = '';
-  for (const gameDef of GAMES) {
+  for (const module of GAME_MODULES) {
     const btn = document.createElement('button');
-    btn.textContent = gameDef.label;
-    btn.classList.toggle('active', gameDef.id === selectedGameId);
-    btn.disabled = GAMES.length === 1;
+    btn.textContent = module.label;
+    btn.classList.toggle('active', module.id === selectedGameId);
+    btn.disabled = GAME_MODULES.length === 1;
     btn.addEventListener('click', () => {
-      selectedGameId = gameDef.id;
+      selectedGameId = module.id;
       renderGameTabs();
     });
     gameTabsEl.appendChild(btn);
   }
+  hintEl.textContent = GAME_MODULES.find((m) => m.id === selectedGameId)?.hint ?? '';
 }
 
 function renderPeerList(): void {
@@ -134,7 +141,7 @@ function renderPeerList(): void {
   for (const peer of peers) {
     const li = document.createElement('li');
     li.textContent = peer.name;
-    li.addEventListener('click', () => window.overlayLupin.invite(peer.id));
+    li.addEventListener('click', () => window.overlayLupin.invite(peer.id, selectedGameId));
     peerListEl.appendChild(li);
   }
 }
@@ -193,7 +200,7 @@ window.overlayLupin.onInviteCleared(() => {
   if (uiState === 'waiting' || uiState === 'incoming') setUiState('idle');
 });
 
-window.overlayLupin.onMatchFound((_peer, isHost) => beginMatch(isHost));
+window.overlayLupin.onMatchFound((_peer, isHost, gameId) => beginMatch(isHost, gameId));
 
 window.overlayLupin.onMatchLost((reason) => {
   if (reason === 'left') {
@@ -206,49 +213,28 @@ window.overlayLupin.onMatchLost((reason) => {
   }, 5000);
 });
 
-window.overlayLupin.onOpponentState((packet) => game.applyOpponentPacket(packet));
+window.overlayLupin.onOpponentState((packet) => activeMatch?.applyOpponentPacket(packet));
 
 /* ------------------------------------------------------------------ Drawing */
 
 function drawFrame(alpha: number): void {
-  const view = game.view(alpha);
-  cameraX = snapCamera ? cameraTarget(view) : followCamera(cameraX, view);
-  snapCamera = false;
-  renderScene(ctx, view, cameraX, { width: viewWidthPx, height: viewHeightPx, pixelRatio }, RULES.soccer.drawField);
+  activeMatch?.render(ctx, { width: viewWidthPx, height: viewHeightPx, pixelRatio }, alpha);
 }
 
 /* ---------------------------------------------------------------------- HUD */
 
-function bannerText(): string {
-  switch (game.phase) {
-    case 'kickoff':
-      return String(Math.max(1, Math.ceil(game.phaseTimer / 60)));
-    case 'goal':
-      return scoredByMe() ? '골!' : '실점';
-    case 'over':
-      return game.myScore > game.theirScore ? '승리' : '패배';
-    default:
-      return '';
-  }
-}
-
-function scoredByMe(): boolean {
-  if (game.lastScorer === null) return false;
-  return game.isHost ? game.lastScorer === 0 : game.lastScorer === 1;
-}
-
 function syncHud(): void {
-  const score = `${game.myScore} : ${game.theirScore}`;
-  if (score !== lastScoreText) {
-    scoreEl.textContent = score;
-    lastScoreText = score;
-  }
+  if (!activeMatch) return;
+  const { status, banner, bannerKind } = activeMatch.hud();
 
-  const banner = bannerText();
+  if (status !== lastScoreText) {
+    scoreEl.textContent = status;
+    lastScoreText = status;
+  }
   if (banner !== lastBannerText) {
     bannerEl.textContent = banner;
     bannerEl.hidden = banner === '';
-    bannerEl.dataset.kind = game.phase;
+    bannerEl.dataset.kind = bannerKind;
     lastBannerText = banner;
   }
 }
@@ -259,11 +245,11 @@ function frame(now: number): void {
   const elapsed = Math.min(now - lastFrameAt, 250);
   lastFrameAt = now;
 
-  if (uiState === 'play') {
+  if (uiState === 'play' && activeMatch) {
     stepAccumulator += elapsed;
     let steps = 0;
     while (stepAccumulator >= STEP_MS && steps < MAX_STEPS_PER_FRAME) {
-      game.step(input.read());
+      activeMatch.step(activeInput?.read());
       stepAccumulator -= STEP_MS;
       steps += 1;
     }
@@ -281,16 +267,15 @@ function frame(now: number): void {
 
     if (now - lastSentAt >= SEND_INTERVAL_MS) {
       lastSentAt = now;
-      const packet = game.buildOutgoingPacket();
-      window.overlayLupin.sendLocalState(packet.player, packet.world, packet.score);
+      window.overlayLupin.sendLocalState(activeMatch.buildOutgoingPacket());
     }
 
-    if (game.isOver) endMatch();
+    if (activeMatch.isOver()) endMatch();
   }
 
   requestAnimationFrame(frame);
 }
 
-idleIcon.title = `상대 찾기 · ${WIN_SCORE}골 먼저`;
+idleIcon.title = '상대 찾기';
 setUiState('idle');
 requestAnimationFrame(frame);

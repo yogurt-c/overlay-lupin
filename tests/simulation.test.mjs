@@ -3,9 +3,9 @@
  * output (`npm test` builds first). The simulation deliberately has no DOM or
  * network dependency, so it can be stepped tick by tick from plain Node.
  */
-import { Game, STEP_MS, WIN_SCORE } from '../dist/renderer/game.js';
-import { BALL_RADIUS, WORLD_WIDTH, HEAD, CEILING_Y } from '../dist/renderer/field.js';
-import { GOAL_LINE_LEFT, GOAL_LINE_RIGHT } from '../dist/renderer/games/soccer.js';
+import { Game, STEP_MS, WIN_SCORE } from '../dist/renderer/games/soccer/engine.js';
+import { BALL_RADIUS, WORLD_WIDTH, HEAD, CEILING_Y } from '../dist/renderer/games/soccer/field.js';
+import { GOAL_LINE_LEFT, GOAL_LINE_RIGHT } from '../dist/renderer/games/soccer/ruleset.js';
 
 const NONE = { left: false, right: false, jump: false, kick: false };
 let failures = 0;

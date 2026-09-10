@@ -2,48 +2,15 @@ import dgram from 'node:dgram';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
+import type { PeerInfo } from '../shared/protocol.js';
+
+export type { PeerInfo };
 
 const DISCOVERY_PORT = 47474;
 const HELLO_INTERVAL_MS = 2000;
 const PEER_TIMEOUT_MS = 6000;
 const INVITE_TIMEOUT_MS = 10000;
 const MATCH_TIMEOUT_MS = 3000;
-
-export interface PeerInfo {
-  id: string;
-  name: string;
-  address: string;
-}
-
-export interface PlayerState {
-  x: number;
-  y: number;
-  facing: 1 | -1;
-  pose: 'idle' | 'run' | 'jump' | 'kick';
-}
-
-export interface BallState {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  spin: number;
-}
-
-export type MatchPhase = 'kickoff' | 'play' | 'goal' | 'over';
-
-/** The authoritative slice of the simulation, produced by the host only. */
-export interface WorldState {
-  ball: BallState;
-  phase: MatchPhase;
-  timer: number;
-}
-
-export interface OpponentPacket {
-  player: PlayerState;
-  world?: WorldState;
-  score: [number, number];
-}
 
 interface KnownPeer extends PeerInfo {
   /** The peer's reply-socket port (from their HELLO), used for direct unicast messages. */
@@ -53,12 +20,13 @@ interface KnownPeer extends PeerInfo {
 
 type WireMessage =
   | { t: 'HELLO'; id: string; name: string; replyPort: number }
-  | { t: 'INVITE'; id: string }
-  | { t: 'ACCEPT'; id: string }
+  | { t: 'INVITE'; id: string; gameId: string }
+  | { t: 'ACCEPT'; id: string; gameId: string }
   | { t: 'DECLINE'; id: string }
   | { t: 'CANCEL'; id: string }
   | { t: 'LEAVE'; id: string }
-  | { t: 'POS'; id: string; player: PlayerState; world?: WorldState; score: [number, number] };
+  /** `payload` is the active game's own in-match packet shape — opaque here. */
+  | { t: 'POS'; id: string; payload: unknown };
 
 export declare interface GameNetwork {
   on(event: 'peers', listener: (peers: PeerInfo[]) => void): this;
@@ -68,10 +36,11 @@ export declare interface GameNetwork {
   on(event: 'invite-received', listener: (peer: PeerInfo) => void): this;
   /** Whatever waiting/incoming prompt was showing should be dismissed (cancelled, declined, or timed out). */
   on(event: 'invite-cleared', listener: (reason: 'declined' | 'cancelled' | 'timeout') => void): this;
-  on(event: 'match-found', listener: (peer: PeerInfo, isHost: boolean) => void): this;
+  /** `gameId` is whatever the inviter picked — both sides start the same game. */
+  on(event: 'match-found', listener: (peer: PeerInfo, isHost: boolean, gameId: string) => void): this;
   /** 'left' means the opponent intentionally left; 'timeout' means we stopped hearing from them. */
   on(event: 'match-lost', listener: (reason: 'left' | 'timeout') => void): this;
-  on(event: 'opponent-state', listener: (packet: OpponentPacket) => void): this;
+  on(event: 'opponent-state', listener: (payload: unknown) => void): this;
 }
 
 /**
@@ -95,8 +64,8 @@ export class GameNetwork extends EventEmitter {
   private replyPort = 0;
 
   private peers = new Map<string, KnownPeer>();
-  private pendingOutgoing: { peer: KnownPeer; sentAt: number } | null = null;
-  private pendingIncoming: { peer: KnownPeer; receivedAt: number } | null = null;
+  private pendingOutgoing: { peer: KnownPeer; gameId: string; sentAt: number } | null = null;
+  private pendingIncoming: { peer: KnownPeer; gameId: string; receivedAt: number } | null = null;
   private currentMatch: KnownPeer | null = null;
   private lastPosReceived = 0;
   private helloTimer?: ReturnType<typeof setInterval>;
@@ -125,12 +94,12 @@ export class GameNetwork extends EventEmitter {
     this.replySocket.close();
   }
 
-  /** Sends an invite and waits for the peer to accept or decline. */
-  invite(peerId: string): void {
+  /** Sends an invite for `gameId` and waits for the peer to accept or decline. */
+  invite(peerId: string, gameId: string): void {
     const peer = this.peers.get(peerId);
     if (!peer || this.currentMatch || this.pendingOutgoing) return;
-    this.pendingOutgoing = { peer, sentAt: Date.now() };
-    this.sendDirect({ t: 'INVITE', id: this.myId }, peer);
+    this.pendingOutgoing = { peer, gameId, sentAt: Date.now() };
+    this.sendDirect({ t: 'INVITE', id: this.myId, gameId }, peer);
     this.emit('invite-sent', this.toPeerInfo(peer));
   }
 
@@ -145,10 +114,10 @@ export class GameNetwork extends EventEmitter {
   /** Accepts an invite someone sent us. */
   acceptInvite(peerId: string): void {
     if (!this.pendingIncoming || this.pendingIncoming.peer.id !== peerId) return;
-    const { peer } = this.pendingIncoming;
+    const { peer, gameId } = this.pendingIncoming;
     this.pendingIncoming = null;
-    this.sendDirect({ t: 'ACCEPT', id: this.myId }, peer);
-    this.establishMatch(peer);
+    this.sendDirect({ t: 'ACCEPT', id: this.myId, gameId }, peer);
+    this.establishMatch(peer, gameId);
   }
 
   /** Declines an invite someone sent us. */
@@ -165,9 +134,9 @@ export class GameNetwork extends EventEmitter {
     this.currentMatch = null;
   }
 
-  sendLocalState(player: PlayerState, world: WorldState | undefined, score: [number, number]): void {
+  sendLocalState(payload: unknown): void {
     if (!this.currentMatch) return;
-    this.sendDirect({ t: 'POS', id: this.myId, player, world, score }, this.currentMatch);
+    this.sendDirect({ t: 'POS', id: this.myId, payload }, this.currentMatch);
   }
 
   private sendDirect(msg: WireMessage, peer: KnownPeer): void {
@@ -199,7 +168,7 @@ export class GameNetwork extends EventEmitter {
       case 'INVITE': {
         const peer = this.peers.get(msg.id);
         if (!peer || this.currentMatch || this.pendingIncoming) return;
-        this.pendingIncoming = { peer, receivedAt: Date.now() };
+        this.pendingIncoming = { peer, gameId: msg.gameId, receivedAt: Date.now() };
         this.emit('invite-received', this.toPeerInfo(peer));
         break;
       }
@@ -208,7 +177,7 @@ export class GameNetwork extends EventEmitter {
         const peer = this.peers.get(msg.id);
         if (!peer || !this.pendingOutgoing || this.pendingOutgoing.peer.id !== msg.id) return;
         this.pendingOutgoing = null;
-        this.establishMatch(peer);
+        this.establishMatch(peer, msg.gameId);
         break;
       }
 
@@ -236,17 +205,17 @@ export class GameNetwork extends EventEmitter {
       case 'POS':
         if (this.currentMatch && this.currentMatch.id === msg.id) {
           this.lastPosReceived = Date.now();
-          this.emit('opponent-state', { player: msg.player, world: msg.world, score: msg.score });
+          this.emit('opponent-state', msg.payload);
         }
         break;
     }
   }
 
-  private establishMatch(peer: KnownPeer): void {
+  private establishMatch(peer: KnownPeer, gameId: string): void {
     this.currentMatch = peer;
     this.lastPosReceived = Date.now();
     const isHost = this.myId < peer.id;
-    this.emit('match-found', this.toPeerInfo(peer), isHost);
+    this.emit('match-found', this.toPeerInfo(peer), isHost, gameId);
   }
 
   private toPeerInfo(peer: KnownPeer): PeerInfo {
