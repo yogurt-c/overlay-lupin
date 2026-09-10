@@ -11,18 +11,18 @@ import type { Pose } from './types.js';
 const ACTIVE_FRAMES = 10;
 const RECOVER_FRAMES = 18;
 /** Sustained for the whole dive window, not just the trigger tick, so the lunge actually covers ground. */
-const DIVE_LUNGE_SPEED = 6.2;
+const DIVE_LUNGE_SPEED = 9;
 
 /**
  * Power/lift per aerial variant. `lift` is subtracted from vy (see ball.ts),
  * so a negative lift adds downward speed instead of popping the ball up.
  */
 const SHOT: Record<string, { power: number; lift: number; spin: number }> = {
-  spike: { power: 6, lift: 2, spin: 0.4 },
-  spikeForward: { power: 9, lift: 0.5, spin: 0.4 },
-  spikeDown: { power: 5.5, lift: -6, spin: 0.4 },
-  spikeUp: { power: 4, lift: 7, spin: 0.4 },
-  tip: { power: 2.5, lift: 1, spin: 0.2 }
+  spike: { power: 4.5, lift: 1.5, spin: 0.4 },
+  spikeForward: { power: 6.5, lift: 0.4, spin: 0.4 },
+  spikeDown: { power: 4, lift: -4.5, spin: 0.4 },
+  spikeUp: { power: 3, lift: 5.5, spin: 0.4 },
+  tip: { power: 2, lift: 0.8, spin: 0.2 }
 };
 
 function activePartFor(pose: string, facing: 1 | -1, side: 1 | -1): ActivePartSpec | undefined {
@@ -103,9 +103,11 @@ function resetPositions(mySide: 1 | -1) {
     remoteX: WORLD_WIDTH - localX,
     remoteY: 0,
     ballX: NET_X + jitter,
-    ballY: CEILING_Y * 0.85,
+    ballY: CEILING_Y * 0.4,
     ballR: BALL_RADIUS,
-    ballGravityScale: 0.6
+    ballGravityScale: 0.5,
+    ballTouchScale: 0.65,
+    ballServeVy: -6
   };
 }
 

@@ -47,6 +47,10 @@ export interface GameRules {
     ballR: number;
     /** Passed straight through to the ball's own `gravityScale` — omit for a normal fall. */
     ballGravityScale?: number;
+    /** Passed straight through to the ball's own `touchScale` — omit for normal-weight passive contact. */
+    ballTouchScale?: number;
+    /** Upward velocity given to the ball the instant play begins — omit for a plain drop from `ballY`. */
+    ballServeVy?: number;
   };
 
   /** The local player's allowed x range this tick. */
