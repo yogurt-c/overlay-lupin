@@ -78,7 +78,9 @@ export function computeBotInput(self: BotBody, neighbors: BotBody[], food: FoodD
   }
 
   if (threat) {
-    return { ...directionInput(self.x - threat.x, self.y - threat.y), boost: true };
+    // No boost here: a chaser only closes the gap by spending mass on their own boost, and a
+    // fleeing bot matching that burst 1:1 would cancel it out, making a boosting bot literally uncatchable.
+    return { ...directionInput(self.x - threat.x, self.y - threat.y), boost: false };
   }
 
   const target = prey ?? nearestFood(self, food);
