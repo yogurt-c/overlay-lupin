@@ -1,5 +1,4 @@
-import { BALL_RADIUS, CEILING_Y, HEAD, LEGS, TORSO } from './field.js';
-import type { BallState } from './types.js';
+import { CEILING_Y, HEAD, LEGS, TORSO } from './field.js';
 import type { ActivePartSpec } from './rules.js';
 
 /** Anything the ball can bounce off: a player, with the motion it carries. */
@@ -11,6 +10,16 @@ export interface Figure {
   facing: 1 | -1;
 }
 
+/** The ball's own radius travels with it, so different games can use different-sized balls. */
+export interface BallState {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  spin: number;
+  r: number;
+}
+
 const GRAVITY = 0.4;
 const AIR_DRAG = 0.996;
 const BOUNCE = 0.62;
@@ -19,9 +28,7 @@ const MAX_SPEED = 16;
 const REST_SPEED = 0.5;
 const SPIN_PER_PIXEL = 0.05;
 
-/** The ball rests on the ground line rather than sinking half of itself into it. */
-export const REST_Y = -BALL_RADIUS;
-/** Restitution against a rigid barrier — a goal frame, a net, a touchline. */
+/** Restitution against a rigid barrier — a goal frame, a net, a wall, a touchline. */
 export const WALL_BOUNCE = 0.55;
 
 const HEAD_BOUNCE = 1.12;
@@ -34,6 +41,11 @@ const HEAD_BOUNCE = 1.12;
 export const BODY_BOUNCE = 0.25;
 const HEAD_PUSH = 1.7;
 export const BODY_PUSH = 0.9;
+
+/** The ball rests on the ground line rather than sinking half of itself into it. */
+function restY(b: BallState): number {
+  return -b.r;
+}
 
 /** Integrates one tick of free flight: gravity, drag, ground and ceiling. */
 export function integrateBall(b: BallState): void {
@@ -50,16 +62,16 @@ export function integrateBall(b: BallState): void {
   b.y += b.vy;
   b.spin += b.vx * SPIN_PER_PIXEL;
 
-  if (b.y >= REST_Y) {
+  if (b.y >= restY(b)) {
     landOnGround(b);
-  } else if (b.y <= CEILING_Y + BALL_RADIUS) {
-    b.y = CEILING_Y + BALL_RADIUS;
+  } else if (b.y <= CEILING_Y + b.r) {
+    b.y = CEILING_Y + b.r;
     b.vy = Math.abs(b.vy) * BOUNCE;
   }
 }
 
 function landOnGround(b: BallState): void {
-  b.y = REST_Y;
+  b.y = restY(b);
   b.vy = -b.vy * BOUNCE;
   b.vx *= ROLL_DRAG;
   if (Math.abs(b.vy) < REST_SPEED) b.vy = 0;
@@ -70,9 +82,20 @@ function landOnGround(b: BallState): void {
  * ends up pressed into the pitch squirts back out instead of sinking through.
  */
 export function keepBallAbovePitch(b: BallState): void {
-  if (b.y <= REST_Y) return;
-  b.y = REST_Y;
+  if (b.y <= restY(b)) return;
+  b.y = restY(b);
   if (b.vy > 0) b.vy = -b.vy * BOUNCE;
+}
+
+/** Confines the ball between two vertical barriers (side walls), bouncing off either. */
+export function bounceOffWalls(b: BallState, minX: number, maxX: number): void {
+  if (b.x - b.r < minX) {
+    b.x = minX + b.r;
+    b.vx = Math.abs(b.vx) * WALL_BOUNCE;
+  } else if (b.x + b.r > maxX) {
+    b.x = maxX - b.r;
+    b.vx = -Math.abs(b.vx) * WALL_BOUNCE;
+  }
 }
 
 interface BodyPart {
@@ -82,7 +105,7 @@ interface BodyPart {
   bounce: number;
   push: number;
   /** Present only for parts that redirect the ball outright, like a shot — absent means a normal bounce. */
-  shot?: { power: number; lift: number; spin: number };
+  shot?: { power: number; lift: number; spin: number; dir?: 1 | -1 };
 }
 
 /** The third body part is either a game-supplied active part (a kick foot, a dive reach, ...) or the default legs. */
@@ -117,7 +140,7 @@ export function collideBallWithFigure(b: BallState, p: Figure, active?: ActivePa
 
   for (const part of partsOf(p, active)) {
     const distance = Math.hypot(b.x - part.x, b.y - part.y);
-    const depth = part.r + BALL_RADIUS - distance;
+    const depth = part.r + b.r - distance;
     if (depth > deepest) {
       hit = part;
       deepest = depth;
@@ -129,14 +152,15 @@ export function collideBallWithFigure(b: BallState, p: Figure, active?: ActivePa
   const nx = hitDistance > 0.001 ? (b.x - hit.x) / hitDistance : p.facing;
   const ny = hitDistance > 0.001 ? (b.y - hit.y) / hitDistance : -1;
 
-  b.x = hit.x + nx * (hit.r + BALL_RADIUS);
-  b.y = hit.y + ny * (hit.r + BALL_RADIUS);
+  b.x = hit.x + nx * (hit.r + b.r);
+  b.y = hit.y + ny * (hit.r + b.r);
 
   if (hit.shot) {
     // A shot overrides whatever the ball was doing, rather than just bouncing off it.
-    b.vx = p.facing * hit.shot.power + p.vx;
+    const dir = hit.shot.dir ?? p.facing;
+    b.vx = dir * hit.shot.power + p.vx;
     b.vy = -hit.shot.lift + Math.min(0, ny * 3);
-    b.spin += p.facing * hit.shot.spin;
+    b.spin += dir * hit.shot.spin;
     return;
   }
 

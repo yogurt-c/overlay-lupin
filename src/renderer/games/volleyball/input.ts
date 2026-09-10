@@ -4,8 +4,8 @@ const LEFT_KEYS = ['ArrowLeft', 'KeyA'];
 const RIGHT_KEYS = ['ArrowRight', 'KeyD'];
 const JUMP_KEYS = ['ArrowUp', 'KeyW'];
 const DOWN_KEYS = ['ArrowDown', 'KeyS'];
-/** Any of these triggers a kick; Down/S double as both a kick trigger and the (unused-by-soccer) down signal. */
-const ACTION_KEYS = ['Space', 'ArrowDown', 'KeyS'];
+/** Space alone — unlike soccer, Down/S are a pure direction here, not an alternate trigger. */
+const ACTION_KEYS = ['Space'];
 
 const GAME_KEYS = new Set([...LEFT_KEYS, ...RIGHT_KEYS, ...JUMP_KEYS, ...DOWN_KEYS, ...ACTION_KEYS]);
 
@@ -17,8 +17,8 @@ export interface InputSource {
 /**
  * Reads the keyboard into the simulation's input shape. Held keys are tracked
  * rather than sampled per event so a tick always sees the current state, and
- * losing focus drops everything — otherwise a key released while the overlay is
- * in the background would stay stuck down forever.
+ * losing focus drops everything — otherwise a key released while the overlay
+ * is in the background would stay stuck down forever.
  */
 export function createInputSource(target: Window = window): InputSource {
   const held = new Set<string>();

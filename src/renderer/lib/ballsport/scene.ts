@@ -1,8 +1,9 @@
 import { LOGICAL_HEIGHT, WORLD_WIDTH } from './field.js';
 import { drawBackgroundDots, drawBall, drawPitch, drawPlayer } from './draw.js';
-import { beginSketchFrame } from '../../lib/sketch.js';
+import type { Limbs } from './draw.js';
+import { beginSketchFrame } from '../sketch.js';
 import type { ViewState } from './engine.js';
-import type { Viewport } from '../types.js';
+import type { Viewport } from '../../games/types.js';
 
 /** Width of the camera's visible slice of the wide world — not the field itself. */
 export const VIEW_WIDTH = 320;
@@ -36,13 +37,19 @@ function fieldTransform(viewport: Viewport): { scale: number; offsetX: number; o
   };
 }
 
+/** The bits of drawing only the active game knows how to do. */
+export interface SceneHooks {
+  drawField(ctx: CanvasRenderingContext2D, cameraX: number, viewWidth: number): void;
+  limbsFor(pose: string, anim: number): Limbs;
+}
+
 /** Draws one complete frame of the match, clearing whatever was there before. */
 export function renderScene(
   ctx: CanvasRenderingContext2D,
   view: ViewState,
   cameraX: number,
   viewport: Viewport,
-  drawField: (ctx: CanvasRenderingContext2D, cameraX: number, viewWidth: number) => void
+  hooks: SceneHooks
 ): void {
   ctx.setTransform(viewport.pixelRatio, 0, 0, viewport.pixelRatio, 0, 0);
   ctx.clearRect(0, 0, viewport.width, viewport.height);
@@ -55,12 +62,12 @@ export function renderScene(
 
   beginSketchFrame();
   drawBackgroundDots(ctx, cameraX, VIEW_WIDTH, DOT_SPACING, 'rgba(20,24,26,0.16)');
-  drawPitch(ctx, cameraX, VIEW_WIDTH, 'rgba(20,24,26,0.4)');
-  drawField(ctx, cameraX, VIEW_WIDTH);
+  drawPitch(ctx, cameraX, VIEW_WIDTH, WORLD_WIDTH, 'rgba(20,24,26,0.4)');
+  hooks.drawField(ctx, cameraX, VIEW_WIDTH);
 
-  drawPlayer(ctx, { ...view.remote, color: OPPONENT_INK });
-  drawPlayer(ctx, { ...view.local, color: INK });
-  drawBall(ctx, view.ball.x, view.ball.y, view.ball.spin, INK);
+  drawPlayer(ctx, { ...view.remote, color: OPPONENT_INK }, hooks.limbsFor);
+  drawPlayer(ctx, { ...view.local, color: INK }, hooks.limbsFor);
+  drawBall(ctx, view.ball.x, view.ball.y, view.ball.r, view.ball.spin, INK);
 
   ctx.restore();
 }
