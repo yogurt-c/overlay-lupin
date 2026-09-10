@@ -1,20 +1,8 @@
-import {
-  BALL_RADIUS,
-  CEILING_Y,
-  GOAL_HEIGHT,
-  GOAL_LINE_LEFT,
-  GOAL_LINE_RIGHT,
-  PLAYER_HALF,
-  WORLD_WIDTH
-} from './field.js';
-import {
-  collideBallWithFigure,
-  integrateBall,
-  keepBallAbovePitch,
-  settleBallInNet,
-  WALL_BOUNCE
-} from './ball.js';
+import { PLAYER_HALF } from './field.js';
+import { collideBallWithFigure, integrateBall, keepBallAbovePitch } from './ball.js';
 import type { Figure } from './ball.js';
+import { RULES } from './games/index.js';
+import type { GameRules, RuleActor } from './games/rules.js';
 import type { BallState, MatchPhase, OpponentPacket, PlayerState, Pose, WorldState } from './types.js';
 
 /** The simulation advances in fixed 1/60s ticks; every constant below is per tick. */
@@ -28,9 +16,6 @@ const GROUND_DRAG = 0.7;
 const AIR_DRAG = 0.95;
 const AIR_CONTROL = 0.55;
 const SHOVE_STRENGTH = 0.45;
-
-const KICK_ACTIVE_FRAMES = 10;
-const KICK_RECOVER_FRAMES = 20;
 
 /** 2s of countdown before the ball drops — long enough to read "2, 1" and reposition. */
 const KICKOFF_FRAMES = 120;
@@ -53,11 +38,8 @@ export interface Input {
   kick: boolean;
 }
 
-interface LocalPlayer extends Figure {
-  pose: Pose;
+interface LocalPlayer extends RuleActor {
   anim: number;
-  kickTimer: number;
-  kickCooldown: number;
 }
 
 interface RemotePlayer extends Figure {
@@ -94,9 +76,23 @@ export class Game {
   /** Which side put the last one in, so each machine can word its own banner. */
   lastScorer: 0 | 1 | null = null;
 
-  local: LocalPlayer = { x: 0, y: 0, vx: 0, vy: 0, facing: 1, pose: 'idle', anim: 0, kickTimer: 0, kickCooldown: 0 };
+  local: LocalPlayer = {
+    x: 0,
+    y: 0,
+    vx: 0,
+    vy: 0,
+    facing: 1,
+    pose: 'idle',
+    anim: 0,
+    actionTimer: 0,
+    actionCooldown: 0,
+    activePart: undefined
+  };
   remote: RemotePlayer = { x: 0, y: 0, vx: 0, vy: 0, facing: -1, pose: 'idle', anim: 0 };
-  ball: BallState = { x: WORLD_WIDTH / 2, y: 0, vx: 0, vy: 0, spin: 0 };
+  ball: BallState = { x: 0, y: 0, vx: 0, vy: 0, spin: 0 };
+
+  /** The active ruleset for this match — everything game-specific is delegated here. */
+  private rules: GameRules = RULES.soccer;
 
   private remoteTarget: PlayerState = { x: 0, y: 0, facing: -1, pose: 'idle' };
   private prev: Snapshot = this.snapshot();
@@ -114,8 +110,13 @@ export class Game {
     return this.isHost ? this.score[1] : this.score[0];
   }
 
-  startMatch(isHost: boolean): void {
+  private get mySide(): 1 | -1 {
+    return this.isHost ? 1 : -1;
+  }
+
+  startMatch(isHost: boolean, gameId: string = 'soccer'): void {
     this.isHost = isHost;
+    this.rules = RULES[gameId] ?? RULES.soccer;
     this.score = [0, 0];
     this.lastScorer = null;
     this.resetPositions();
@@ -124,27 +125,30 @@ export class Game {
     this.prev = this.snapshot();
   }
 
-  /** Puts both figures back on their marks and parks the ball above the centre spot. */
+  /** Puts both figures back on their marks and parks the ball per the active ruleset. */
   private resetPositions(): void {
-    const mySide: 1 | -1 = this.isHost ? 1 : -1;
-    this.local.x = mySide === 1 ? WORLD_WIDTH * 0.36 : WORLD_WIDTH * 0.64;
-    this.local.y = 0;
+    const mySide = this.mySide;
+    const pos = this.rules.resetPositions(mySide);
+
+    this.local.x = pos.localX;
+    this.local.y = pos.localY;
     this.local.vx = 0;
     this.local.vy = 0;
     this.local.facing = mySide;
     this.local.pose = 'idle';
-    this.local.kickTimer = 0;
-    this.local.kickCooldown = 0;
+    this.local.actionTimer = 0;
+    this.local.actionCooldown = 0;
+    this.local.activePart = undefined;
 
-    this.remote.x = WORLD_WIDTH - this.local.x;
-    this.remote.y = 0;
+    this.remote.x = pos.remoteX;
+    this.remote.y = pos.remoteY;
     this.remote.vx = 0;
     this.remote.vy = 0;
     this.remote.facing = (mySide * -1) as 1 | -1;
     this.remote.pose = 'idle';
-    this.remoteTarget = { x: this.remote.x, y: 0, facing: this.remote.facing, pose: 'idle' };
+    this.remoteTarget = { x: this.remote.x, y: this.remote.y, facing: this.remote.facing, pose: 'idle' };
 
-    this.ball = { x: WORLD_WIDTH / 2, y: CEILING_Y * 0.85, vx: 0, vy: 0, spin: 0 };
+    this.ball = { x: pos.ballX, y: pos.ballY, vx: 0, vy: 0, spin: 0 };
   }
 
   /** Advances the simulation by exactly one tick. */
@@ -162,10 +166,11 @@ export class Game {
       // Let the ball finish its run into the net instead of freezing on the line.
       this.stepBall(false);
     } else if (this.phase === 'kickoff') {
-      // The ball hangs at the centre spot and only drops once the whistle goes.
+      // The ball hangs at its serve spot and only drops once the whistle goes.
+      const pos = this.rules.resetPositions(this.mySide);
       this.ball.vx = 0;
       this.ball.vy = 0;
-      this.ball.x = WORLD_WIDTH / 2;
+      this.ball.x = pos.ballX;
     }
   }
 
@@ -201,14 +206,6 @@ export class Game {
 
     if (input.jump && onGround) p.vy = JUMP_VELOCITY;
 
-    if (p.kickCooldown > 0) p.kickCooldown -= 1;
-    if (p.kickTimer > 0) {
-      p.kickTimer -= 1;
-    } else if (input.kick && p.kickCooldown <= 0) {
-      p.kickTimer = KICK_ACTIVE_FRAMES;
-      p.kickCooldown = KICK_ACTIVE_FRAMES + KICK_RECOVER_FRAMES;
-    }
-
     p.vy += GRAVITY;
     p.x += p.vx;
     p.y = Math.min(0, p.y + p.vy);
@@ -218,10 +215,12 @@ export class Game {
     }
 
     this.shoveApart();
-    p.x = Math.max(PLAYER_HALF, Math.min(WORLD_WIDTH - PLAYER_HALF, p.x));
+    const bounds = this.rules.bounds(this.mySide);
+    p.x = Math.max(bounds.min, Math.min(bounds.max, p.x));
 
     if (onGround) p.anim += Math.abs(p.vx) * RUN_ANIM_PER_PIXEL;
-    p.pose = this.poseFor(p, p.kickTimer > 0);
+    p.pose = p.y < -1 ? 'jump' : Math.abs(p.vx) > 0.4 ? 'run' : 'idle';
+    p.activePart = this.rules.stepAction(p, input);
   }
 
   /** Keeps the two figures from occupying the same spot without needing a shared physics owner. */
@@ -232,12 +231,6 @@ export class Game {
     if (Math.abs(dx) >= minGap || Math.abs(dy) > 26) return;
     const dir = dx === 0 ? this.local.facing * -1 : Math.sign(dx);
     this.local.x += dir * (minGap - Math.abs(dx)) * SHOVE_STRENGTH;
-  }
-
-  private poseFor(p: { y: number; vx: number }, kicking: boolean): Pose {
-    if (kicking) return 'kick';
-    if (p.y < -1) return 'jump';
-    return Math.abs(p.vx) > 0.4 ? 'run' : 'idle';
   }
 
   /** Smooths the opponent toward their last packet and derives their velocity from the motion. */
@@ -256,40 +249,22 @@ export class Game {
 
   private stepBall(scoring: boolean): void {
     integrateBall(this.ball);
-    collideBallWithFigure(this.ball, this.local, this.local.kickTimer > 0);
-    collideBallWithFigure(this.ball, this.remote, this.remote.pose === 'kick');
+    collideBallWithFigure(this.ball, this.local, this.local.activePart);
+    collideBallWithFigure(this.ball, this.remote, this.rules.activePartFor(this.remote.pose, this.remote.facing));
     keepBallAbovePitch(this.ball);
-    if (scoring) this.resolveGoals();
-    else settleBallInNet(this.ball);
-  }
-
-  /** Goal mouths only count below the crossbar; the frame above it is solid. */
-  private resolveGoals(): void {
-    const b = this.ball;
-    const underBar = b.y > -GOAL_HEIGHT + BALL_RADIUS;
-
-    if (b.x - BALL_RADIUS <= GOAL_LINE_LEFT) {
-      if (underBar) {
-        this.awardGoal(1);
-        return;
-      }
-      b.x = GOAL_LINE_LEFT + BALL_RADIUS;
-      b.vx = Math.abs(b.vx) * WALL_BOUNCE;
-    } else if (b.x + BALL_RADIUS >= GOAL_LINE_RIGHT) {
-      if (underBar) {
-        this.awardGoal(0);
-        return;
-      }
-      b.x = GOAL_LINE_RIGHT - BALL_RADIUS;
-      b.vx = -Math.abs(b.vx) * WALL_BOUNCE;
+    if (scoring) {
+      const scorer = this.rules.resolveRound(this.ball);
+      if (scorer !== null) this.awardPoint(scorer);
+    } else {
+      this.rules.settleBall?.(this.ball);
     }
   }
 
-  private awardGoal(scorer: 0 | 1): void {
+  private awardPoint(scorer: 0 | 1): void {
     // Only the host scores. The client keeps the ball inside the pitch until
     // the host's packet arrives, so its prediction can't run off the field.
     if (!this.isHost) {
-      settleBallInNet(this.ball);
+      this.rules.settleBall?.(this.ball);
       return;
     }
     this.score[scorer] += 1;

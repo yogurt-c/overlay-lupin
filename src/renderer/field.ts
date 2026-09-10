@@ -19,13 +19,6 @@ export const GROUND_Y = LOGICAL_HEIGHT - GROUND_MARGIN;
 /** Highest the ball is allowed to fly, relative to the ground line. */
 export const CEILING_Y = -(GROUND_Y - 6);
 
-export const GOAL_MARGIN = 14;
-export const GOAL_DEPTH = 24;
-export const GOAL_HEIGHT = 64;
-/** Goal lines — the mouth of each goal faces the middle of the pitch. */
-export const GOAL_LINE_LEFT = GOAL_MARGIN + GOAL_DEPTH;
-export const GOAL_LINE_RIGHT = WORLD_WIDTH - GOAL_LINE_LEFT;
-
 export const BALL_RADIUS = 9;
 
 /** Half-width of a player's footprint, used for pitch bounds and shoving. */
