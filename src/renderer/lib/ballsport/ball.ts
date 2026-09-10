@@ -20,6 +20,8 @@ export interface BallState {
   r: number;
   /** Multiplies gravity for this ball only — a lighter/floatier ball for a game that wants a slower fall. Defaults to 1. */
   gravityScale?: number;
+  /** Scales the bounce/push impulse from a passive (non-shot) body touch — below 1 softens casual contact. Defaults to 1. */
+  touchScale?: number;
 }
 
 const GRAVITY = 0.4;
@@ -168,15 +170,16 @@ export function collideBallWithFigure(b: BallState, p: Figure, active?: ActivePa
 
   // Carry the player's own motion into the ball, but only the upward part of a
   // jump — a falling player shouldn't drag the ball into the ground.
+  const touchScale = b.touchScale ?? 1;
   const carryX = p.vx;
   const carryY = p.vy < 0 ? p.vy * 0.6 : 0;
   const rvx = b.vx - carryX;
   const rvy = b.vy - carryY;
   const closing = rvx * nx + rvy * ny;
   if (closing < 0) {
-    b.vx = carryX + rvx - (1 + hit.bounce) * closing * nx;
-    b.vy = carryY + rvy - (1 + hit.bounce) * closing * ny;
+    b.vx = carryX + rvx - (1 + hit.bounce * touchScale) * closing * nx;
+    b.vy = carryY + rvy - (1 + hit.bounce * touchScale) * closing * ny;
   }
-  b.vx += nx * hit.push;
-  b.vy += ny * hit.push;
+  b.vx += nx * hit.push * touchScale;
+  b.vy += ny * hit.push * touchScale;
 }

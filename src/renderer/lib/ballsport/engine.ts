@@ -131,6 +131,8 @@ export class Game {
   private prev: Snapshot = this.snapshot();
   /** Where the ball was parked at the last reset — cached so the kickoff hold doesn't re-roll a random serve spot every tick. */
   private serveBallX = 0;
+  /** Upward velocity the ball is given the instant play begins, if the ruleset wants a toss rather than a drop. */
+  private serveVy = 0;
 
   constructor(rules: GameRules) {
     this.rules = rules;
@@ -191,8 +193,18 @@ export class Game {
     this.remote.pose = 'idle';
     this.remoteTarget = { x: this.remote.x, y: this.remote.y, facing: this.remote.facing, pose: 'idle' };
 
-    this.ball = { x: pos.ballX, y: pos.ballY, vx: 0, vy: 0, spin: 0, r: pos.ballR, gravityScale: pos.ballGravityScale };
+    this.ball = {
+      x: pos.ballX,
+      y: pos.ballY,
+      vx: 0,
+      vy: 0,
+      spin: 0,
+      r: pos.ballR,
+      gravityScale: pos.ballGravityScale,
+      touchScale: pos.ballTouchScale
+    };
     this.serveBallX = pos.ballX;
+    this.serveVy = pos.ballServeVy ?? 0;
   }
 
   /** Advances the simulation by exactly one tick. */
@@ -209,8 +221,12 @@ export class Game {
     } else if (celebrating) {
       // Let the ball finish its run into the net instead of freezing on the line.
       this.stepBall(false);
-    } else if (this.phase === 'kickoff') {
+    } else if (this.phase === 'kickoff' && this.isHost) {
       // The ball hangs at its serve spot and only drops once the whistle goes.
+      // Host-only: the client's own resetPositions() rolled an independent
+      // random serve spot, so pinning to it here would fight the host's
+      // authoritative position arriving over the network every packet —
+      // the client just waits for that packet instead (see applyOpponentPacket).
       this.ball.vx = 0;
       this.ball.vy = 0;
       this.ball.x = this.serveBallX;
@@ -224,6 +240,8 @@ export class Game {
     if (this.phase === 'kickoff') {
       // Harmless for the client to start early: the host's next packet corrects it.
       this.phase = 'play';
+      // A ruleset that wants a served toss instead of a drop gives the ball its upward pop right here.
+      this.ball.vy = this.serveVy;
     } else if (this.isHost && this.phase === 'goal') {
       this.resetPositions();
       this.phase = 'kickoff';
