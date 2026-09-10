@@ -5,7 +5,7 @@ import type { CellInput, CellMemberPacket, CellMemberPacketTagged, CellWorld } f
 import type { GameMatch, GameModule, MatchHud, Viewport } from '../types.js';
 
 const EMPTY_WORLD: CellWorld = { players: [], food: [] };
-const NO_INPUT: CellInput = { up: false, down: false, left: false, right: false };
+const NO_INPUT: CellInput = { up: false, down: false, left: false, right: false, boost: false };
 
 function statusFor(world: CellWorld, myId: string): string {
   const me = world.players.find((p) => p.id === myId);
@@ -79,7 +79,7 @@ class CellMatch implements GameMatch {
 export const cellModule: GameModule = {
   id: 'cell',
   label: '세포키우기',
-  hint: '← → ↑ ↓ 이동 · 점을 먹고 커지기 · 나보다 작은 세포는 먹고, 큰 세포는 피하기',
+  hint: '← → ↑ ↓ 이동 · 스페이스바로 질량 소모하며 가속 · 점을 먹고 커지기 · 가끔 나타나는 큰 먹이는 고득점 · 나보다 작은 세포는 먹고, 큰 세포는 피하기',
   matching: 'room',
   roomCapacity: 6,
   createMatch: (isHost, myId, myName) => new CellMatch(isHost, myId, myName),
