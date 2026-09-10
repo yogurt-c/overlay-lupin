@@ -57,7 +57,8 @@ let peers: PeerInfo[] = [];
 let rooms: RoomInfo[] = [];
 let currentRoster: RoomRoster | null = null;
 let incomingPeerId: string | null = null;
-let lastScoreText = '';
+/** null until the first sync, so a match that wants no status line still clears the HUD. */
+let lastScoreText: string | null = null;
 let lastBannerText = '';
 let stepAccumulator = 0;
 let boilAccumulator = 0;
@@ -132,7 +133,7 @@ function startMatch(mode: 'duel' | 'room', isHost: boolean, gameId: string): voi
   activeInput = inputSources.get(module.id) ?? null;
   stepAccumulator = 0;
   lastFrameAt = performance.now();
-  lastScoreText = '';
+  lastScoreText = null;
   lastBannerText = '';
   setUiState('play');
 }
@@ -372,6 +373,8 @@ function syncHud(): void {
 
   if (status !== lastScoreText) {
     scoreEl.textContent = status;
+    // A game with nothing to say up there gets no HUD at all.
+    hud.hidden = status === '';
     lastScoreText = status;
   }
   if (banner !== lastBannerText) {
