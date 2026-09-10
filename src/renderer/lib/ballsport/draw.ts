@@ -146,6 +146,47 @@ export function drawPitch(
   }
 }
 
+/** Below this speed the ball is just moving, not flying — no trail. */
+const TRAIL_MIN_SPEED = 6;
+/** Speed at which the trail reaches its longest, most opaque look. */
+const TRAIL_MAX_SPEED = 14;
+
+/** A few fading streaks behind a fast-moving ball — the visual payoff for a hard kick or spike. */
+function drawBallTrail(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  r: number,
+  vx: number,
+  vy: number,
+  color: string
+): void {
+  const speed = Math.hypot(vx, vy);
+  if (speed < TRAIL_MIN_SPEED) return;
+
+  const strength = Math.min(1, (speed - TRAIL_MIN_SPEED) / (TRAIL_MAX_SPEED - TRAIL_MIN_SPEED));
+  const dirX = -vx / speed;
+  const dirY = -vy / speed;
+  const len = r * (1.6 + strength * 2.2);
+
+  ctx.save();
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 3; i++) {
+    const spread = (i - 1) * (r * 0.42);
+    const px = -dirY * spread;
+    const py = dirX * spread;
+    const alpha = (0.4 - i * 0.1) * (0.4 + strength * 0.6);
+    ctx.globalAlpha = Math.max(0, alpha);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = r * (0.4 - i * 0.08);
+    ctx.beginPath();
+    ctx.moveTo(x + px, y + py);
+    ctx.lineTo(x + px + dirX * len, y + py + dirY * len);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 /** The ball: a wobbly ink blot whose marks rotate so its spin is visible. */
 export function drawBall(
   ctx: CanvasRenderingContext2D,
@@ -153,9 +194,12 @@ export function drawBall(
   y: number,
   r: number,
   spin: number,
-  color: string
+  color: string,
+  vx = 0,
+  vy = 0
 ): void {
   drawShadow(ctx, x, -y - r, r);
+  drawBallTrail(ctx, x, GROUND_Y + y, r, vx, vy, color);
 
   ctx.save();
   ctx.translate(x, GROUND_Y + y);
