@@ -32,10 +32,10 @@ export function drawArenaBounds(ctx: CanvasRenderingContext2D, color: string): v
   roughSegment(ctx, 0, ARENA_HEIGHT, 0, 0, 1.4, color, 1);
 }
 
-/** A tiny wobbly ink dot — the food a cell grows by passing over. */
-export function drawFoodDot(ctx: CanvasRenderingContext2D, x: number, y: number, color: string): void {
+/** A tiny wobbly ink dot — the food a cell grows by passing over. `radius` lets a rare big pellet stand out. */
+export function drawFoodDot(ctx: CanvasRenderingContext2D, x: number, y: number, color: string, radius = 2.4): void {
   ctx.beginPath();
-  ctx.arc(x, y, 2.4, 0, Math.PI * 2);
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
   ctx.fillStyle = color;
   ctx.fill();
 }

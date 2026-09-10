@@ -7,6 +7,9 @@ import type { CellWorld } from './types.js';
 const DOT_SPACING = 26;
 export const INK = '#14181a';
 
+const BIG_FOOD_COLOR = 'rgba(196,90,40,0.6)';
+const BIG_FOOD_RADIUS = 6;
+
 /** A small, muted palette for anyone who isn't me — hashed from their id so it stays stable across ticks. */
 const OTHER_COLORS = ['#6b5a45', '#55525f', '#6b4f3f', '#445157', '#5a5f43'];
 
@@ -56,7 +59,10 @@ export function renderCellScene(
   drawArenaDots(ctx, camX, camY, VIEW_SIZE, DOT_SPACING, 'rgba(20,24,26,0.14)');
   drawArenaBounds(ctx, 'rgba(20,24,26,0.3)');
 
-  for (const dot of world.food) drawFoodDot(ctx, dot.x, dot.y, 'rgba(20,24,26,0.4)');
+  for (const dot of world.food) {
+    if (dot.big) drawFoodDot(ctx, dot.x, dot.y, BIG_FOOD_COLOR, BIG_FOOD_RADIUS);
+    else drawFoodDot(ctx, dot.x, dot.y, 'rgba(20,24,26,0.4)');
+  }
 
   // Draw smallest-first so a big cell never hides one it's about to pass.
   const alive = world.players.filter((p) => p.alive).sort((a, b) => a.mass - b.mass);

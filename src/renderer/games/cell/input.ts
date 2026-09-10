@@ -4,8 +4,9 @@ const LEFT_KEYS = ['ArrowLeft', 'KeyA'];
 const RIGHT_KEYS = ['ArrowRight', 'KeyD'];
 const UP_KEYS = ['ArrowUp', 'KeyW'];
 const DOWN_KEYS = ['ArrowDown', 'KeyS'];
+const BOOST_KEYS = ['Space'];
 
-const GAME_KEYS = new Set([...LEFT_KEYS, ...RIGHT_KEYS, ...UP_KEYS, ...DOWN_KEYS]);
+const GAME_KEYS = new Set([...LEFT_KEYS, ...RIGHT_KEYS, ...UP_KEYS, ...DOWN_KEYS, ...BOOST_KEYS]);
 
 export interface InputSource {
   read(): CellInput;
@@ -34,7 +35,8 @@ export function createInputSource(target: Window = window): InputSource {
       up: anyOf(UP_KEYS),
       down: anyOf(DOWN_KEYS),
       left: anyOf(LEFT_KEYS),
-      right: anyOf(RIGHT_KEYS)
+      right: anyOf(RIGHT_KEYS),
+      boost: anyOf(BOOST_KEYS)
     }),
     clear: () => held.clear()
   };

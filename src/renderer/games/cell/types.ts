@@ -5,11 +5,15 @@ export interface CellInput {
   down: boolean;
   left: boolean;
   right: boolean;
+  /** Space bar — trades mass for a speed burst. */
+  boost: boolean;
 }
 
 export interface FoodDot {
   x: number;
   y: number;
+  /** A rare, high-value pellet spawned periodically instead of the ambient food. */
+  big?: boolean;
 }
 
 export interface CellPlayer {

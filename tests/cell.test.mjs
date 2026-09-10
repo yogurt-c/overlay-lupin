@@ -3,9 +3,16 @@
  * renderer output (`npm test` builds first). Same style as simulation.test.mjs.
  */
 import { CellEngine } from '../dist/renderer/games/cell/engine.js';
-import { ARENA_HEIGHT, ARENA_WIDTH, START_MASS, RESPAWN_MS, radiusFor } from '../dist/renderer/games/cell/arena.js';
+import {
+  ARENA_HEIGHT,
+  ARENA_WIDTH,
+  START_MASS,
+  RESPAWN_MS,
+  BIG_FOOD_MASS,
+  radiusFor
+} from '../dist/renderer/games/cell/arena.js';
 
-const NO_INPUT = { up: false, down: false, left: false, right: false };
+const NO_INPUT = { up: false, down: false, left: false, right: false, boost: false };
 let failures = 0;
 
 function check(name, cond, extra = '') {
@@ -128,6 +135,73 @@ function check(name, cond, extra = '') {
     bigDist < smallDist,
     `small=${smallDist.toFixed(1)} big=${bigDist.toFixed(1)}`
   );
+}
+
+// 9. Boosting moves a cell farther than the same input without boosting.
+{
+  const plain = new CellEngine();
+  plain.ensurePlayer('a', 'A');
+  Object.assign(plain.players.get('a'), { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT / 2, mass: START_MASS * 4 });
+  const plainStartX = plain.players.get('a').x;
+  plain.setInput('a', { ...NO_INPUT, right: true });
+
+  const boosted = new CellEngine();
+  boosted.ensurePlayer('a', 'A');
+  Object.assign(boosted.players.get('a'), { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT / 2, mass: START_MASS * 4 });
+  const boostedStartX = boosted.players.get('a').x;
+  boosted.setInput('a', { ...NO_INPUT, right: true, boost: true });
+
+  for (let i = 0; i < 30; i++) {
+    plain.step();
+    boosted.step();
+  }
+  const plainDist = plain.players.get('a').x - plainStartX;
+  const boostedDist = boosted.players.get('a').x - boostedStartX;
+  check('부스트를 쓰면 같은 입력에도 더 멀리 이동한다', boostedDist > plainDist, `plain=${plainDist.toFixed(1)} boosted=${boostedDist.toFixed(1)}`);
+}
+
+// 10. Boosting drains mass over time, on top of a floor at START_MASS.
+{
+  const e = new CellEngine();
+  e.ensurePlayer('a', 'A');
+  const a = e.players.get('a');
+  a.mass = START_MASS * 4;
+  e.setInput('a', { ...NO_INPUT, boost: true });
+  for (let i = 0; i < 60; i++) e.step();
+  check('부스트를 쓰면 질량이 줄어든다', a.mass < START_MASS * 4, `mass=${a.mass.toFixed(2)}`);
+}
+
+// 11. Boosting never drains mass below the starting mass.
+{
+  const e = new CellEngine();
+  e.ensurePlayer('a', 'A');
+  const a = e.players.get('a');
+  a.mass = START_MASS;
+  e.setInput('a', { ...NO_INPUT, boost: true });
+  for (let i = 0; i < 120; i++) e.step();
+  check('부스트로도 시작 질량 밑으로는 줄어들지 않는다', a.mass >= START_MASS, `mass=${a.mass.toFixed(2)}`);
+}
+
+// 12. A big food pellet eventually spawns and is worth much more than regular food.
+{
+  const e = new CellEngine();
+  e.ensurePlayer('a', 'A');
+  e.nextBigFoodAt = Date.now() - 1; // force the spawn timer to have already elapsed
+  e.step();
+  const hasBig = e.food.some((f) => f.big);
+  check('시간이 지나면 큰 먹이가 생성된다', hasBig, `foodCount=${e.food.length}`);
+}
+
+// 13. Eating a big food pellet grants BIG_FOOD_MASS.
+{
+  const e = new CellEngine();
+  e.ensurePlayer('a', 'A');
+  const a = e.players.get('a');
+  e.food.length = 0;
+  e.food.push({ x: a.x, y: a.y, big: true });
+  const before = a.mass;
+  e.step();
+  check('큰 먹이를 먹으면 질량이 크게 늘어난다', a.mass >= before + BIG_FOOD_MASS - 0.01, `before=${before} after=${a.mass}`);
 }
 
 console.log(failures === 0 ? '전부 통과' : `${failures}개 실패`);
