@@ -11,10 +11,11 @@ import {
   ACTIVE,
   DOJO_X,
   GUARD_DROP_FRAMES,
+  HIT_STUN_FRAMES,
+  LIVES,
   RECOVER,
   STAGGER_FRAMES,
-  WINDUP,
-  WIN_SCORE
+  WINDUP
 } from '../dist/renderer/games/fence/field.js';
 
 const NO_INPUT = { left: false, right: false, jump: false, down: false, action: false, guard: false };
@@ -171,26 +172,30 @@ for (const [label, attack, guardLow, expected] of MATRIX) {
   check('후딜이 끝나면 자유로워진다', e.local.phase === null, `phase=${e.local.phase}`);
 }
 
-/* ------------------------------------------------------------- 4. scorekeeping */
+/* ---------------------------------------------------------------- 4. 목숨 */
 
-// 10. My score is what the opponent reports about themselves, and theirs is my own count.
+// 10. Lives come off both counters: mine from my own cuts, theirs from what they report.
 {
   const e = playing(34);
   e.applyOpponentPacket({ player: { x: e.remote.x, y: 0, facing: 1, pose: 'idle' }, hits: 2, parries: 0 });
   opponentDoes(e, 'slash');
-  check('점수는 양쪽의 피격 카운터에서 유도된다', e.myScore === 2 && e.theirScore === 1, `${e.myScore}:${e.theirScore}`);
+  check(
+    '목숨은 양쪽의 피격 카운터에서 유도된다',
+    e.myLives === LIVES - 1 && e.theirLives === LIVES - 2,
+    `${e.myLives}:${e.theirLives}`
+  );
 }
 
-// 11. A resent packet with the same counter cannot score twice.
+// 11. A resent packet with the same counter cannot take a second life.
 {
   const e = playing(34);
   const packet = { player: { x: e.remote.x, y: 0, facing: 1, pose: 'idle' }, hits: 1, parries: 0 };
   e.applyOpponentPacket(packet);
   e.applyOpponentPacket(packet);
-  check('같은 카운터를 다시 받아도 중복 득점되지 않는다', e.myScore === 1, `myScore=${e.myScore}`);
+  check('같은 카운터를 다시 받아도 목숨이 두 번 깎이지 않는다', e.theirLives === LIVES - 1, `theirLives=${e.theirLives}`);
 }
 
-// 12. The host freezes the round when either side is cut, and ends the match at WIN_SCORE.
+// 12. A cut does not stop the fight — the phase stays 'play' until someone runs out.
 {
   const e = new FenceEngine();
   e.startMatch(true);
@@ -199,27 +204,53 @@ for (const [label, attack, guardLow, expected] of MATRIX) {
   e.local.x = DOJO_X - 17;
   place(e, DOJO_X + 17, -1, 'slash');
   e.step(NO_INPUT);
-  check('호스트는 피격이 나오면 라운드를 멈춘다', e.phase === 'goal', `phase=${e.phase} hits=${e.hits}`);
+  check('피격이 나도 싸움은 이어진다', e.phase === 'play' && e.hits === 1, `phase=${e.phase} hits=${e.hits}`);
 
-  e.hits = WIN_SCORE;
-  e.phase = 'play';
-  e.phaseTimer = 0;
+  e.hits = LIVES;
   e.step(NO_INPUT);
-  check('승점에 도달하면 경기가 끝난다', e.phase === 'over', `phase=${e.phase}`);
+  check('목숨이 다 떨어지면 경기가 끝난다', e.phase === 'over' && e.myLives === 0, `phase=${e.phase}`);
 }
 
-// 13. Both sides cut in the same round is a double touch — both banners, both points.
+// 13. Reeling from a cut makes you untouchable, so one flurry can only cost one life.
+{
+  const e = playing(30);
+  for (let i = 0; i < 3; i++) {
+    opponentDoes(e, 'slash');
+    opponentDoes(e, 'idle');
+  }
+  check('경직 중에는 다시 베이지 않는다', e.hits === 1, `hits=${e.hits}`);
+  check('경직이 걸려 있다', e.local.hitLock > 0 && e.local.pose === 'hit', `pose=${e.local.pose}`);
+}
+
+// 14. A cut throws the victim away from the attacker, which is what re-opens the distance.
+{
+  const e = playing(30);
+  const before = e.local.x;
+  opponentDoes(e, 'slash');
+  for (let i = 0; i < 10; i++) opponentDoes(e, 'idle');
+  check('피격당하면 뒤로 밀려난다', e.local.x > before + 2, `${before.toFixed(1)} -> ${e.local.x.toFixed(1)}`);
+}
+
+// 15. Both fencers cut inside the same banner window reads as a double touch.
 {
   const e = playing(34);
   opponentDoes(e, 'slash');
   e.applyOpponentPacket({ player: { x: e.remote.x, y: 0, facing: 1, pose: 'idle' }, hits: 1, parries: 0 });
-  const round = e.lastRound;
-  check('상호타는 양쪽 다 득점으로 읽힌다', round.mine && round.theirs, JSON.stringify(round));
+  check('상호타로 읽힌다', e.flash === 'both', `flash=${e.flash}`);
 }
 
-/* ------------------------------------------------------------- 5. movement */
+// 16. The banner message clears on its own instead of waiting for a round break.
+{
+  const e = playing(34);
+  opponentDoes(e, 'slash');
+  check('피격 문구가 뜬다', e.flash === 'take', `flash=${e.flash}`);
+  for (let i = 0; i < HIT_STUN_FRAMES + 60; i++) opponentDoes(e, 'idle');
+  check('문구는 알아서 사라진다', e.flash === 'none', `flash=${e.flash}`);
+}
 
-// 14. Retreating is slower than advancing.
+/* --------------------------------------------------------- 5. movement */
+
+// 17. Retreating is slower than advancing.
 {
   const forward = playing(120);
   const back = playing(120);
@@ -233,7 +264,7 @@ for (const [label, attack, guardLow, expected] of MATRIX) {
   check('후진은 전진보다 느리다', retreated < advanced, `전진=${advanced.toFixed(1)} 후진=${retreated.toFixed(1)}`);
 }
 
-// 15. A fencer always turns to face the opponent.
+// 18. A fencer always turns to face the opponent.
 {
   const e = playing(60);
   e.step(NO_INPUT);

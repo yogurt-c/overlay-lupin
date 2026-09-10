@@ -1,8 +1,14 @@
 import { FenceEngine } from './engine.js';
 import { renderFenceScene } from './scene.js';
 import { createInputSource } from './input.js';
+import { LIVES } from './field.js';
 import type { FenceInput, FencePacket } from './types.js';
 import type { GameMatch, GameModule, MatchHud, Viewport } from '../types.js';
+
+/** Lives read as marks rather than digits, so a glance says how much fight is left. */
+function lifeBar(left: number): string {
+  return '●'.repeat(left) + '○'.repeat(LIVES - left);
+}
 
 class FenceMatch implements GameMatch {
   private game = new FenceEngine();
@@ -21,7 +27,7 @@ class FenceMatch implements GameMatch {
 
   hud(): MatchHud {
     return {
-      status: `${this.game.myScore} : ${this.game.theirScore}`,
+      status: `${lifeBar(this.game.myLives)} : ${lifeBar(this.game.theirLives)}`,
       banner: this.bannerText(),
       bannerKind: this.game.phase
     };
@@ -40,18 +46,18 @@ class FenceMatch implements GameMatch {
   }
 
   private bannerText(): string {
-    switch (this.game.phase) {
-      case 'kickoff':
-        return String(Math.max(1, Math.ceil(this.game.phaseTimer / 60)));
-      case 'goal': {
-        const { mine, theirs } = this.game.lastRound;
-        if (mine && theirs) return '상호타';
-        return mine ? '명중!' : '피격';
-      }
-      case 'over': {
-        if (this.game.myScore === this.game.theirScore) return '무승부';
-        return this.game.myScore > this.game.theirScore ? '승리' : '패배';
-      }
+    if (this.game.phase === 'kickoff') return String(Math.max(1, Math.ceil(this.game.phaseTimer / 60)));
+    if (this.game.phase === 'over') {
+      if (this.game.myLives === this.game.theirLives) return '무승부';
+      return this.game.myLives > this.game.theirLives ? '승리' : '패배';
+    }
+    switch (this.game.flash) {
+      case 'both':
+        return '상호타';
+      case 'land':
+        return '명중!';
+      case 'take':
+        return '피격';
       default:
         return '';
     }
@@ -61,7 +67,7 @@ class FenceMatch implements GameMatch {
 export const fenceModule: GameModule = {
   id: 'fence',
   label: '칼싸움',
-  hint: '← → 이동 · ↑ 점프 · Space 베기(↓ 하단 · 전진 찌르기 · 공중 내려베기) · Shift 막기 · 먼저 5점 내면 승리',
+  hint: '← → 이동 · ↑ 점프 · Space 베기(↓ 하단 · 전진 찌르기 · 공중 내려베기) · Shift 막기 · 목숨 5개, 다 잃으면 패배',
   createMatch: (isHost) => new FenceMatch(isHost),
   createInputSource: (target) => createInputSource(target)
 };

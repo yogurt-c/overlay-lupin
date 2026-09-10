@@ -54,11 +54,22 @@ export const GUARD_DROP_FRAMES = 4;
 /** Guarding is not free movement. */
 export const GUARD_MOVE_SCALE = 0.55;
 
-/** Same beats as the ball games, so a round reads at the same tempo. */
+/** The one countdown in the match: both fencers square up, then it runs until someone falls. */
 export const KICKOFF_FRAMES = 120;
-export const HIT_FREEZE_FRAMES = 84;
 export const OVER_FRAMES = 240;
-export const WIN_SCORE = 5;
+
+/**
+ * Being cut costs a life and half a second of reeling, not a restart — the
+ * fight never stops. The victim is untouchable while they reel, so a single
+ * flurry can't take more than one life.
+ */
+export const HIT_STUN_FRAMES = 34;
+/** Impulse thrown into the victim, which is what re-opens the distance now that nobody is repositioned. */
+export const KNOCKBACK = 3.4;
+/** How long "명중" / "피격" stays on the banner. */
+export const FLASH_FRAMES = 40;
+
+export const LIVES = 5;
 
 /** Movement is heavier than soccer's: a fencer carries a sword, not a ball. */
 export const GRAVITY = 0.52;
