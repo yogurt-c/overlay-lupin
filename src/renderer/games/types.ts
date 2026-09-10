@@ -31,6 +31,8 @@ export interface GameMatch {
   /** Local state to send this tick — shape is private to this game. */
   buildOutgoingPacket(): unknown;
   applyOpponentPacket(packet: unknown): void;
+  /** Room games only: another member disconnected — drop their entity instead of leaving a frozen ghost. */
+  removePeer?(peerId: string): void;
 }
 
 export interface GameModule {
@@ -38,6 +40,15 @@ export interface GameModule {
   label: string;
   /** Control hint shown in the matching panel while this game is selected. */
   hint: string;
-  createMatch(isHost: boolean): GameMatch;
+  /**
+   * 'duel' (default) is the existing 1:1 invite/accept flow. 'room' is a
+   * host-created lobby that others free-join (including mid-session), with no
+   * accept step — see `roomCapacity`.
+   */
+  matching?: 'duel' | 'room';
+  /** Only meaningful for `matching: 'room'`. */
+  roomCapacity?: number;
+  /** `myId`/`myName` are this machine's network identity — only games that need to tell "me" apart in an N-player snapshot use them. */
+  createMatch(isHost: boolean, myId: string, myName: string): GameMatch;
   createInputSource(target: Window): { read(): unknown; clear(): void };
 }

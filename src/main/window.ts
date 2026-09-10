@@ -23,10 +23,6 @@ export function createGameWindow(): BrowserWindow {
   win.setAlwaysOnTop(true, 'screen-saver');
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
-  // Best-effort: excludes the window from most screen-capture/share APIs.
-  // Not supported on every platform/capture method, so treat it as a bonus, not a guarantee.
-  win.setContentProtection(true);
-
   win.loadFile(path.join(__dirname, '../renderer/index.html'));
 
   return win;
