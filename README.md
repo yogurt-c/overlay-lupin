@@ -16,9 +16,10 @@
 
 <br/>
 
-<img src="assets/screenshot-invite.png" alt="대전 신청 알림 화면" width="30%" />&nbsp;&nbsp;
-<img src="assets/screenshot-match.png" alt="1:1 대두축구 경기 화면" width="30%" />&nbsp;&nbsp;
-<img src="assets/screenshot-cell.png" alt="세포키우기 경기 화면" width="30%" />
+<img src="assets/screenshot-invite.png" alt="대전 신청 알림 화면" width="23%" />&nbsp;&nbsp;
+<img src="assets/screenshot-match.png" alt="1:1 대두축구 경기 화면" width="23%" />&nbsp;&nbsp;
+<img src="assets/screenshot-sword.png" alt="1:1 칼싸움 경기 화면" width="23%" />&nbsp;&nbsp;
+<img src="assets/screenshot-cell.png" alt="세포키우기 경기 화면" width="23%" />
 
 </div>
 
