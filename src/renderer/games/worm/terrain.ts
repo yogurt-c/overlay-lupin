@@ -12,7 +12,7 @@
  * host's crater log easy to replay.
  */
 
-import { BEDROCK_Y, COLUMN_COUNT, COLUMN_W, SKY_MARGIN, WORLD_WIDTH } from './arena.js';
+import { BEDROCK_Y, COLUMN_COUNT, COLUMN_W, SKY_MARGIN, TERRAIN_FLOOR_Y, WORLD_WIDTH } from './arena.js';
 
 export interface Terrain {
   /** Everything below is derivable from this alone, before any craters. */
@@ -45,7 +45,7 @@ export function randomSeed(): number {
 
 /** Three octaves of rolling ground, before any features are cut into it. */
 function layRidgeline(heights: Float64Array, rng: () => number): void {
-  const mid = (SKY_MARGIN + BEDROCK_Y) / 2;
+  const mid = (SKY_MARGIN + TERRAIN_FLOOR_Y) / 2;
   const waves = [
     { cycles: 1.0, amp: 62, phase: rng() * Math.PI * 2 },
     { cycles: 2.7, amp: 26, phase: rng() * Math.PI * 2 },
@@ -111,7 +111,9 @@ function fitWithinBounds(heights: Float64Array): void {
     for (let i = 0; i < COLUMN_COUNT; i++) heights[i] += deficit;
   }
   for (let i = 0; i < COLUMN_COUNT; i++) {
-    heights[i] = Math.min(BEDROCK_Y, Math.max(SKY_MARGIN, heights[i]));
+    // Clamped to the terrain band, not to bedrock: everything between the two
+    // is the rock a match spends the whole game digging through.
+    heights[i] = Math.min(TERRAIN_FLOOR_Y, Math.max(SKY_MARGIN, heights[i]));
   }
 }
 
@@ -140,14 +142,23 @@ export function surfaceY(terrain: Terrain, x: number): number {
 }
 
 /**
- * Blows a hole at (x, y): every column the blast circle covers drops to the
- * circle's lower edge, never past bedrock.
+ * Blows a hole at (x, y): every column the blast covers erodes downward, never
+ * past bedrock.
  *
- * A blast centred well below the surface takes the ground above it with it,
- * which a heightmap can't avoid — there's no way to say "hollow underneath".
- * In practice a shell detonates the moment it touches the surface, so a truly
- * buried blast barely happens, and when it does it reads like ground caving
- * in rather than a bug.
+ * The subtlety is how much a single column may lose. Dropping it straight to
+ * the bottom of the blast circle is right for a shell that landed on open
+ * ground, but wrong the moment one buries itself in a cliff face — there the
+ * blast centre sits far below that column's surface, and taking everything
+ * between would delete the whole clifftop in one shot.
+ *
+ * So each column loses at most the blast's own vertical thickness there: the
+ * chord `2·√(r² − dx²)`, which is exactly how much material the sphere
+ * occupies in that column. A surface hit is unaffected (its chord is larger
+ * than the drop anyway) and a buried hit now chews a notch out of the cliff
+ * instead of shaving its top off.
+ *
+ * A heightmap still can't express a hollow with ground left over it, so this
+ * bounds the damage rather than modelling it exactly.
  */
 export function carveCrater(terrain: Terrain, x: number, y: number, radius: number): Terrain {
   const heights = Float64Array.from(terrain.heights);
@@ -156,10 +167,14 @@ export function carveCrater(terrain: Terrain, x: number, y: number, radius: numb
 
   for (let i = from; i <= to; i++) {
     const dx = i * COLUMN_W - x;
-    const halfChord = radius * radius - dx * dx;
-    if (halfChord <= 0) continue;
-    const bottomOfBlast = y + Math.sqrt(halfChord);
-    heights[i] = Math.min(BEDROCK_Y, Math.max(heights[i], bottomOfBlast));
+    const squared = radius * radius - dx * dx;
+    if (squared <= 0) continue;
+
+    const halfChord = Math.sqrt(squared);
+    const bottomOfBlast = y + halfChord;
+    const mostThisColumnCanLose = heights[i] + halfChord * 2;
+
+    heights[i] = Math.min(BEDROCK_Y, Math.max(heights[i], Math.min(bottomOfBlast, mostThisColumnCanLose)));
   }
 
   return { seed: terrain.seed, heights };

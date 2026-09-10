@@ -1,8 +1,11 @@
 import { beginSketchFrame } from '../../lib/sketch.js';
-import { VIEW_HEIGHT, VIEW_WIDTH, WORLD_HEIGHT, WORLD_WIDTH } from './arena.js';
-import { drawBurst, drawEdgeMarker, drawShell, drawTerrain, drawWorm } from './draw.js';
+import { SHIELD_FRAMES, VIEW_HEIGHT, VIEW_WIDTH, WORLD_HEIGHT, WORLD_WIDTH } from './arena.js';
+import { itemAt } from './items.js';
+import { weaponAt } from './weapons.js';
+import { drawBurst, drawEdgeMarker, drawItem, drawShell, drawShieldRing, drawTerrain, drawWorm } from './draw.js';
 import type { Terrain } from './terrain.js';
 import type { Viewport } from '../types.js';
+import { decodeItems, decodeShells } from './types.js';
 import type { WormWorld } from './types.js';
 
 export const INK = '#14181a';
@@ -89,10 +92,10 @@ function drawOffscreenMarkers(
 
   const targets: { x: number; y: number; color: string }[] = [];
   for (const worm of world.worms) {
-    if (worm.id === myId || !worm.alive) continue;
+    if (worm.id === myId || worm.d !== undefined) continue;
     targets.push({ x: worm.x, y: worm.y, color: colorFor(worm.id, myId) });
   }
-  for (const shell of world.shells) targets.push({ x: shell.x, y: shell.y, color: INK });
+  for (const shell of decodeShells(world.shells)) targets.push({ x: shell.x, y: shell.y, color: INK });
 
   for (const target of targets) {
     const dx = target.x - centreX;
@@ -140,13 +143,18 @@ export function renderWormScene(
     drawBurst(ctx, burst.x, burst.y, burst.r, Math.min(1, burst.age / BURST_FRAMES));
   }
 
+  for (const item of decodeItems(world.items)) drawItem(ctx, itemAt(item.k), item.x, item.y, phase);
+
   // Dead worms first, so a corpse never hides a live one about to shoot.
-  const ordered = [...world.worms].sort((a, b) => Number(a.alive) - Number(b.alive));
+  const ordered = [...world.worms].sort((a, b) => Number(a.d === undefined) - Number(b.d === undefined));
   for (const worm of ordered) {
     drawWorm(ctx, worm, colorFor(worm.id, myId), phase, worm.id === myId);
+    if (worm.d === undefined && worm.s) drawShieldRing(ctx, worm.x, worm.y, worm.s, SHIELD_FRAMES, phase);
   }
 
-  for (const shell of world.shells) drawShell(ctx, shell.x, shell.y, INK);
+  for (const shell of decodeShells(world.shells)) {
+    drawShell(ctx, shell.x, shell.y, weaponAt(shell.w).drawRadius, INK);
+  }
 
   drawOffscreenMarkers(ctx, world, myId, camera.camX, camera.camY);
 

@@ -1,6 +1,8 @@
 import { jitter, roughSegment } from '../../lib/sketch.js';
-import { BEDROCK_Y, COLUMN_W, MAX_HP, WORM_HALF_W, WORM_HEIGHT } from './arena.js';
+import { BEDROCK_Y, COLUMN_W, ITEM_RADIUS, MAX_HP, WORM_HALF_W, WORM_HEIGHT } from './arena.js';
+import type { ItemKind } from './items.js';
 import type { Terrain } from './terrain.js';
+import { poseAt } from './types.js';
 import type { Pose, WormView } from './types.js';
 
 const HALO = 'rgba(255,255,255,0.9)';
@@ -102,16 +104,113 @@ export function drawTerrain(
   ctx.stroke();
 }
 
-export function drawShell(ctx: CanvasRenderingContext2D, x: number, y: number, ink: string): void {
+export function drawShell(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, ink: string): void {
   ctx.beginPath();
-  ctx.arc(x, y, 4.4, 0, Math.PI * 2);
+  ctx.arc(x, y, radius + 1.4, 0, Math.PI * 2);
   ctx.fillStyle = HALO;
   ctx.fill();
   ctx.beginPath();
-  ctx.arc(x, y, 3, 0, Math.PI * 2);
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
   ctx.fillStyle = ink;
   ctx.fill();
 }
+
+/**
+ * A pickup: a hand-drawn crate with a glyph for what's inside. The glyphs are
+ * shapes rather than letters — at this scale a letter is three pixels of mud.
+ */
+export function drawItem(ctx: CanvasRenderingContext2D, kind: ItemKind, x: number, y: number, phase: number): void {
+  const bob = Math.sin(phase * 0.08 + x * 0.1) * 1.6;
+  ctx.save();
+  ctx.translate(x, y - ITEM_RADIUS - 2 + bob);
+
+  const r = ITEM_RADIUS;
+  ctx.beginPath();
+  ctx.moveTo(-r + jitter(0.6), -r + jitter(0.6));
+  ctx.lineTo(r + jitter(0.6), -r + jitter(0.6));
+  ctx.lineTo(r + jitter(0.6), r + jitter(0.6));
+  ctx.lineTo(-r + jitter(0.6), r + jitter(0.6));
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(253,253,251,0.94)';
+  ctx.fill();
+  ctx.lineWidth = 1.6;
+  ctx.strokeStyle = '#14181a';
+  ctx.stroke();
+
+  ctx.strokeStyle = '#14181a';
+  ctx.fillStyle = '#14181a';
+  ctx.lineWidth = 1.7;
+  ctx.beginPath();
+  switch (kind) {
+    case 'heal':
+      // A cross.
+      ctx.moveTo(0, -3.6);
+      ctx.lineTo(0, 3.6);
+      ctx.moveTo(-3.6, 0);
+      ctx.lineTo(3.6, 0);
+      ctx.stroke();
+      break;
+    case 'shield':
+      // A shield outline.
+      ctx.moveTo(0, -4);
+      ctx.lineTo(3.4, -2);
+      ctx.lineTo(3.4, 1.4);
+      ctx.lineTo(0, 4.2);
+      ctx.lineTo(-3.4, 1.4);
+      ctx.lineTo(-3.4, -2);
+      ctx.closePath();
+      ctx.stroke();
+      break;
+    case 'shotgun':
+      // Three diverging pellets.
+      for (const angle of [-0.55, 0, 0.55]) {
+        ctx.moveTo(-3.6, 0);
+        ctx.lineTo(-3.6 + Math.cos(angle) * 7, Math.sin(angle) * 7);
+      }
+      ctx.stroke();
+      break;
+    case 'rocket':
+      // A blunt warhead.
+      ctx.moveTo(-3.8, -2.4);
+      ctx.lineTo(1.6, -2.4);
+      ctx.lineTo(4.2, 0);
+      ctx.lineTo(1.6, 2.4);
+      ctx.lineTo(-3.8, 2.4);
+      ctx.closePath();
+      ctx.fill();
+      break;
+    default:
+      // Cluster: one round over its payload.
+      ctx.arc(0, -2.6, 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      for (const dx of [-3.2, 0, 3.2]) ctx.arc(dx, 2.8, 1.2, 0, Math.PI * 2);
+      ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+/** A shield reads as a ring that thins as it runs out, so everyone can see it lapse. */
+export function drawShieldRing(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  remaining: number,
+  total: number,
+  phase: number
+): void {
+  const left = Math.max(0, Math.min(1, remaining / total));
+  ctx.save();
+  ctx.translate(x, y - WORM_HEIGHT * 0.55);
+  ctx.beginPath();
+  ctx.arc(0, 0, WORM_HEIGHT * 0.95 + Math.sin(phase * 0.18) * 0.8, 0, Math.PI * 2);
+  ctx.lineWidth = 1 + left * 1.8;
+  ctx.strokeStyle = `rgba(20,24,26,${0.25 + left * 0.45})`;
+  ctx.stroke();
+  ctx.restore();
+}
+
 
 /** An expanding ink ring; `progress` runs 0 to 1 over the burst's short life. */
 export function drawBurst(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, progress: number): void {
@@ -236,7 +335,7 @@ export function drawWorm(
   phase: number,
   isMe: boolean
 ): void {
-  const posture = postureFor(worm.pose, worm.facing, worm.charge, phase);
+  const posture = postureFor(poseAt(worm.p), worm.facing, worm.charge, phase);
 
   ctx.save();
   ctx.translate(worm.x, worm.y - posture.lift);
@@ -279,7 +378,7 @@ export function drawWorm(
 
   ctx.restore();
 
-  if (worm.alive) {
+  if (worm.d === undefined) {
     ctx.save();
     ctx.translate(worm.x, worm.y - WORM_HEIGHT * 0.55 - posture.lift);
     drawBarrel(ctx, worm.aim, worm.facing, ink);

@@ -1,4 +1,5 @@
 import { ROOM_CAPACITY, WIN_KILLS } from './arena.js';
+import { weaponAt } from './weapons.js';
 import { WormEngine } from './engine.js';
 import { carveCrater, generateTerrain } from './terrain.js';
 import type { Terrain } from './terrain.js';
@@ -6,10 +7,11 @@ import { BURST_FRAMES, cameraTarget, followCamera, renderWormScene } from './sce
 import type { Burst } from './scene.js';
 import { createInputSource } from './input.js';
 import type { GameMatch, GameModule, MatchHud, Viewport } from '../types.js';
+import { decodeCraters, decodeShells, poseAt } from './types.js';
 import type { WormInput, WormMemberPacket, WormMemberPacketTagged, WormWorld } from './types.js';
 
 const NO_INPUT: WormInput = { left: false, right: false, aimUp: false, aimDown: false, jump: false, fire: false };
-const EMPTY_WORLD: WormWorld = { seed: 0, phase: 'play', worms: [], shells: [], craters: [], winnerId: null };
+const EMPTY_WORLD: WormWorld = { seed: 0, phase: 'play', worms: [], shells: [], items: [], craters: [], winnerId: null };
 
 class WormMatch implements GameMatch {
   /** Set only for the host — the one authoritative simulation. */
@@ -59,7 +61,8 @@ class WormMatch implements GameMatch {
 
     const me = world.worms.find((worm) => worm.id === this.myId);
     const myIndex = world.worms.findIndex((worm) => worm.id === this.myId);
-    const target = cameraTarget(me, world.shells.find((shell) => shell.o === myIndex));
+    const myShell = myIndex < 0 ? undefined : decodeShells(world.shells).find((shell) => shell.o === myIndex);
+    const target = cameraTarget(me, myShell);
     this.camera = this.snapCamera ? target : followCamera(this.camera, target);
     this.snapCamera = false;
 
@@ -80,17 +83,22 @@ class WormMatch implements GameMatch {
       };
     }
 
-    if (!me.alive) {
+    if (me.d !== undefined) {
       return {
         status: `${me.kills}/${WIN_KILLS}킬`,
-        banner: `부활까지 ${Math.ceil((me.respawnInMs ?? 0) / 1000)}초`,
+        banner: `부활까지 ${Math.ceil(me.d / 1000)}초`,
         bannerKind: 'down'
       };
     }
 
+    const parts = [`HP ${me.hp}`];
+    if (me.w !== undefined) parts.push(`${weaponAt(me.w).label} ${me.a ?? 0}발`);
+    if (me.s) parts.push(`쉴드 ${Math.ceil(me.s / 60)}초`);
+    parts.push(`${me.kills}/${WIN_KILLS}킬`);
+
     return {
-      status: `HP ${me.hp} · ${me.kills}/${WIN_KILLS}킬`,
-      banner: me.pose === 'taunt' ? '격추!' : '',
+      status: parts.join(' · '),
+      banner: poseAt(me.p) === 'taunt' ? '격추!' : '',
       bannerKind: 'kill'
     };
   }
@@ -133,7 +141,7 @@ class WormMatch implements GameMatch {
    * the engine, so `carveCrater` is skipped there.
    */
   private absorbCraters(world: WormWorld): void {
-    for (const crater of world.craters) {
+    for (const crater of decodeCraters(world.craters)) {
       if (crater.seq <= this.appliedCraterSeq) continue;
       this.appliedCraterSeq = crater.seq;
       this.bursts.push({ x: crater.x, y: crater.y, r: crater.r, age: 0 });
