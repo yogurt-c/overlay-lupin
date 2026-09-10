@@ -38,8 +38,12 @@ export interface FenceInput {
   guard: boolean;
 }
 
-/** Same names as the ball games' phases, so the shell's existing banner CSS applies unchanged. */
-export type FencePhase = 'kickoff' | 'play' | 'goal' | 'over';
+/**
+ * There are no rounds: the opening countdown gives way to one continuous
+ * fight that ends when somebody runs out of lives. The names match the ball
+ * games' phases so the shell's existing banner CSS applies unchanged.
+ */
+export type FencePhase = 'kickoff' | 'play' | 'over';
 
 export interface FencerState {
   x: number;
@@ -56,8 +60,8 @@ export interface FencerState {
  * event flag set on a single tick would sometimes never be sent at all. A
  * counter is also idempotent — a resent or dropped packet can't score twice.
  *
- * The score is not sent. Each side counts only the cuts landed on *itself*,
- * so both machines derive the same scoreboard from the two counters.
+ * Lives are not sent. Each side counts only the cuts landed on *itself*, so
+ * both machines derive the same two life bars from the two counters.
  */
 export interface FencePacket {
   player: FencerState;

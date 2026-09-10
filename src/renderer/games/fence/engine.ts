@@ -6,15 +6,18 @@ import {
   AIR_DRAG,
   CLASH_FRAMES,
   DOJO_X,
+  FLASH_FRAMES,
   FX_LIFE,
   GRAVITY,
   GROUND_DRAG,
   GUARD_DROP_FRAMES,
   GUARD_MOVE_SCALE,
   GUARD_RAISE_FRAMES,
-  HIT_FREEZE_FRAMES,
+  HIT_STUN_FRAMES,
   JUMP_VELOCITY,
   KICKOFF_FRAMES,
+  KNOCKBACK,
+  LIVES,
   MOVE_ACCEL,
   MOVE_MAX_BACK,
   MOVE_MAX_FORWARD,
@@ -26,8 +29,7 @@ import {
   STAGGER_FRAMES,
   WALL_LEFT,
   WALL_RIGHT,
-  WINDUP,
-  WIN_SCORE
+  WINDUP
 } from './field.js';
 import type { AttackKind } from './field.js';
 import { ACTIVE_POSES } from './types.js';
@@ -110,12 +112,14 @@ function distToSegmentSq(px: number, py: number, ax: number, ay: number, bx: num
 }
 
 /**
- * A duel between two stick figures with swords.
+ * A duel between two stick figures with swords. One continuous fight: a cut
+ * costs a life and buys the victim half a second of reeling, and it ends when
+ * somebody's five lives are gone.
  *
  * The engine is deliberately not authoritative over the whole match. Each
  * machine simulates its own fencer and decides one thing only: whether the
  * *opponent's* blade touched *its own* body. Because exactly one machine
- * judges any given cut, the two scoreboards cannot disagree — and the player
+ * judges any given cut, the two life bars cannot disagree — and the player
  * swinging the sword never waits on the network to see their own swing.
  */
 export class FenceEngine {
@@ -152,10 +156,10 @@ export class FenceEngine {
   /** The opponent's counters as last reported, so an increase can be spotted. */
   private remoteHits = 0;
   private remoteParries = 0;
-  /** Counters at the start of the current round, for wording this machine's banner. */
-  private roundLocalHits = 0;
-  private roundRemoteHits = 0;
-  /** True once the opponent's current swing has been judged, so it can only score once. */
+  /** Countdowns on the two banner messages, so a cut still announces itself without stopping play. */
+  private takeFlash = 0;
+  private landFlash = 0;
+  /** True once the opponent's current swing has been judged, so it can only cost one life. */
   private swingJudged = false;
   private fx: FenceFx[] = [];
   private prev: Snapshot = this.snapshot();
@@ -164,21 +168,21 @@ export class FenceEngine {
     return this.phase === 'over' && this.phaseTimer <= 0;
   }
 
-  /** My points are the cuts I landed on them — which only they count. */
-  get myScore(): number {
-    return this.remoteHits;
+  get myLives(): number {
+    return Math.max(0, LIVES - this.hits);
   }
 
-  get theirScore(): number {
-    return this.hits;
+  /** Their lives are spent by the cuts I landed — which only they count. */
+  get theirLives(): number {
+    return Math.max(0, LIVES - this.remoteHits);
   }
 
-  /** Whether this machine scored, was scored on, or both, in the round just ended. */
-  get lastRound(): { mine: boolean; theirs: boolean } {
-    return {
-      mine: this.remoteHits > this.roundRemoteHits,
-      theirs: this.hits > this.roundLocalHits
-    };
+  /** What just happened, for the banner: a cut landed, one taken, or both at once. */
+  get flash(): 'land' | 'take' | 'both' | 'none' {
+    if (this.landFlash > 0 && this.takeFlash > 0) return 'both';
+    if (this.landFlash > 0) return 'land';
+    if (this.takeFlash > 0) return 'take';
+    return 'none';
   }
 
   startMatch(isHost: boolean): void {
@@ -187,14 +191,16 @@ export class FenceEngine {
     this.parries = 0;
     this.remoteHits = 0;
     this.remoteParries = 0;
-    this.resetPositions();
+    this.takeFlash = 0;
+    this.landFlash = 0;
+    this.takeStance();
     this.phase = 'kickoff';
     this.phaseTimer = KICKOFF_FRAMES;
     this.prev = this.snapshot();
   }
 
-  /** Puts both fencers back on their marks facing each other. The score counters are cumulative and survive. */
-  private resetPositions(): void {
+  /** Puts both fencers on their opening marks, facing each other. Only ever run once per match. */
+  private takeStance(): void {
     const mySide: 1 | -1 = this.isHost ? -1 : 1;
     this.local.x = DOJO_X + mySide * START_GAP;
     this.local.y = 0;
@@ -218,8 +224,6 @@ export class FenceEngine {
     this.remoteTarget = { x: this.remote.x, y: this.remote.y, facing: this.remote.facing, pose: 'idle' };
 
     this.swingJudged = false;
-    this.roundLocalHits = this.hits;
-    this.roundRemoteHits = this.remoteHits;
   }
 
   step(input: FenceInput): void {
@@ -231,42 +235,27 @@ export class FenceEngine {
     this.stepLocal(live ? input : NO_INPUT);
     if (live) {
       this.judgeIncoming();
-      // Checked after judging, so a cut freezes the round on the very tick it lands.
-      if (this.isHost) this.checkRound();
+      // Checked after judging, so the last life is spent on the very tick it goes.
+      if (this.isHost) this.checkDefeat();
     }
 
+    if (this.takeFlash > 0) this.takeFlash -= 1;
+    if (this.landFlash > 0) this.landFlash -= 1;
     for (const f of this.fx) f.life -= 1;
     this.fx = this.fx.filter((f) => f.life > 0);
   }
 
   private advancePhase(): void {
     if (this.phaseTimer > 0) this.phaseTimer -= 1;
-
-    if (this.phase === 'kickoff' && this.phaseTimer <= 0) {
-      // Harmless for the client to start early: the host's next packet corrects it.
-      this.phase = 'play';
-      return;
-    }
-    if (!this.isHost) return;
-
-    if (this.phase === 'goal' && this.phaseTimer <= 0) {
-      this.resetPositions();
-      this.phase = 'kickoff';
-      this.phaseTimer = KICKOFF_FRAMES;
-    }
+    // Harmless for the client to start early: the host's next packet corrects it.
+    if (this.phase === 'kickoff' && this.phaseTimer <= 0) this.phase = 'play';
   }
 
-  /** Host only: freezes the round as soon as either fencer has been cut. */
-  private checkRound(): void {
-    const scored = this.hits > this.roundLocalHits || this.remoteHits > this.roundRemoteHits;
-    if (!scored) return;
-    if (this.myScore >= WIN_SCORE || this.theirScore >= WIN_SCORE) {
-      this.phase = 'over';
-      this.phaseTimer = OVER_FRAMES;
-    } else {
-      this.phase = 'goal';
-      this.phaseTimer = HIT_FREEZE_FRAMES;
-    }
+  /** Host only: the match is over the moment either fencer runs out of lives. */
+  private checkDefeat(): void {
+    if (this.myLives > 0 && this.theirLives > 0) return;
+    this.phase = 'over';
+    this.phaseTimer = OVER_FRAMES;
   }
 
   private stepLocal(input: FenceInput): void {
@@ -455,7 +444,10 @@ export class FenceEngine {
       return;
     }
     this.hits += 1;
-    this.local.hitLock = HIT_FREEZE_FRAMES;
+    this.local.hitLock = HIT_STUN_FRAMES;
+    this.takeFlash = FLASH_FRAMES;
+    // Thrown back rather than reset: this is what re-opens the distance now that nobody repositions.
+    this.local.vx = -this.local.facing * KNOCKBACK;
     this.addFx('hit', contact.x, contact.y);
   }
 
@@ -494,14 +486,13 @@ export class FenceEngine {
     }
     if (packet.hits > this.remoteHits) {
       this.remoteHits = packet.hits;
+      this.landFlash = FLASH_FRAMES;
       this.addFx('hit', this.remote.x, this.remote.y + TORSO.y);
     }
 
     if (this.isHost || !packet.world) return;
-    const wasPhase = this.phase;
     this.phase = packet.world.phase;
     this.phaseTimer = packet.world.timer;
-    if (wasPhase === 'goal' && this.phase === 'kickoff') this.resetPositions();
   }
 
   buildOutgoingPacket(): FencePacket {
