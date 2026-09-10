@@ -1,12 +1,35 @@
 import { GROUND_Y } from '../../lib/ballsport/field.js';
 import { jitter, roughSegment, roughStroke } from '../../lib/sketch.js';
 import { arcFor } from './poses.js';
-import { FX_LIFE, WALL_LEFT, WALL_RIGHT } from './field.js';
+import { FX_LIFE, LIVES, WALL_LEFT, WALL_RIGHT } from './field.js';
 import type { FenceFx } from './engine.js';
 
 const HALO = 'rgba(255,255,255,0.92)';
 /** Where the distance marks sit, either side of centre — this is a game about reach. */
 const RANGE_MARKS = [-80, -40, 40, 80];
+
+/** Where a fencer's ink ends up once every life is gone. */
+const BLOOD = [168, 40, 28];
+/** How far toward BLOOD a fencer on their last life is drawn — short of the whole way, so it still reads as ink. */
+const MAX_STAIN = 0.72;
+
+function mix(from: number, to: number, t: number): number {
+  return Math.round(from + (to - from) * t);
+}
+
+/**
+ * How wounded a fencer looks. There is no life counter on screen, so the
+ * figure itself has to carry it: each cut stains its ink a little redder.
+ */
+export function woundedInk(base: string, wounds: number): string {
+  if (wounds <= 0) return base;
+  // Eased rather than linear: with only five steps, the first cut has to be visible too.
+  const t = Math.min(1, wounds / LIVES) ** 0.7 * MAX_STAIN;
+  const r = parseInt(base.slice(1, 3), 16);
+  const g = parseInt(base.slice(3, 5), 16);
+  const b = parseInt(base.slice(5, 7), 16);
+  return `rgb(${mix(r, BLOOD[0], t)},${mix(g, BLOOD[1], t)},${mix(b, BLOOD[2], t)})`;
+}
 
 /** The dojo: a floor only as wide as the fight, a centre line, and two walls. */
 export function drawDojo(ctx: CanvasRenderingContext2D, centreX: number, color: string): void {

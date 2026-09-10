@@ -2,7 +2,7 @@ import { LOGICAL_HEIGHT } from '../../lib/ballsport/field.js';
 import { drawBackgroundDots, drawPlayer } from '../../lib/ballsport/draw.js';
 import { INK, OPPONENT_INK, VIEW_WIDTH } from '../../lib/ballsport/scene.js';
 import { beginSketchFrame } from '../../lib/sketch.js';
-import { drawDojo, drawFx, drawSwingArc } from './draw.js';
+import { drawDojo, drawFx, drawSwingArc, woundedInk } from './draw.js';
 import { limbsFor } from './poses.js';
 import { DOJO_X } from './field.js';
 import type { FenceView } from './engine.js';
@@ -35,12 +35,16 @@ export function renderFenceScene(ctx: CanvasRenderingContext2D, view: FenceView,
   drawBackgroundDots(ctx, CAMERA_X, VIEW_WIDTH, DOT_SPACING, 'rgba(20,24,26,0.16)');
   drawDojo(ctx, DOJO_X, 'rgba(20,24,26,0.4)');
 
-  // Trails go under both figures so a blade never draws over its own swoosh.
-  drawSwingArc(ctx, view.remote.x, view.remote.y, view.remote.facing, view.remote.pose, OPPONENT_INK);
-  drawSwingArc(ctx, view.local.x, view.local.y, view.local.facing, view.local.pose, INK);
+  // No life counter on screen: a fencer's own ink reddens as they take cuts.
+  const localInk = woundedInk(INK, view.local.wounds);
+  const remoteInk = woundedInk(OPPONENT_INK, view.remote.wounds);
 
-  drawPlayer(ctx, { ...view.remote, color: OPPONENT_INK }, limbsFor);
-  drawPlayer(ctx, { ...view.local, color: INK }, limbsFor);
+  // Trails go under both figures so a blade never draws over its own swoosh.
+  drawSwingArc(ctx, view.remote.x, view.remote.y, view.remote.facing, view.remote.pose, remoteInk);
+  drawSwingArc(ctx, view.local.x, view.local.y, view.local.facing, view.local.pose, localInk);
+
+  drawPlayer(ctx, { ...view.remote, color: remoteInk }, limbsFor);
+  drawPlayer(ctx, { ...view.local, color: localInk }, limbsFor);
   drawFx(ctx, view.fx, INK);
 
   ctx.restore();

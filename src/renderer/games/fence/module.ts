@@ -1,14 +1,8 @@
 import { FenceEngine } from './engine.js';
 import { renderFenceScene } from './scene.js';
 import { createInputSource } from './input.js';
-import { LIVES } from './field.js';
 import type { FenceInput, FencePacket } from './types.js';
 import type { GameMatch, GameModule, MatchHud, Viewport } from '../types.js';
-
-/** Lives read as marks rather than digits, so a glance says how much fight is left. */
-function lifeBar(left: number): string {
-  return '●'.repeat(left) + '○'.repeat(LIVES - left);
-}
 
 class FenceMatch implements GameMatch {
   private game = new FenceEngine();
@@ -26,11 +20,8 @@ class FenceMatch implements GameMatch {
   }
 
   hud(): MatchHud {
-    return {
-      status: `${lifeBar(this.game.myLives)} : ${lifeBar(this.game.theirLives)}`,
-      banner: this.bannerText(),
-      bannerKind: this.game.phase
-    };
+    // No status line: how much fight is left is read off how red each figure has gone.
+    return { status: '', banner: this.bannerText(), bannerKind: this.game.phase };
   }
 
   isOver(): boolean {

@@ -90,9 +90,10 @@ interface Snapshot {
   remoteY: number;
 }
 
+/** `wounds` is how many cuts that fencer has taken — the renderer stains their ink with it. */
 export interface FenceView {
-  local: { x: number; y: number; facing: 1 | -1; pose: Pose; anim: number };
-  remote: { x: number; y: number; facing: 1 | -1; pose: Pose; anim: number };
+  local: { x: number; y: number; facing: 1 | -1; pose: Pose; anim: number; wounds: number };
+  remote: { x: number; y: number; facing: 1 | -1; pose: Pose; anim: number; wounds: number };
   fx: FenceFx[];
 }
 
@@ -522,14 +523,16 @@ export class FenceEngine {
         y: lerp(p.localY, this.local.y, alpha),
         facing: this.local.facing,
         pose: this.local.pose,
-        anim: this.local.anim
+        anim: this.local.anim,
+        wounds: this.hits
       },
       remote: {
         x: lerp(p.remoteX, this.remote.x, alpha),
         y: lerp(p.remoteY, this.remote.y, alpha),
         facing: this.remote.facing,
         pose: this.remote.pose,
-        anim: this.remote.anim
+        anim: this.remote.anim,
+        wounds: this.remoteHits
       },
       fx: this.fx
     };
