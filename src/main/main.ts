@@ -17,6 +17,14 @@ app.whenReady().then(() => {
   net.on('match-lost', (reason) => win?.webContents.send('net:match-lost', reason));
   net.on('opponent-state', (payload) => win?.webContents.send('net:opponent-state', payload));
 
+  net.on('rooms', (rooms) => win?.webContents.send('net:rooms', rooms));
+  net.on('room-roster', (roster) => win?.webContents.send('net:room-roster', roster));
+  net.on('room-started', (isHost, gameId) => win?.webContents.send('net:room-started', { isHost, gameId }));
+  net.on('room-lost', (reason) => win?.webContents.send('net:room-lost', reason));
+  net.on('room-member-state', (fromId, payload) => win?.webContents.send('net:room-member-state', { fromId, payload }));
+  net.on('room-world', (payload) => win?.webContents.send('net:room-world', payload));
+  net.on('room-member-left', (peerId) => win?.webContents.send('net:room-member-left', peerId));
+
   ipcMain.on('net:invite', (_event, { peerId, gameId }: { peerId: string; gameId: string }) =>
     net.invite(peerId, gameId)
   );
@@ -26,6 +34,15 @@ app.whenReady().then(() => {
   ipcMain.on('net:leave', () => net.leaveMatch());
   ipcMain.on('net:pos', (_event, payload: unknown) => net.sendLocalState(payload));
   ipcMain.handle('net:whoami', () => ({ id: net.myId, name: net.myName }));
+
+  ipcMain.on('net:create-room', (_event, { gameId, capacity }: { gameId: string; capacity?: number }) =>
+    net.createRoom(gameId, capacity)
+  );
+  ipcMain.on('net:join-room', (_event, roomId: string) => net.joinRoom(roomId));
+  ipcMain.on('net:leave-room', () => net.leaveRoom());
+  ipcMain.on('net:start-room', () => net.startRoom());
+  ipcMain.on('net:room-pos', (_event, payload: unknown) => net.sendRoomState(payload));
+
   ipcMain.on('app:quit', () => app.quit());
 
   app.on('activate', () => {
