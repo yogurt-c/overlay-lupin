@@ -2,8 +2,10 @@ import { MerandiEngine } from './engine.js';
 import { pickAt, renderMerandiScene } from './draw.js';
 import { createInputSource as createMerandiInputSource } from './input.js';
 import { WORLD_CLAMP, ZONE_SIGN, ZOOM_VIEW_SIZE, clampCamera } from './field.js';
+import { SnapshotAssembler, encodeWorldToChunks } from './wire.js';
 import type { InputSource } from './input.js';
 import type { Point } from './field.js';
+import type { WireChunk } from './wire.js';
 import type { MerandiInput, MerandiMemberPacket, MerandiMemberPacketTagged, MerandiWorld, Selection } from './types.js';
 import type { GameMatch, GameModule, MatchHud, Viewport } from '../types.js';
 
@@ -124,6 +126,13 @@ class MerandiMatch implements GameMatch {
   private lastViewport: Viewport = { width: 0, height: 0, pixelRatio: 1 };
   private lastSteppedAt = 0;
 
+  // Outgoing (host only): the current snapshot's chunks, drip-fed one per buildOutgoingPacket() call.
+  private wireVersion = 0;
+  private pendingChunks: WireChunk[] = [];
+  private chunkCursor = 0;
+  // Incoming (member only): reassembles chunks back into a full world — see wire.ts.
+  private assembler = new SnapshotAssembler();
+
   constructor(
     private isHost: boolean,
     private myId: string,
@@ -215,8 +224,21 @@ class MerandiMatch implements GameMatch {
     return this.currentWorld().over;
   }
 
+  /**
+   * Host: rather than send the (potentially tens-of-KB) full snapshot in one shot — see wire.ts's
+   * header comment for why that was causing frequent disconnects — this drip-feeds one MTU-safe chunk
+   * of the current snapshot per call, re-encoding a fresh snapshot only once the previous one's chunks
+   * are exhausted. Member: unchanged, just its own tiny local input.
+   */
   buildOutgoingPacket(): unknown {
-    if (this.engine) return this.engine.snapshot();
+    if (this.engine) {
+      if (this.chunkCursor >= this.pendingChunks.length) {
+        this.wireVersion++;
+        this.pendingChunks = encodeWorldToChunks(this.engine.snapshot(), this.wireVersion);
+        this.chunkCursor = 0;
+      }
+      return this.pendingChunks[this.chunkCursor++];
+    }
     const packet: MerandiMemberPacket = { name: this.myName, input: this.lastInput };
     return packet;
   }
@@ -227,7 +249,10 @@ class MerandiMatch implements GameMatch {
       this.engine.ensurePlayer(from, name);
       this.engine.setInput(from, input);
     } else {
-      this.world = packet as MerandiWorld;
+      // A chunk of the host's snapshot — only replaces `world` once every chunk of its version has
+      // arrived; a lost chunk just means one extra stale-but-harmless frame, never a crash.
+      const decoded = this.assembler.ingest(packet);
+      if (decoded) this.world = decoded;
     }
   }
 

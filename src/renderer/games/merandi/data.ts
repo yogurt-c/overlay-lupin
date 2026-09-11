@@ -10,13 +10,13 @@ export interface GradeSpec {
 }
 
 export const GRADES: GradeSpec[] = [
-  { name: '노멀', prob: 0.4, dmgMult: 1, sizeMult: 1.0, rangeMult: 1.0 },
-  { name: '매직', prob: 0.25, dmgMult: 1.5, sizeMult: 1.1, rangeMult: 1.15 },
-  { name: '레어', prob: 0.17, dmgMult: 2.2, sizeMult: 1.2, rangeMult: 1.3 },
-  { name: '에픽', prob: 0.1, dmgMult: 3.3, sizeMult: 1.35, rangeMult: 1.5 },
-  { name: '유니크', prob: 0.05, dmgMult: 5, sizeMult: 1.5, rangeMult: 1.75 },
-  { name: '레전더리', prob: 0.0249, dmgMult: 7.5, sizeMult: 1.7, rangeMult: 2.1 },
-  { name: '신화', prob: 0.005, dmgMult: 11, sizeMult: 2.0, rangeMult: 2.5 },
+  { name: '노멀', prob: 0.545, dmgMult: 1, sizeMult: 1.0, rangeMult: 1.0 },
+  { name: '매직', prob: 0.305, dmgMult: 1.5, sizeMult: 1.1, rangeMult: 1.15 },
+  { name: '레어', prob: 0.0886, dmgMult: 2.2, sizeMult: 1.2, rangeMult: 1.3 },
+  { name: '에픽', prob: 0.0409, dmgMult: 3.3, sizeMult: 1.35, rangeMult: 1.5 },
+  { name: '유니크', prob: 0.0136, dmgMult: 5, sizeMult: 1.5, rangeMult: 1.75 },
+  { name: '레전더리', prob: 0.0065, dmgMult: 7.5, sizeMult: 1.7, rangeMult: 2.1 },
+  { name: '신화', prob: 0.0003, dmgMult: 11, sizeMult: 2.0, rangeMult: 2.5 },
   { name: '초월', prob: 0.0001, dmgMult: 20, sizeMult: 2.5, rangeMult: 3.0 }
 ];
 
@@ -67,6 +67,20 @@ export function rollJobName(arche: Archetype): string {
   if (arche === 'pirate' && Math.random() < 1 / JOB_POOL.pirate.length) return XENON_NAME;
   const pool = JOB_POOL[arche];
   return pool[Math.floor(Math.random() * pool.length)];
+}
+
+/**
+ * Flat job-name dictionary (48 real jobs + 제논 = 49 entries), used only at the network wire boundary
+ * (see wire.ts) so a unit's `job` string never has to cross the wire as raw UTF-8 text — a small
+ * integer index is enough, since both sides already have this exact same table built in.
+ */
+export const JOB_ID_LIST: string[] = [...ARCHETYPES.flatMap((a) => JOB_POOL[a]), XENON_NAME];
+const JOB_ID_INDEX = new Map(JOB_ID_LIST.map((name, i) => [name, i]));
+export function jobNameToId(name: string): number {
+  return JOB_ID_INDEX.get(name) ?? 0;
+}
+export function jobIdToName(id: number): string {
+  return JOB_ID_LIST[id] ?? JOB_ID_LIST[0];
 }
 
 export function rollGrade(): number {
