@@ -228,8 +228,8 @@ export const MONSTER_KIND_NAME: Record<MonsterKind, string> = {
 export const TOTAL_WAVES = 50;
 export const NORMAL_WAVE_MS = 30_000;
 export const BOSS_WAVE_MS = 60_000;
-/** Bumped slightly (was 1.08) to partly offset the wave-50 spawn count cut (285 -> 200) — otherwise total late-game difficulty would just drop along with the monster count. */
-export const HP_GROWTH_PER_WAVE = 1.085;
+/** Raised again (1.08 -> 1.085 -> 1.095) to keep offsetting the wave-50 spawn count cut (285 -> 200) and push late-game difficulty higher — exponential, so small bumps compound a lot by wave 50. */
+export const HP_GROWTH_PER_WAVE = 1.095;
 /**
  * Per-corner monster baseline — the engine multiplies this by the number of active players/corners
  * (see engine.ts's startWave), so density per corner stays constant regardless of player count instead
