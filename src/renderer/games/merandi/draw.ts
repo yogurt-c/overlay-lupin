@@ -297,6 +297,18 @@ function drawInspectPanel(ctx: CanvasRenderingContext2D, viewport: Viewport, wor
   ]);
 }
 
+/** Idle-state scoreboard — shown at the bottom whenever no action menu or inspect panel is occupying that space. */
+function drawKillBoard(ctx: CanvasRenderingContext2D, viewport: Viewport, world: MerandiWorld): void {
+  const active = world.zones.filter((z) => z.id !== '');
+  if (!active.length) return;
+  drawBottomPanel(
+    ctx,
+    viewport,
+    '처치 수',
+    active.map((z) => `${z.label} ${z.kills}마리`)
+  );
+}
+
 export function renderMerandiScene(
   ctx: CanvasRenderingContext2D,
   world: MerandiWorld,
@@ -453,4 +465,5 @@ export function renderMerandiScene(
   const mine = world.zones.find((z) => z.id === myId);
   if (mine?.armed) drawActionLegend(ctx, viewport, mine);
   else if (selection) drawInspectPanel(ctx, viewport, world, selection);
+  else drawKillBoard(ctx, viewport, world);
 }

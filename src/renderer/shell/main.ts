@@ -275,7 +275,26 @@ function renderLobby(roster: RoomRoster): void {
 }
 
 quitBtn.addEventListener('click', () => window.overlayLupin.quit());
-leaveBtn.addEventListener('click', endMatch);
+
+/** First click arms a short confirm window (visually flagged via .armed + a warning tooltip) instead of leaving immediately; a second click within it actually leaves. Resets on its own if the player doesn't confirm. */
+let leaveArmedTimer: ReturnType<typeof setTimeout> | null = null;
+leaveBtn.addEventListener('click', () => {
+  if (leaveArmedTimer) {
+    clearTimeout(leaveArmedTimer);
+    leaveArmedTimer = null;
+    leaveBtn.classList.remove('armed');
+    leaveBtn.title = '나가기';
+    endMatch();
+    return;
+  }
+  leaveBtn.classList.add('armed');
+  leaveBtn.title = '한 번 더 누르면 나갑니다';
+  leaveArmedTimer = setTimeout(() => {
+    leaveArmedTimer = null;
+    leaveBtn.classList.remove('armed');
+    leaveBtn.title = '나가기';
+  }, 3000);
+});
 
 idleIcon.addEventListener('click', () => {
   if (uiState === 'panel') {

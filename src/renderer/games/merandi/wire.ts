@@ -61,7 +61,8 @@ function buildAtoms(world: MerandiWorld): unknown[] {
       z.upLevels.luk,
       ARMED_CODE[z.armed ?? 'none'],
       z.pendingArche ? ARCHETYPES.indexOf(z.pendingArche) : -1,
-      z.lastMessage
+      z.lastMessage,
+      z.kills
     ]);
     z.slots.forEach((slot, si) => {
       if (!slot || !slot.members.length) return;
@@ -114,6 +115,7 @@ function freshEmptyZone(label: ZoneLabel): Zone {
     label,
     name: '',
     gold: 0,
+    kills: 0,
     upLevels: { str: 0, int: 0, dex: 0, luk: 0 },
     slots: new Array<UnitStack | null>(SLOT_COUNT).fill(null),
     armed: null,
@@ -134,13 +136,14 @@ function decodeAtoms(atoms: unknown[]): MerandiWorld {
     if (tag === 'M') {
       meta = raw;
     } else if (tag === 'Z') {
-      const [, zi, id, name, gold, str, int, dex, luk, armedCode, pendingArcheIdx, lastMessage] = raw;
+      const [, zi, id, name, gold, str, int, dex, luk, armedCode, pendingArcheIdx, lastMessage, kills] = raw;
       const label = ZONE_LABELS[zi] ?? ZONE_LABELS[0];
       zonesByIdx.set(zi, {
         id,
         label,
         name,
         gold,
+        kills: kills ?? 0,
         upLevels: { str, int, dex, luk },
         slots: new Array<UnitStack | null>(SLOT_COUNT).fill(null),
         armed: armedCode === 1 ? 'upgrade' : armedCode === 2 ? 'sell' : null,
