@@ -36,6 +36,8 @@ export interface Zone {
   label: ZoneLabel;
   name: string;
   gold: number;
+  /** Total monster kills this zone has scored — shown as a per-player scoreboard, see draw.ts's drawKillBoard. */
+  kills: number;
   upLevels: UpgradeLevels;
   /** 36 slots (6x6 grid), index-addressed; null = empty. */
   slots: (UnitStack | null)[];

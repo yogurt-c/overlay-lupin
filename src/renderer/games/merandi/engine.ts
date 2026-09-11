@@ -13,7 +13,8 @@ import {
   MONSTERS_PER_WAVE_PER_PLAYER,
   BOSS_SPAWN_DELAY_MS,
   BOSS_WAVE_MS,
-  DRAW_COST,
+  DRAW_COST_BASE,
+  drawCost,
   GRADES,
   HP_GROWTH_PER_WAVE,
   MONSTER_KINDS,
@@ -36,7 +37,7 @@ import type { Archetype, MainStat, Monster, MonsterKind, MerandiInput, MerandiWo
 
 const PATH_PTS = squareLoopPoints(260, 24);
 const LOOP_MS = 9000; // one full lap at normal speed
-const BASE_MONSTER_HP = 20;
+const BASE_MONSTER_HP = 23;
 const BASE_RANGE_PX = 60;
 const BASE_COOLDOWN_MS = 650;
 /** How long a cosmetic shot stays on screen before fading out. */
@@ -53,7 +54,8 @@ function freshZone(label: ZoneLabel): Zone {
     id: '',
     label,
     name: '',
-    gold: 125, // enough for 5 draws at DRAW_COST up front
+    gold: DRAW_COST_BASE * 5, // enough for 5 draws at the base cost up front
+    kills: 0,
     upLevels: freshUpLevels(),
     slots: new Array<UnitStack | null>(SLOT_COUNT).fill(null),
     armed: null,
@@ -255,6 +257,7 @@ export class MerandiEngine {
           target.hp -= dmg;
           if (target.hp <= 0) {
             zone.gold += 2 + Math.floor(this.wave / 10); // richer kills as waves escalate, but slowly — monster count already grows with the wave, so this alone was snowballing gold
+            zone.kills++;
             this.monsters = this.monsters.filter((m) => m !== target);
           }
         }
@@ -273,8 +276,9 @@ export class MerandiEngine {
     for (const label of ZONE_LABELS) {
       const zone = this.zones.get(label)!;
       if (zone.id === '') continue;
-      zone.gold += DRAW_COST;
-      this.setMessage(zone, `웨이브 클리어! +${DRAW_COST}G`);
+      const bonus = drawCost(this.wave);
+      zone.gold += bonus;
+      this.setMessage(zone, `웨이브 클리어! +${bonus}G`);
     }
   }
 
@@ -354,7 +358,8 @@ export class MerandiEngine {
   }
 
   private doDraw(zone: Zone): void {
-    if (zone.gold < DRAW_COST) {
+    const cost = drawCost(this.wave);
+    if (zone.gold < cost) {
       this.setMessage(zone, '골드가 부족합니다.');
       return;
     }
@@ -365,7 +370,7 @@ export class MerandiEngine {
       this.setMessage(zone, '자리가 없습니다 — 먼저 판매하세요.');
       return;
     }
-    zone.gold -= DRAW_COST;
+    zone.gold -= cost;
     this.setMessage(zone, `${GRADES[grade].name} · ${job} 획득!`);
   }
 

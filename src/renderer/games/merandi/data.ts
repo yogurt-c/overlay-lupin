@@ -103,8 +103,12 @@ export const SLOT_ROWS = 6;
 export const SLOT_COUNT = SLOT_COLS * SLOT_ROWS;
 export const STACK_MAX = 3;
 
-export const DRAW_COST = 25;
-export const SELL_REFUND = 13; // ~50% of DRAW_COST, matching the intended refund ratio
+export const DRAW_COST_BASE = 30;
+/** Keeps pace with the kill-reward curve (also +something per 10 waves) so the "kills needed per draw" ratio doesn't just get easier forever as waves escalate. */
+export function drawCost(wave: number): number {
+  return DRAW_COST_BASE + Math.floor(wave / 10) * 5;
+}
+export const SELL_REFUND = 15; // ~50% of DRAW_COST_BASE, matching the intended refund ratio
 export const UPGRADE_BASE_COST = 15;
 export const UPGRADE_GROWTH = 1.35;
 export const UPGRADE_MAX_LEVEL = 10;
