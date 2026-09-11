@@ -81,7 +81,7 @@ class VolleyballMatch implements GameMatch {
 export const volleyballModule: GameModule = {
   id: 'volleyball',
   label: '배구',
-  hint: '← → 이동 · ↑ 점프 · Space 다이빙/스파이크(공중 ↓·전진 방향으로 세게) · 먼저 5점 내면 승리',
+  hint: '← → 이동 · ↑ 점프 · Space 다이빙(공중에서도 가능) · 먼저 5점 내면 승리',
   createMatch: (isHost) => new VolleyballMatch(isHost),
   createSoloMatch: () => new VolleyballMatch(true, true),
   createInputSource: (target) => createInputSource(target)
