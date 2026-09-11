@@ -4,9 +4,11 @@ const KEY_DRAW = 'KeyZ';
 const KEY_UPGRADE = 'KeyX';
 const KEY_SELL = 'KeyC';
 const KEY_CANCEL = 'Escape';
+const KEY_INFO = 'KeyV';
 const DIGIT_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8'];
 
 const GAME_KEYS = new Set([KEY_DRAW, KEY_UPGRADE, KEY_SELL, KEY_CANCEL, ...DIGIT_KEYS]);
+const HELD_EXTRA_KEYS = new Set([KEY_INFO]);
 
 const UP_KEYS = ['ArrowUp', 'KeyW'];
 const DOWN_KEYS = ['ArrowDown', 'KeyS'];
@@ -26,6 +28,8 @@ export interface InputSource {
   clear(): void;
   /** Held-key camera pan state — separate from `read()` because panning is purely a local render concern, never sent over the network. */
   readCameraPan(): CameraPan;
+  /** True while V is held — purely a local render concern (shows the grade/probability table), never sent over the network. */
+  isInfoHeld(): boolean;
 }
 
 /**
@@ -40,7 +44,7 @@ export function createInputSource(target: Window = window): InputSource {
   const anyOf = (codes: string[]) => codes.some((code) => held.has(code));
 
   target.addEventListener('keydown', (e) => {
-    if (CAMERA_KEYS.has(e.code)) {
+    if (CAMERA_KEYS.has(e.code) || HELD_EXTRA_KEYS.has(e.code)) {
       e.preventDefault();
       held.add(e.code);
       return;
@@ -57,7 +61,7 @@ export function createInputSource(target: Window = window): InputSource {
     }
   });
   target.addEventListener('keyup', (e) => {
-    if (CAMERA_KEYS.has(e.code)) held.delete(e.code);
+    if (CAMERA_KEYS.has(e.code) || HELD_EXTRA_KEYS.has(e.code)) held.delete(e.code);
   });
   target.addEventListener('blur', () => {
     queue = [];
@@ -79,6 +83,7 @@ export function createInputSource(target: Window = window): InputSource {
       down: anyOf(DOWN_KEYS),
       left: anyOf(LEFT_KEYS),
       right: anyOf(RIGHT_KEYS)
-    })
+    }),
+    isInfoHeld: () => held.has(KEY_INFO)
   };
 }
