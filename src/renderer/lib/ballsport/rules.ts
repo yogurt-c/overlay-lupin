@@ -90,4 +90,12 @@ export interface GameRules {
 
   /** Draws this game's field decorations (goal posts, a net, ...). */
   drawField(ctx: CanvasRenderingContext2D, cameraX: number, viewWidth: number): void;
+
+  /**
+   * When true, the local player can't move (or act) while `phase === 'kickoff'` —
+   * only once the countdown ends and play starts. Omit (or false) for a game
+   * that wants figures free to reposition during the countdown, like the
+   * default reposition-then-serve games do.
+   */
+  freezeDuringKickoff?: boolean;
 }

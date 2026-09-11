@@ -118,5 +118,7 @@ export const soccerRules: GameRules = {
   activePartFor,
   resolveRound,
   settleBall,
-  drawField
+  drawField,
+  // 3, 2, 1 카운트다운이 끝나고 플레이가 시작될 때까지 제자리에서 움직일 수 없다.
+  freezeDuringKickoff: true
 };
