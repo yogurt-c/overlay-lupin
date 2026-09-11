@@ -73,19 +73,6 @@ function opponentDoes(e, pose, input = NO_INPUT) {
   check('리치 밖에서는 베기가 닿지 않는다', e.hits === 0, `hits=${e.hits}`);
 }
 
-// 3. A thrust reaches from a distance a slash cannot.
-{
-  const slash = playing(52);
-  opponentDoes(slash, 'slash');
-  const thrust = playing(52);
-  opponentDoes(thrust, 'thrust');
-  check(
-    '찌르기는 베기가 닿지 않는 거리에서도 닿는다',
-    slash.hits === 0 && thrust.hits === 1,
-    `slash=${slash.hits} thrust=${thrust.hits}`
-  );
-}
-
 // 4. One swing can only score once, however many ticks it stays live.
 {
   const e = playing(34);
@@ -104,7 +91,7 @@ function opponentDoes(e, pose, input = NO_INPUT) {
 
 /** Runs one attack against one guard and reports what happened. */
 function exchange(attack, guardLow) {
-  const e = playing(attack === 'thrust' ? 52 : 34);
+  const e = playing(34);
   const input = { ...NO_INPUT, guard: true, down: guardLow };
   // Hold the guard long enough for it to actually cover.
   e.step(input);
@@ -118,9 +105,7 @@ const MATRIX = [
   ['베기', 'slash', true, 'hit'],
   ['하단 베기', 'slashLow', false, 'hit'],
   ['하단 베기', 'slashLow', true, 'parry'],
-  ['찌르기', 'thrust', false, 'parry'],
-  ['찌르기', 'thrust', true, 'parry'],
-  ['내려베기', 'plunge', false, 'hit'],
+  ['내려베기', 'plunge', false, 'parry'],
   ['내려베기', 'plunge', true, 'hit']
 ];
 

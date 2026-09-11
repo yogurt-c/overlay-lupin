@@ -128,83 +128,56 @@ export function limbsFor(pose: string, anim: number): Limbs {
     case 'windupLow':
       return {
         legs: [
-          [6, -1],
-          [-9, 0]
+          [9, 0],
+          [-12, 0]
         ],
         hands: [
-          [-4, -38],
-          [-10, -32]
+          [-3, -4],
+          [-9, -2]
         ],
-        lean: -1,
+        lean: -2,
         blade: [
-          [-4, -38],
-          [-23, -46]
-        ]
+          [-3, -4],
+          [-22, 4]
+        ],
+        crouch: 10
       };
     case 'slashLow':
       return {
         legs: [
-          [12, -3],
-          [-9, 0]
+          [17, 1],
+          [-11, 0]
         ],
         hands: [
-          [14, -24],
-          [3, -24]
+          [13, -2],
+          [3, -8]
         ],
-        lean: 4,
+        lean: 5,
+        // Kept low on purpose: this blade is also what judges hits (bladeFor),
+        // so it has to land on LEGS, not TORSO, or a high guard would wrongly
+        // block a low attack. The windup/after poses carry the dramatic rise instead.
         blade: [
-          [14, -24],
-          [37, -9]
-        ]
+          [14, -2],
+          [37, -15]
+        ],
+        crouch: 10
       };
     case 'afterLow':
       return {
         legs: [
-          [10, -1],
-          [-10, 0]
+          [13, -1],
+          [-14, 0]
         ],
         hands: [
-          [11, -20],
-          [1, -25]
+          [10, -30],
+          [0, -22]
         ],
-        lean: 5,
+        lean: 6,
         blade: [
-          [11, -20],
-          [28, -4]
-        ]
-      };
-
-    case 'windupThrust':
-      return {
-        legs: [
-          [8, 0],
-          [-10, 0]
+          [10, -30],
+          [26, -52]
         ],
-        hands: [
-          [-6, -31],
-          [-1, -28]
-        ],
-        lean: -3,
-        blade: [
-          [-6, -31],
-          [-24, -33]
-        ]
-      };
-    case 'thrust':
-      return {
-        legs: [
-          [17, 0],
-          [-13, 0]
-        ],
-        hands: [
-          [19, -30],
-          [6, -28]
-        ],
-        lean: 5,
-        blade: [
-          [19, -30],
-          [51, -31]
-        ]
+        crouch: 10
       };
 
     case 'plunge':
@@ -227,34 +200,36 @@ export function limbsFor(pose: string, anim: number): Limbs {
     case 'guardHigh':
       return {
         legs: [
-          [6, 0],
-          [-7, 0]
+          [3, 0],
+          [-4, 0]
         ],
         hands: [
-          [13, -30],
-          [8, -40]
+          [12, -32],
+          [7, -40]
         ],
-        lean: 1,
+        lean: -2,
         blade: [
-          [12, -14],
-          [16, -52]
-        ]
+          [12, -32],
+          [17, -54]
+        ],
+        crouch: -3
       };
     case 'guardLow':
       return {
         legs: [
-          [7, -1],
-          [-8, 0]
+          [14, 0],
+          [-16, 0]
         ],
         hands: [
-          [11, -29],
-          [5, -32]
+          [10, -16],
+          [2, -19]
         ],
-        lean: 2,
+        lean: 7,
         blade: [
-          [9, -32],
-          [27, -6]
-        ]
+          [10, -16],
+          [36, 4]
+        ],
+        crouch: 13
       };
 
     case 'clash':
@@ -317,8 +292,9 @@ export function arcFor(pose: string): [number, number, number, number, number] |
   switch (pose as Pose) {
     case 'slash':
       return [4, -34, 28, -2.4, -0.2];
+    // Dips toward the ground then rises — the mirror of the high slash's cresting arc.
     case 'slashLow':
-      return [4, -28, 26, -1.9, 0.35];
+      return [5, -20, 18, -0.66, 2.67];
     case 'plunge':
       return [6, -40, 24, -1.5, 0.6];
     default:
