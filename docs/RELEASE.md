@@ -74,6 +74,7 @@ npm run release:publish
 
 - `GH_TOKEN`: https://github.com/settings/tokens 에서 `repo` 스코프로 발급.
 - 결과물: dmg/zip/latest-mac.yml(mac) + exe/latest.yml(win)이 같은 draft에 업로드됨.
+- 릴리즈 본문(설명)에는 `build/release-notes.md` 내용이 `releaseInfo.releaseNotesFile` 설정(`package.json`)을 통해 자동으로 채워짐 — 어떤 파일을 받아야 하는지 안내하는 고정 문구. 버전별 변경 내역은 여기 포함되지 않으므로 필요하면 GitHub 릴리즈 페이지에서 직접 추가.
 - GitHub Releases 페이지에서 확인 후 **Publish**로 전환해야 사용자 앱들이 실제로 감지함.
 
 ## 수동 배포 (자동 업데이트 없이 dmg만 전달할 때)
