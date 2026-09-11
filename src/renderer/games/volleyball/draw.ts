@@ -1,7 +1,7 @@
 import { GROUND_Y, CEILING_Y } from '../../lib/ballsport/field.js';
 import { roughStroke } from '../../lib/sketch.js';
 import type { Limbs } from '../../lib/ballsport/draw.js';
-import { DIVE_REACH, SPIKE_HAND } from './field.js';
+import { ACTIVE_FRAMES, DIVE_REACH, SPIKE_HAND } from './field.js';
 import type { Pose } from './types.js';
 
 const CHEST_Y = -32;
@@ -24,7 +24,7 @@ function spikeLimbs(armX: number, armY: number, lean: number): Limbs {
 }
 
 /** Limb targets for each of volleyball's poses, in feet-space with +x already meaning "forward". */
-export function limbsFor(pose: string, anim: number): Limbs {
+export function limbsFor(pose: string, anim: number, actionTimer?: number): Limbs {
   const swing = Math.sin(anim);
   const lift = Math.cos(anim);
 
@@ -53,7 +53,12 @@ export function limbsFor(pose: string, anim: number): Limbs {
         ],
         lean: 0
       };
-    case 'dive':
+    case 'dive': {
+      // Reach out over the commit window instead of snapping straight to full
+      // extension: 0 at the trigger tick, 1 by the time the pose ends. Only
+      // known for the locally-simulated figure — actionTimer isn't networked,
+      // so the opponent's dive just holds at full reach the way it always did.
+      const progress = actionTimer === undefined ? 1 : 1 - Math.min(1, actionTimer / ACTIVE_FRAMES);
       return {
         legs: [
           [-16, -1],
@@ -63,8 +68,12 @@ export function limbsFor(pose: string, anim: number): Limbs {
           [DIVE_REACH.x, DIVE_REACH.y],
           [9, CHEST_Y + 10]
         ],
-        lean: 7
+        lean: 4 + progress * 3,
+        trail: actionTimer === undefined ? 0 : 1,
+        // A quick flick right as the pose is about to end, not a lingering cloud.
+        impact: actionTimer !== undefined && actionTimer <= 3 ? 1 - actionTimer / 3 : 0
       };
+    }
     case 'spike':
       return spikeLimbs(SPIKE_HAND.x, SPIKE_HAND.y, -1);
     case 'spikeForward':
