@@ -152,8 +152,10 @@ export class MerandiEngine {
     if (z) this.zones.set(z.label, freshZone(z.label));
   }
 
+  /** Appends rather than overwrites — a peer can send more than one packet between two step() calls (network jitter), and each one's commands must survive, not just the most recent. */
   setInput(id: string, input: MerandiInput): void {
-    this.pendingInputs.set(id, input);
+    const existing = this.pendingInputs.get(id);
+    this.pendingInputs.set(id, existing ? { commands: [...existing.commands, ...input.commands] } : input);
   }
 
   private startWave(wave: number): void {
@@ -256,7 +258,9 @@ export class MerandiEngine {
 
           target.hp -= dmg;
           if (target.hp <= 0) {
-            zone.gold += 2 + Math.floor(this.wave / 10); // richer kills as waves escalate, but slowly — monster count already grows with the wave, so this alone was snowballing gold
+            // +1 every 20 waves (not 10) — monster count already grows every wave, so stacking a faster
+            // per-kill escalation on top of that was compounding into a gold snowball by the early-mid game.
+            zone.gold += 2 + Math.floor(this.wave / 20);
             zone.kills++;
             this.monsters = this.monsters.filter((m) => m !== target);
           }

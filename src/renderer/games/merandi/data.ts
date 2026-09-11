@@ -57,6 +57,15 @@ export const ARCHETYPE_MAIN_STAT: Record<Archetype, MainStat> = {
   thief: 'luk'
 };
 
+/** MapleStory-flavored secondary stat per archetype — a much smaller bonus on top of the main stat, see SUB_GROWTH. */
+export const ARCHETYPE_SUB_STAT: Record<Archetype, MainStat> = {
+  warrior: 'dex',
+  pirate: 'dex',
+  mage: 'luk',
+  archer: 'str',
+  thief: 'dex'
+};
+
 /** 제논: 해적 소속이지만 STR+DEX+LUK 세 업그레이드 트랙 전부의 영향을 받는 하이브리드 특수 유닛. */
 export const XENON_NAME = '제논';
 export const XENON_ARCHE: Archetype = 'pirate';
@@ -126,8 +135,41 @@ export const ARCHETYPE_ROLE: Record<Archetype, 'attack' | 'attackSpeed' | 'crit'
 };
 
 export const BASE_DMG = 3;
-/** Flat growth per upgrade level, applied to every archetype's role the same way. */
-export const LEVEL_GROWTH = 0.15;
+/** Across-the-board upgrade efficiency dial — scales every LEVEL_GROWTH/SUB_GROWTH value down together so the carefully-tuned ratios between stats never drift while the overall payoff gets cheaper or richer. */
+const EFFICIENCY_SCALE = 0.9;
+/**
+ * Flat growth per upgrade level, per main stat. STR powers two archetypes (전사+해적) instead of one —
+ * at an equal rate it would let a single upgrade track cover 40% of all draws instead of the 20% every
+ * other stat covers, making it strictly more gold-efficient. Its rate is halved to cancel that out, so
+ * investing in STR delivers roughly the same total army-wide value as focusing any other stat.
+ *
+ * INT is the mirror case: no archetype uses it as a sub stat (see ARCHETYPE_SUB_STAT), so mage gets no
+ * synergy bonus from other upgrade tracks the way STR/DEX/LUK investors do. Its own rate is bumped up
+ * so INT's total army-wide value (main only) still lands on par with a stat that gets both main+sub
+ * coverage (~0.20 either way — see the SUB_GROWTH comment for the sub-side half of this balance).
+ */
+export const LEVEL_GROWTH: Record<MainStat, number> = {
+  str: 0.075 * EFFICIENCY_SCALE,
+  int: 0.2 * EFFICIENCY_SCALE,
+  dex: 0.15 * EFFICIENCY_SCALE,
+  luk: 0.15 * EFFICIENCY_SCALE
+};
+
+/**
+ * Sub stat growth, coverage-normalized the same way STR's main growth was halved: a stat used as the
+ * sub stat for N archetypes (see ARCHETYPE_SUB_STAT — DEX covers 전사/해적/도적) gets 1/N of
+ * BASE_SUB_GROWTH, so no sub stat ends up more gold-efficient than another just because more jobs
+ * happen to lean on it. Always far weaker than any main stat's growth — this is flavor/synergy on top
+ * of the main stat, not a second main stat.
+ */
+const BASE_SUB_GROWTH = 0.05 * EFFICIENCY_SCALE;
+export const SUB_GROWTH: Record<MainStat, number> = (() => {
+  const coverage: Record<MainStat, number> = { str: 0, int: 0, dex: 0, luk: 0 };
+  for (const a of ARCHETYPES) coverage[ARCHETYPE_SUB_STAT[a]]++;
+  const result = {} as Record<MainStat, number>;
+  for (const s of MAIN_STATS) result[s] = coverage[s] > 0 ? BASE_SUB_GROWTH / coverage[s] : 0;
+  return result;
+})();
 
 /**
  * Shared by the engine (actual combat) and the UI (inspect panel) so the displayed damage number is
@@ -135,10 +177,15 @@ export const LEVEL_GROWTH = 0.15;
  */
 export function computeMemberMultiplier(upLevels: UpgradeLevels, member: Pick<UnitMember, 'arche' | 'job'>): number {
   if (member.job === XENON_NAME) {
-    const avg = (upLevels.str + upLevels.dex + upLevels.luk) / 3;
-    return 1 + avg * LEVEL_GROWTH;
+    const stats: MainStat[] = ['str', 'dex', 'luk'];
+    const avg = stats.reduce((sum, s) => sum + upLevels[s] * LEVEL_GROWTH[s], 0) / stats.length;
+    return 1 + avg;
   }
-  return 1 + upLevels[ARCHETYPE_MAIN_STAT[member.arche]] * LEVEL_GROWTH;
+  const mainStat = ARCHETYPE_MAIN_STAT[member.arche];
+  const subStat = ARCHETYPE_SUB_STAT[member.arche];
+  const mainBonus = upLevels[mainStat] * LEVEL_GROWTH[mainStat];
+  const subBonus = upLevels[subStat] * SUB_GROWTH[subStat];
+  return 1 + mainBonus + subBonus;
 }
 
 export function computeMemberDamage(upLevels: UpgradeLevels, member: Pick<UnitMember, 'arche' | 'job' | 'grade'>): number {

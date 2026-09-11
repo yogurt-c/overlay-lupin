@@ -1,5 +1,5 @@
 import { beginSketchFrame, roughSegment } from '../../lib/sketch.js';
-import { ARCHETYPES, ARCHETYPE_MAIN_STAT, ARCHETYPE_NAME, GRADES, MAIN_STATS, MONSTER_KIND_NAME, SLOT_COUNT, computeMemberDamage } from './data.js';
+import { ARCHETYPES, ARCHETYPE_MAIN_STAT, ARCHETYPE_NAME, ARCHETYPE_SUB_STAT, GRADES, MAIN_STAT_NAME, MAIN_STATS, MONSTER_KIND_NAME, SLOT_COUNT, XENON_NAME, computeMemberDamage } from './data.js';
 import { HALF_TRACK, ZONE_SIGN, ZOOM_VIEW_SIZE, clampCamera, memberOffset, perimeterPoint, slotPosition, squareLoopPoints } from './field.js';
 import type { Point } from './field.js';
 import type { Viewport } from '../types.js';
@@ -291,8 +291,13 @@ function drawInspectPanel(ctx: CanvasRenderingContext2D, viewport: Viewport, wor
   const member = zone.slots.flatMap((s) => s?.members ?? []).find((m) => m.id === selection.memberId);
   if (!member) return;
   const dmg = computeMemberDamage(zone.upLevels, member);
+  const statLine =
+    member.job === XENON_NAME
+      ? '주스탯 STR+DEX+LUK 평균'
+      : `주스탯 ${MAIN_STAT_NAME[ARCHETYPE_MAIN_STAT[member.arche]]} · 부스탯 ${MAIN_STAT_NAME[ARCHETYPE_SUB_STAT[member.arche]]}`;
   drawBottomPanel(ctx, viewport, member.job, [
     `${ARCHETYPE_NAME[member.arche]} · 레어도 ${GRADES[member.grade].name}`,
+    statLine,
     `공격력 ${dmg.toFixed(1)}`
   ]);
 }
