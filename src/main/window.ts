@@ -3,8 +3,8 @@ import path from 'node:path';
 
 export function createGameWindow(): BrowserWindow {
   const win = new BrowserWindow({
-    width: 240,
-    height: 170,
+    width: 320,
+    height: 280,
     minWidth: 160,
     minHeight: 120,
     frame: false,

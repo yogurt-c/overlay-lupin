@@ -280,7 +280,10 @@ export class FenceEngine {
     const p = this.local;
     const canGuard = p.phase === null;
     if (input.guard && canGuard) {
-      if (p.guardHeld === 0) p.guardLow = input.down;
+      // Height tracks down live, so letting go of down while still holding
+      // guard switches straight to a high guard instead of staying committed
+      // to whatever height was held when guard first went up.
+      p.guardLow = input.down;
       p.guardHeld += 1;
     } else {
       if (p.guardHeld >= GUARD_RAISE_FRAMES) p.guardDrop = GUARD_DROP_FRAMES;
@@ -374,8 +377,7 @@ export class FenceEngine {
     const p = this.local;
     if (p.y < 0) return 'plunge';
     if (input.down) return 'slashLow';
-    const forwardHeld = p.facing === 1 ? input.right : input.left;
-    return forwardHeld ? 'thrust' : 'slash';
+    return 'slash';
   }
 
   private derivePose(): Pose {
@@ -387,7 +389,6 @@ export class FenceEngine {
     if (p.kind !== null && p.phase !== null) {
       if (p.phase === 'windup') {
         if (p.kind === 'slashLow') return 'windupLow';
-        if (p.kind === 'thrust') return 'windupThrust';
         if (p.kind === 'plunge') return 'jump';
         return 'windup';
       }
@@ -463,13 +464,13 @@ export class FenceEngine {
   }
 
   /**
-   * A guard covers a height, not the whole body. A thrust is the exception
-   * either guard can turn aside, and a falling blade is the one nothing can.
+   * A guard covers a height, not the whole body. A downward strike comes from
+   * above, so only a raised (high) guard can catch it — crouched low, there is
+   * nothing between the blade and the head.
    */
   private blocks(contactY: number): boolean {
     if (!this.guarding) return false;
-    if (this.remote.pose === 'plunge') return false;
-    if (this.remote.pose === 'thrust') return true;
+    if (this.remote.pose === 'plunge') return !this.local.guardLow;
     return this.local.guardLow ? contactY > GUARD_SPLIT : contactY <= GUARD_SPLIT;
   }
 

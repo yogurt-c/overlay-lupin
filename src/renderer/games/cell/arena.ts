@@ -28,6 +28,9 @@ export const BIG_FOOD_SPAWN_INTERVAL_MS = 10000;
 /** Caps how many can sit on the field at once so they stay a rare sight, not ambient food. */
 export const BIG_FOOD_MAX_COUNT = 3;
 
+/** The host tops up with bots until this many cells are alive, and backs off as real players join. */
+export const TARGET_POPULATION = 6;
+
 /** `mass` grows a cell's on-screen area, not its radius, so early growth reads as fast and later growth as gradual. */
 export function radiusFor(mass: number): number {
   return 6 + Math.sqrt(mass) * 2.4;

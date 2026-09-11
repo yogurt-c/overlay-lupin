@@ -17,8 +17,6 @@ export type Pose =
   | 'windupLow'
   | 'slashLow'
   | 'afterLow'
-  | 'windupThrust'
-  | 'thrust'
   | 'plunge'
   | 'guardHigh'
   | 'guardLow'
@@ -27,7 +25,7 @@ export type Pose =
   | 'hit';
 
 /** The poses whose blade can cut. Everything else is a drawing. */
-export const ACTIVE_POSES: ReadonlySet<Pose> = new Set<Pose>(['slash', 'slashLow', 'thrust', 'plunge']);
+export const ACTIVE_POSES: ReadonlySet<Pose> = new Set<Pose>(['slash', 'slashLow', 'plunge']);
 
 export interface FenceInput {
   left: boolean;

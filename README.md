@@ -16,9 +16,10 @@
 
 <br/>
 
-<img src="assets/screenshot-invite.png" alt="대전 신청 알림 화면" width="30%" />&nbsp;&nbsp;
-<img src="assets/screenshot-match.png" alt="1:1 대두축구 경기 화면" width="30%" />&nbsp;&nbsp;
-<img src="assets/screenshot-cell.png" alt="세포키우기 경기 화면" width="30%" />
+<img src="assets/screenshot-invite.png" alt="대전 신청 알림 화면" width="23%" />&nbsp;&nbsp;
+<img src="assets/screenshot-match.png" alt="1:1 대두축구 경기 화면" width="23%" />&nbsp;&nbsp;
+<img src="assets/screenshot-sword.png" alt="1:1 칼싸움 경기 화면" width="23%" />&nbsp;&nbsp;
+<img src="assets/screenshot-cell.png" alt="세포키우기 경기 화면" width="23%" />
 
 </div>
 
@@ -32,6 +33,13 @@
 - **배구** — 손그림 스타일 1:1 대전, 다이빙으로 받아서 스파이크로 꽂고 5점 먼저 내면 승리
 - **칼싸움** — 손그림 스타일 1:1 대전, 상단·하단·찌르기를 상대 가드 반대편으로 넣어서 목숨 5개를 먼저 다 깎으면 승리
 - **세포키우기** — 최대 6명, 방장이 방 열면 누구나 자유롭게 참가·중도 합류. 점을 먹고 커지고, 나보다 작은 세포는 삼키고 큰 세포는 도망 — 끝나는 판 없이 방에 한 명이라도 남아있으면 계속
+
+---
+
+## 단축키
+
+- **Page Down / Page Up** — 오버레이 숨기기 / 다시 꺼내기. 다른 창을 쓰고 있어도 전역으로 동작해서 언제든 숨겼다 불러올 수 있어요
+- **Cmd+Q / Cmd+W** (macOS), **Ctrl+Q / Alt+F4** (Windows) — 앱 완전 종료
 
 ---
 

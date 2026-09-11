@@ -19,6 +19,11 @@ const panel = document.getElementById('panel') as HTMLDivElement;
 const panelTitle = document.getElementById('panel-title') as HTMLHeadingElement;
 const gameTabsEl = document.getElementById('game-tabs') as HTMLDivElement;
 const hintEl = document.getElementById('hint') as HTMLParagraphElement;
+const modeChoiceEl = document.getElementById('mode-choice') as HTMLDivElement;
+const soloBtn = document.getElementById('solo-btn') as HTMLButtonElement;
+const versusBtn = document.getElementById('versus-btn') as HTMLButtonElement;
+const matchViewEl = document.getElementById('match-view') as HTMLDivElement;
+const modeBackBtn = document.getElementById('mode-back-btn') as HTMLButtonElement;
 const peerListEl = document.getElementById('peer-list') as HTMLUListElement;
 const roomListEl = document.getElementById('room-list') as HTMLUListElement;
 const hud = document.getElementById('hud') as HTMLDivElement;
@@ -50,14 +55,17 @@ let myId = '';
 let myName = '';
 let uiState: UiState = 'idle';
 let selectedGameId = GAME_MODULES[0].id;
+/** Which half of the panel is showing: the 혼자하기/같이하기 choice, or the peer/room search. Reset whenever the panel (re)opens or the game tab changes. */
+let panelStep: 'mode' | 'match' = 'mode';
 let activeMatch: GameMatch | null = null;
-let activeMatchMode: 'duel' | 'room' | null = null;
+let activeMatchMode: 'duel' | 'room' | 'solo' | null = null;
 let activeInput: { read(): unknown; clear(): void } | null = null;
 let peers: PeerInfo[] = [];
 let rooms: RoomInfo[] = [];
 let currentRoster: RoomRoster | null = null;
 let incomingPeerId: string | null = null;
-let lastScoreText = '';
+/** null until the first sync, so a match that wants no status line still clears the HUD. */
+let lastScoreText: string | null = null;
 let lastBannerText = '';
 let stepAccumulator = 0;
 let boilAccumulator = 0;
@@ -132,14 +140,28 @@ function startMatch(mode: 'duel' | 'room', isHost: boolean, gameId: string): voi
   activeInput = inputSources.get(module.id) ?? null;
   stepAccumulator = 0;
   lastFrameAt = performance.now();
-  lastScoreText = '';
+  lastScoreText = null;
+  lastBannerText = '';
+  setUiState('play');
+}
+
+/** No networking involved at all — the game's own bot stands in for the opponent. */
+function beginSoloMatch(): void {
+  const module = currentModule();
+  if (!module.createSoloMatch) return;
+  activeMatchMode = 'solo';
+  activeMatch = module.createSoloMatch(myId, myName);
+  activeInput = inputSources.get(module.id) ?? null;
+  stepAccumulator = 0;
+  lastFrameAt = performance.now();
+  lastScoreText = null;
   lastBannerText = '';
   setUiState('play');
 }
 
 function endMatch(): void {
   if (activeMatchMode === 'room') window.overlayLupin.leaveRoom();
-  else window.overlayLupin.leaveMatch();
+  else if (activeMatchMode === 'duel') window.overlayLupin.leaveMatch();
   activeMatch = null;
   activeMatchMode = null;
   setUiState('idle');
@@ -154,12 +176,26 @@ function renderGameTabs(): void {
     btn.disabled = GAME_MODULES.length === 1;
     btn.addEventListener('click', () => {
       selectedGameId = module.id;
+      panelStep = 'mode';
       renderGameTabs();
-      renderMatchingList();
+      renderPanelBody();
     });
     gameTabsEl.appendChild(btn);
   }
   hintEl.textContent = currentModule().hint;
+}
+
+/** Picks between the 혼자하기/같이하기 choice and the peer/room search, per `panelStep`. */
+function renderPanelBody(): void {
+  const showMode = panelStep === 'mode';
+  modeChoiceEl.hidden = !showMode;
+  matchViewEl.hidden = showMode;
+  if (showMode) {
+    panelTitle.textContent = currentModule().label;
+    soloBtn.disabled = !currentModule().createSoloMatch;
+  } else {
+    renderMatchingList();
+  }
 }
 
 /** Shows the peer list (1:1 duel games) or the room list (room games) for whichever game tab is selected. */
@@ -246,9 +282,25 @@ idleIcon.addEventListener('click', () => {
     setUiState('idle');
     return;
   }
+  panelStep = 'mode';
   renderGameTabs();
-  renderMatchingList();
+  renderPanelBody();
   setUiState('panel');
+});
+
+soloBtn.addEventListener('click', () => {
+  if (soloBtn.disabled) return;
+  beginSoloMatch();
+});
+
+versusBtn.addEventListener('click', () => {
+  panelStep = 'match';
+  renderPanelBody();
+});
+
+modeBackBtn.addEventListener('click', () => {
+  panelStep = 'mode';
+  renderPanelBody();
 });
 
 cancelInviteBtn.addEventListener('click', () => {
@@ -292,7 +344,7 @@ document.addEventListener(
 window.overlayLupin.onPeers((list) => {
   peers = list;
   statusDot.dataset.state = list.length > 0 ? 'found' : '';
-  if (uiState === 'panel') renderMatchingList();
+  if (uiState === 'panel' && panelStep === 'match') renderMatchingList();
 });
 
 window.overlayLupin.onInviteSent((peer) => {
@@ -328,7 +380,7 @@ window.overlayLupin.onOpponentState((packet) => activeMatch?.applyOpponentPacket
 
 window.overlayLupin.onRooms((list) => {
   rooms = list;
-  if (uiState === 'panel') renderMatchingList();
+  if (uiState === 'panel' && panelStep === 'match') renderMatchingList();
 });
 
 window.overlayLupin.onRoomRoster((roster) => {
@@ -372,6 +424,8 @@ function syncHud(): void {
 
   if (status !== lastScoreText) {
     scoreEl.textContent = status;
+    // A game with nothing to say up there gets no HUD at all.
+    hud.hidden = status === '';
     lastScoreText = status;
   }
   if (banner !== lastBannerText) {
@@ -408,7 +462,7 @@ function frame(now: number): void {
     drawFrame(stepAccumulator / STEP_MS);
     syncHud();
 
-    if (now - lastSentAt >= SEND_INTERVAL_MS) {
+    if (activeMatchMode !== 'solo' && now - lastSentAt >= SEND_INTERVAL_MS) {
       lastSentAt = now;
       const packet = activeMatch.buildOutgoingPacket();
       if (activeMatchMode === 'room') window.overlayLupin.sendRoomState(packet);
