@@ -5,69 +5,33 @@ import type { ActivePartSpec, GameRules, RuleActor } from '../../lib/ballsport/r
 import type { Input } from '../../lib/ballsport/engine.js';
 import { drawNet, drawWall } from './draw.js';
 import { INK } from '../../lib/ballsport/scene.js';
-import {
-  ACTIVE_FRAMES,
-  BALL_RADIUS,
-  DIVE_REACH,
-  NET_GAP,
-  NET_HEIGHT,
-  NET_X,
-  SERVE_JITTER,
-  SPIKE_HAND,
-  WALL_LEFT,
-  WALL_RIGHT
-} from './field.js';
+import { ACTIVE_FRAMES, BALL_RADIUS, DIVE_REACH, NET_GAP, NET_HEIGHT, NET_X, SERVE_JITTER, WALL_LEFT, WALL_RIGHT } from './field.js';
 import type { Pose } from './types.js';
 
-const RECOVER_FRAMES = 20;
-/** Sustained for the whole dive window, not just the trigger tick, so the lunge actually covers ground. */
-const DIVE_LUNGE_SPEED = 13;
+const RECOVER_FRAMES = 14;
+/** Sustained for the whole dive window, not just the trigger tick, so the lunge actually covers ground — a short poke, not a cross-court slide. */
+const DIVE_LUNGE_SPEED = 8;
 
-/**
- * Power/lift per aerial variant. `lift` is subtracted from vy (see ball.ts),
- * so a negative lift adds downward speed instead of popping the ball up.
- */
-const SHOT: Record<string, { power: number; lift: number; spin: number }> = {
-  spike: { power: 4.5, lift: 1.5, spin: 0.4 },
-  spikeForward: { power: 6.5, lift: 0.4, spin: 0.4 },
-  spikeDown: { power: 4, lift: -4.5, spin: 0.4 },
-  spikeUp: { power: 3, lift: 5.5, spin: 0.4 },
-  tip: { power: 2, lift: 0.8, spin: 0.2 }
-};
-
-function activePartFor(pose: string, facing: 1 | -1, side: 1 | -1): ActivePartSpec | undefined {
-  if ((pose as Pose) === 'dive') {
-    return { anchor: DIVE_REACH, bounce: BODY_BOUNCE, push: BODY_PUSH };
-  }
-  const shot = SHOT[pose];
-  if (!shot) return undefined;
-  // `dir: side` — a shot always aims at the opponent's court, regardless of which way the figure happens to be facing.
-  return { anchor: SPIKE_HAND, bounce: BODY_BOUNCE, push: BODY_PUSH, shot: { ...shot, dir: side } };
+function activePartFor(pose: string): ActivePartSpec | undefined {
+  if ((pose as Pose) !== 'dive') return undefined;
+  return { anchor: DIVE_REACH, bounce: BODY_BOUNCE, push: BODY_PUSH };
 }
 
-function stepAction(p: RuleActor, input: Input, side: 1 | -1, defaultPose: string): ActivePartSpec | undefined {
+/**
+ * Diving is the one action pose, on the ground or still falling from a jump
+ * alike — there's no separate grounded-vs-airborne branch (and so no
+ * separate "spike") anymore. Gravity keeps pulling a mid-air dive down as
+ * normal; only the horizontal lunge is borrowed for its active window.
+ */
+function stepAction(p: RuleActor, input: Input, _side: 1 | -1, defaultPose: string): ActivePartSpec | undefined {
   if (p.actionCooldown > 0) p.actionCooldown -= 1;
   if (p.actionTimer > 0) {
     p.actionTimer -= 1;
   } else if (input.action && p.actionCooldown <= 0) {
     p.actionTimer = ACTIVE_FRAMES;
     p.actionCooldown = ACTIVE_FRAMES + RECOVER_FRAMES;
-
-    const onGround = p.y >= 0;
-    if (onGround) {
-      const dive: Pose = 'dive';
-      p.pose = dive;
-    } else {
-      const forwardHeld = (side === 1 && input.right) || (side === -1 && input.left);
-      const backHeld = (side === 1 && input.left) || (side === -1 && input.right);
-      let chosen: Pose;
-      if (input.down) chosen = 'spikeDown';
-      else if (forwardHeld) chosen = 'spikeForward';
-      else if (input.jump) chosen = 'spikeUp';
-      else if (backHeld) chosen = 'tip';
-      else chosen = 'spike';
-      p.pose = chosen;
-    }
+    const dive: Pose = 'dive';
+    p.pose = dive;
   }
 
   if (p.actionTimer <= 0) {
@@ -75,14 +39,12 @@ function stepAction(p: RuleActor, input: Input, side: 1 | -1, defaultPose: strin
     return undefined;
   }
 
-  if ((p.pose as Pose) === 'dive') {
-    // Own vx outright for the lunge — otherwise the engine's normal
-    // accel/drag/speed-cap would clamp this straight back down to regular
-    // running speed the very next tick, and the dive would barely move.
-    p.vx = p.facing * DIVE_LUNGE_SPEED;
-    p.vxOverridden = true;
-  }
-  return activePartFor(p.pose, p.facing, side);
+  // Own vx outright for the lunge — otherwise the engine's normal
+  // accel/drag/speed-cap would clamp this straight back down to regular
+  // running speed the very next tick, and the dive would barely move.
+  p.vx = p.facing * DIVE_LUNGE_SPEED;
+  p.vxOverridden = true;
+  return activePartFor(p.pose);
 }
 
 /**

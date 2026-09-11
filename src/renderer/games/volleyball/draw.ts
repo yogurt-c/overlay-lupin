@@ -1,27 +1,13 @@
 import { GROUND_Y, CEILING_Y } from '../../lib/ballsport/field.js';
 import { roughStroke } from '../../lib/sketch.js';
 import type { Limbs } from '../../lib/ballsport/draw.js';
-import { ACTIVE_FRAMES, DIVE_REACH, SPIKE_HAND } from './field.js';
+import { ACTIVE_FRAMES, DIVE_REACH } from './field.js';
 import type { Pose } from './types.js';
 
 const CHEST_Y = -32;
 const LEG_LENGTH = 11;
 const ARM_LENGTH = 10;
 const ARM_DROP = 14;
-
-function spikeLimbs(armX: number, armY: number, lean: number): Limbs {
-  return {
-    legs: [
-      [9, -8],
-      [-9, -3]
-    ],
-    hands: [
-      [armX, armY],
-      [-10, CHEST_Y + 4]
-    ],
-    lean
-  };
-}
 
 /** Limb targets for each of volleyball's poses, in feet-space with +x already meaning "forward". */
 export function limbsFor(pose: string, anim: number, actionTimer?: number): Limbs {
@@ -54,10 +40,11 @@ export function limbsFor(pose: string, anim: number, actionTimer?: number): Limb
         lean: 0
       };
     case 'dive': {
-      // Reach out over the commit window instead of snapping straight to full
-      // extension: 0 at the trigger tick, 1 by the time the pose ends. Only
-      // known for the locally-simulated figure — actionTimer isn't networked,
-      // so the opponent's dive just holds at full reach the way it always did.
+      // The one action pose, grounded or still falling from a jump alike.
+      // Reach out over the commit window instead of snapping straight to
+      // full extension: 0 at the trigger tick, 1 by the time the pose ends.
+      // Only known for the locally-simulated figure — actionTimer isn't
+      // networked, so the opponent's dive just holds at full reach.
       const progress = actionTimer === undefined ? 1 : 1 - Math.min(1, actionTimer / ACTIVE_FRAMES);
       return {
         legs: [
@@ -74,16 +61,6 @@ export function limbsFor(pose: string, anim: number, actionTimer?: number): Limb
         impact: actionTimer !== undefined && actionTimer <= 3 ? 1 - actionTimer / 3 : 0
       };
     }
-    case 'spike':
-      return spikeLimbs(SPIKE_HAND.x, SPIKE_HAND.y, -1);
-    case 'spikeForward':
-      return spikeLimbs(SPIKE_HAND.x + 5, SPIKE_HAND.y - 3, -3);
-    case 'spikeDown':
-      return spikeLimbs(SPIKE_HAND.x + 2, SPIKE_HAND.y + 12, -2);
-    case 'spikeUp':
-      return spikeLimbs(SPIKE_HAND.x - 2, SPIKE_HAND.y - 16, 2);
-    case 'tip':
-      return spikeLimbs(SPIKE_HAND.x - 9, SPIKE_HAND.y + 3, 3);
     default: {
       const breathe = Math.sin(anim * 0.08) * 0.6;
       return {
