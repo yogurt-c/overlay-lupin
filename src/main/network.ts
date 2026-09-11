@@ -152,6 +152,8 @@ export class GameNetwork extends EventEmitter {
   private lastPosReceived = 0;
   private helloTimer?: ReturnType<typeof setInterval>;
   private sweepTimer?: ReturnType<typeof setInterval>;
+  /** `window-all-closed` and `before-quit` both call stop() during a quit-and-install — closing an already-closed socket throws. */
+  private stopped = false;
 
   /** Set only while I'm hosting a room; authoritative membership lives here. */
   private hostedRoom: HostedRoom | null = null;
@@ -179,6 +181,8 @@ export class GameNetwork extends EventEmitter {
   }
 
   stop(): void {
+    if (this.stopped) return;
+    this.stopped = true;
     if (this.helloTimer) clearInterval(this.helloTimer);
     if (this.sweepTimer) clearInterval(this.sweepTimer);
     this.discoverySocket.close();
