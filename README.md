@@ -36,6 +36,13 @@
 
 ---
 
+## 단축키
+
+- **Page Down / Page Up** — 오버레이 숨기기 / 다시 꺼내기. 다른 창을 쓰고 있어도 전역으로 동작해서 언제든 숨겼다 불러올 수 있어요
+- **Cmd+Q / Cmd+W** (macOS), **Ctrl+Q / Alt+F4** (Windows) — 앱 완전 종료
+
+---
+
 <div align="center">
 
 개발/빌드 이야기는 [docs](docs) 폴더에.
