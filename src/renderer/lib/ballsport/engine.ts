@@ -62,7 +62,8 @@ interface Snapshot {
 
 /** Positions handed to the renderer, interpolated between the last two simulation ticks. */
 export interface ViewState {
-  local: { x: number; y: number; facing: 1 | -1; pose: string; anim: number };
+  /** `actionTimer` rides along so a game's `limbsFor` can ease a pose in over its commit window instead of snapping to it. Only ever available for the locally-simulated figure — the remote figure's timer isn't networked. */
+  local: { x: number; y: number; facing: 1 | -1; pose: string; anim: number; actionTimer: number };
   remote: { x: number; y: number; facing: 1 | -1; pose: string; anim: number };
   ball: { x: number; y: number; r: number; spin: number; vx: number; vy: number };
 }
@@ -119,7 +120,8 @@ export class Game {
     anim: 0,
     actionTimer: 0,
     actionCooldown: 0,
-    activePart: undefined
+    activePart: undefined,
+    vxOverridden: false
   };
   remote: RemotePlayer = { x: 0, y: 0, vx: 0, vy: 0, facing: -1, pose: 'idle', anim: 0 };
   ball: BallState = { x: 0, y: 0, vx: 0, vy: 0, spin: 0, r: DEFAULT_BALL_RADIUS };
@@ -252,18 +254,30 @@ export class Game {
   private stepPlayer(input: Input): void {
     const p = this.local;
     const onGround = p.y >= 0;
-    const accel = onGround ? MOVE_ACCEL : MOVE_ACCEL * AIR_CONTROL;
 
-    if (input.left !== input.right) {
-      p.vx += input.left ? -accel : accel;
-      p.facing = input.left ? -1 : 1;
-    } else if (onGround) {
-      p.vx *= GROUND_DRAG;
-    } else {
-      p.vx *= AIR_DRAG;
+    // The rules go first, so a pose that wants to drive `vx` itself this
+    // tick (a dive lunge) can flag `vxOverridden` before the generic
+    // accel/drag/speed-cap below would otherwise clamp it straight back down
+    // to normal running speed. `defaultPose` is derived from last tick's
+    // position/speed rather than this tick's — one frame staler than it used
+    // to be, which a cosmetic idle/run/jump fallback can't feel.
+    const defaultPose = p.y < -1 ? 'jump' : Math.abs(p.vx) > 0.4 ? 'run' : 'idle';
+    p.vxOverridden = false;
+    p.activePart = this.rules.stepAction(p, input, this.mySide, defaultPose);
+
+    if (!p.vxOverridden) {
+      const accel = onGround ? MOVE_ACCEL : MOVE_ACCEL * AIR_CONTROL;
+      if (input.left !== input.right) {
+        p.vx += input.left ? -accel : accel;
+        p.facing = input.left ? -1 : 1;
+      } else if (onGround) {
+        p.vx *= GROUND_DRAG;
+      } else {
+        p.vx *= AIR_DRAG;
+      }
+      p.vx = Math.max(-MOVE_MAX, Math.min(MOVE_MAX, p.vx));
+      if (Math.abs(p.vx) < 0.05) p.vx = 0;
     }
-    p.vx = Math.max(-MOVE_MAX, Math.min(MOVE_MAX, p.vx));
-    if (Math.abs(p.vx) < 0.05) p.vx = 0;
 
     if (input.jump && onGround) p.vy = JUMP_VELOCITY;
 
@@ -280,8 +294,6 @@ export class Game {
     p.x = Math.max(bounds.min, Math.min(bounds.max, p.x));
 
     if (onGround) p.anim += Math.abs(p.vx) * RUN_ANIM_PER_PIXEL;
-    const defaultPose = p.y < -1 ? 'jump' : Math.abs(p.vx) > 0.4 ? 'run' : 'idle';
-    p.activePart = this.rules.stepAction(p, input, this.mySide, defaultPose);
   }
 
   /** Keeps the two figures from occupying the same spot without needing a shared physics owner. */
@@ -405,7 +417,8 @@ export class Game {
         y: lerp(p.localY, this.local.y, alpha),
         facing: this.local.facing,
         pose: this.local.pose,
-        anim: this.local.anim
+        anim: this.local.anim,
+        actionTimer: this.local.actionTimer
       },
       remote: {
         x: lerp(p.remoteX, this.remote.x, alpha),

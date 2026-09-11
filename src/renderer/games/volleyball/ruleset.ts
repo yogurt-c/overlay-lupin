@@ -5,13 +5,23 @@ import type { ActivePartSpec, GameRules, RuleActor } from '../../lib/ballsport/r
 import type { Input } from '../../lib/ballsport/engine.js';
 import { drawNet, drawWall } from './draw.js';
 import { INK } from '../../lib/ballsport/scene.js';
-import { BALL_RADIUS, DIVE_REACH, NET_GAP, NET_HEIGHT, NET_X, SERVE_JITTER, SPIKE_HAND, WALL_LEFT, WALL_RIGHT } from './field.js';
+import {
+  ACTIVE_FRAMES,
+  BALL_RADIUS,
+  DIVE_REACH,
+  NET_GAP,
+  NET_HEIGHT,
+  NET_X,
+  SERVE_JITTER,
+  SPIKE_HAND,
+  WALL_LEFT,
+  WALL_RIGHT
+} from './field.js';
 import type { Pose } from './types.js';
 
-const ACTIVE_FRAMES = 10;
-const RECOVER_FRAMES = 18;
+const RECOVER_FRAMES = 20;
 /** Sustained for the whole dive window, not just the trigger tick, so the lunge actually covers ground. */
-const DIVE_LUNGE_SPEED = 9;
+const DIVE_LUNGE_SPEED = 13;
 
 /**
  * Power/lift per aerial variant. `lift` is subtracted from vy (see ball.ts),
@@ -66,7 +76,11 @@ function stepAction(p: RuleActor, input: Input, side: 1 | -1, defaultPose: strin
   }
 
   if ((p.pose as Pose) === 'dive') {
+    // Own vx outright for the lunge — otherwise the engine's normal
+    // accel/drag/speed-cap would clamp this straight back down to regular
+    // running speed the very next tick, and the dive would barely move.
     p.vx = p.facing * DIVE_LUNGE_SPEED;
+    p.vxOverridden = true;
   }
   return activePartFor(p.pose, p.facing, side);
 }
