@@ -11,6 +11,8 @@ export interface DrawPlayer {
   /** Running animation phase, in radians. */
   anim: number;
   color: string;
+  /** Ticks left in the current action pose's commit window, if any — only ever present for the locally-simulated figure. */
+  actionTimer?: number;
 }
 
 /** Limb targets for one pose, in feet-space with +x already meaning "forward". */
@@ -22,6 +24,10 @@ export interface Limbs {
   blade?: [number, number][];
   /** Lowers the hip/chest/head anchors for a crouched stance. Omit for the standard standing height. */
   crouch?: number;
+  /** 0..1 — fading ghost strokes trailing the figure, for a fast lunge/dash pose. Omit (or 0) for none. */
+  trail?: number;
+  /** 0..1 — a short burst of ink flicks at the feet, for a landing/impact moment. Omit (or 0) for none. */
+  impact?: number;
 }
 
 const HALO = 'rgba(255,255,255,0.92)';
@@ -49,9 +55,9 @@ export function drawShadow(ctx: CanvasRenderingContext2D, x: number, height: num
 export function drawPlayer(
   ctx: CanvasRenderingContext2D,
   player: DrawPlayer,
-  limbsFor: (pose: string, anim: number) => Limbs
+  limbsFor: (pose: string, anim: number, actionTimer?: number) => Limbs
 ): void {
-  const { x, y, facing, pose, anim, color } = player;
+  const { x, y, facing, pose, anim, color, actionTimer } = player;
   drawShadow(ctx, x, -y, 11);
 
   ctx.save();
@@ -60,9 +66,11 @@ export function drawPlayer(
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 
-  const { legs, hands, lean, blade, crouch = 0 } = limbsFor(pose, anim);
+  const { legs, hands, lean, blade, crouch = 0, trail = 0, impact = 0 } = limbsFor(pose, anim, actionTimer);
   const hipY = HIP_Y + crouch;
   const chestY = CHEST_Y + crouch;
+
+  if (trail > 0) drawMotionTrail(ctx, hipY, chestY, trail, color, HALO);
 
   for (const [fx, fy] of legs) {
     roughLimb(ctx, 0, hipY, fx * 0.55 + 2, (hipY + fy) / 2, fx, fy, 3.4, color, HALO);
@@ -75,7 +83,44 @@ export function drawPlayer(
   drawHead(ctx, lean * 1.2, HEAD.y + crouch * 0.6, HEAD.r, color);
   // Last, so a weapon reads as held in front of the body rather than behind it.
   if (blade) drawBlade(ctx, blade, color);
+  if (impact > 0) drawImpactFlick(ctx, impact, color);
   ctx.restore();
+}
+
+/**
+ * A few fading copies of the torso line, trailing behind (in local, already
+ * facing-flipped space, so always -x) the figure — the same "ghost streak"
+ * idea as drawBallTrail below, reused for a fast lunge instead of a fast ball.
+ */
+function drawMotionTrail(
+  ctx: CanvasRenderingContext2D,
+  hipY: number,
+  chestY: number,
+  intensity: number,
+  color: string,
+  halo: string
+): void {
+  const copies = 3;
+  for (let i = 1; i <= copies; i++) {
+    const back = i * 6;
+    ctx.save();
+    ctx.globalAlpha = (0.3 / i) * intensity;
+    roughStroke(ctx, -back, chestY, -back * 0.6, hipY, 3.4, color, halo);
+    ctx.restore();
+  }
+}
+
+/** A quick fan of short ink flicks at the feet — a landing, not a lingering dust cloud. */
+function drawImpactFlick(ctx: CanvasRenderingContext2D, intensity: number, color: string): void {
+  const marks = 4;
+  for (let i = 0; i < marks; i++) {
+    const angle = -0.4 + (i / (marks - 1)) * 1.1;
+    const len = 6 + jitter(2.5);
+    ctx.save();
+    ctx.globalAlpha = 0.55 * intensity;
+    roughSegment(ctx, 0, 0, Math.cos(angle) * len, -Math.abs(Math.sin(angle)) * len * 0.4, 1.6, color, 1);
+    ctx.restore();
+  }
 }
 
 /** A slightly curved blade with a short crossguard, drawn hilt-to-tip. */
