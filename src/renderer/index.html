@@ -200,6 +200,10 @@
     left: 50%;
     top: 8px;
     transform: translateX(-50%);
+    max-width: min(92vw, 480px);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     font-weight: 700;
     font-size: 13px;
     letter-spacing: 0.02em;
@@ -229,6 +233,16 @@
   #banner[hidden] { display: none; }
   #banner[data-kind="kickoff"] { font-size: 36px; opacity: 0.45; }
   #banner[data-kind="over"] { font-size: 22px; opacity: 0.85; }
+  #banner[data-kind="small"] {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0;
+    opacity: 0.85;
+    max-width: min(90vw, 320px);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 
   @keyframes banner-pop {
     from { transform: translate(-50%, -50%) scale(0.82); opacity: 0; }
