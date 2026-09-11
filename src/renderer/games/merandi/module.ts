@@ -86,6 +86,15 @@ function attachFieldHoverListener(): void {
 const PAN_SPEED_PER_MS = 0.16; // world units per ms
 const MAX_PAN_OFFSET = Math.max(0, WORLD_CLAMP - ZOOM_VIEW_SIZE / 2);
 
+/**
+ * How long the win/loss banner stays up before the shell actually leaves the room (see isOver()).
+ * Without this, the room ends the instant the engine flips `over` and every player gets yanked back
+ * to the idle screen with zero explanation — indistinguishable from an actual network disconnect.
+ * Other games here (soccer/volleyball via ballsport's `phase === 'over' && phaseTimer <= 0`) already
+ * hold on an 'over' phase for exactly this reason.
+ */
+const OVER_GRACE_MS = 4000;
+
 const EMPTY_WORLD: MerandiWorld = {
   wave: 1,
   waveTotal: 50,
@@ -104,6 +113,22 @@ const NO_INPUT: MerandiInput = { commands: [] };
 function fmtClock(ms: number): string {
   const s = Math.max(0, Math.ceil(ms / 1000));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+/**
+ * A member only gets a fully-reassembled world every N chunks (see wire.ts) — at high entity counts
+ * that's as sparse as ~once every 800ms, which reads as monsters/shots visibly jumping between updates.
+ * Since each monster's `speed` and each shot's fade rate are already known, this locally advances a
+ * *copy* of the last-received world by however long it's been since it arrived, purely for rendering —
+ * the canonical `this.world` is never mutated, so this can't drift or compound across frames.
+ */
+function extrapolateWorld(world: MerandiWorld, elapsedMs: number): MerandiWorld {
+  if (elapsedMs <= 0) return world;
+  return {
+    ...world,
+    monsters: world.monsters.map((m) => ({ ...m, t: m.t + m.speed * elapsedMs })),
+    shots: world.shots.map((s) => ({ ...s, life: s.life - elapsedMs })).filter((s) => s.life > 0)
+  };
 }
 
 // Kept short on purpose — the shell's #hud is a single fixed-width line (see index.html), so a long
@@ -125,6 +150,8 @@ class MerandiMatch implements GameMatch {
   private selection: Selection | null = null;
   private lastViewport: Viewport = { width: 0, height: 0, pixelRatio: 1 };
   private lastSteppedAt = 0;
+  /** When `world.over` first went true — see OVER_GRACE_MS and isOver(). */
+  private overSince: number | null = null;
 
   // Outgoing (host only): the current snapshot's chunks, drip-fed one per buildOutgoingPacket() call.
   private wireVersion = 0;
@@ -132,6 +159,7 @@ class MerandiMatch implements GameMatch {
   private chunkCursor = 0;
   // Incoming (member only): reassembles chunks back into a full world — see wire.ts.
   private assembler = new SnapshotAssembler();
+  private lastWorldAt = 0;
 
   constructor(
     private isHost: boolean,
@@ -204,24 +232,36 @@ class MerandiMatch implements GameMatch {
       this.engine.step(1000 / 60);
     }
     this.updateCamera(1000 / 60);
+
+    if (this.currentWorld().over) {
+      if (this.overSince == null) this.overSince = Date.now();
+    } else {
+      this.overSince = null;
+    }
   }
 
   render(ctx: CanvasRenderingContext2D, viewport: Viewport): void {
     this.lastViewport = viewport;
-    const world = this.currentWorld();
+    // Host always renders its own live simulation, zero staleness — only a member needs extrapolation.
+    const world = this.engine ? this.currentWorld() : extrapolateWorld(this.world, Date.now() - this.lastWorldAt);
     renderMerandiScene(ctx, world, this.myId, viewport, this.camera ?? [0, 0], this.selection);
   }
 
   hud(): MatchHud {
     const world = this.currentWorld();
+    if (world.over) {
+      const result = world.won ? `🎉 승리! ${world.wave}웨이브 클리어` : `패배 — ${world.wave}웨이브에서 종료`;
+      return { status: statusFor(world, this.myId), banner: result, bannerKind: 'over' };
+    }
     const me = world.zones.find((z) => z.id === this.myId);
     // The engine already clears `lastMessage` back to '' once its TTL elapses (see MerandiEngine.stepMessages),
     // so the banner just mirrors it directly instead of latching onto the last non-empty value forever.
     return { status: statusFor(world, this.myId), banner: me?.lastMessage ?? '', bannerKind: 'small' };
   }
 
+  /** Waits out OVER_GRACE_MS after the loss/win condition trips so hud()'s result banner is actually visible before the shell leaves the room — without this, every player got yanked back to idle the instant `over` flipped, indistinguishable from a real disconnect. */
   isOver(): boolean {
-    return this.currentWorld().over;
+    return this.overSince != null && Date.now() - this.overSince >= OVER_GRACE_MS;
   }
 
   /**
@@ -252,7 +292,10 @@ class MerandiMatch implements GameMatch {
       // A chunk of the host's snapshot — only replaces `world` once every chunk of its version has
       // arrived; a lost chunk just means one extra stale-but-harmless frame, never a crash.
       const decoded = this.assembler.ingest(packet);
-      if (decoded) this.world = decoded;
+      if (decoded) {
+        this.world = decoded;
+        this.lastWorldAt = Date.now();
+      }
     }
   }
 
