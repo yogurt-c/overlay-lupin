@@ -44,6 +44,8 @@ const BASE_COOLDOWN_MS = 650;
 const SHOT_LIFE_MS = 220;
 /** How long a one-shot feedback message ("골드가 부족합니다" etc.) stays on screen before clearing itself. */
 const MESSAGE_TTL_MS = 2200;
+/** Fraction of kill gold the killer keeps — the rest splits evenly across every other active player, see awardKillGold(). */
+const KILLER_GOLD_SHARE = 0.6;
 
 function freshUpLevels() {
   return { str: 0, int: 0, dex: 0, luk: 0 };
@@ -208,6 +210,25 @@ export class MerandiEngine {
     for (const m of this.monsters) m.t += m.speed * dtMs;
   }
 
+  /**
+   * Killer keeps most of the reward but shares a cut with every other active player — a fast-growing
+   * player still benefits most from their own kills, but can't hoard the entire team's gold while
+   * everyone else falls behind. Shares are kept exact (no per-kill rounding) so nothing leaks from the
+   * economy over hundreds of kills — see draw.ts/module.ts for where gold gets floored for display.
+   */
+  private awardKillGold(killer: Zone): void {
+    const reward = this.wave <= 5 ? 3 : 2 + Math.floor(this.wave / 20);
+    const others = ZONE_LABELS.filter((l) => l !== killer.label && this.zones.get(l)!.id !== '');
+    if (!others.length) {
+      killer.gold += reward;
+      return;
+    }
+    const killerShare = reward * KILLER_GOLD_SHARE;
+    const perOther = (reward - killerShare) / others.length;
+    killer.gold += killerShare;
+    for (const l of others) this.zones.get(l)!.gold += perOther;
+  }
+
   private stepCombat(dtMs: number): void {
     if (!this.monsters.length) return;
     for (const label of ZONE_LABELS) {
@@ -258,10 +279,7 @@ export class MerandiEngine {
 
           target.hp -= dmg;
           if (target.hp <= 0) {
-            // A small early boost (waves 1-5) to ease board-building before the main curve kicks in —
-            // +1 every 20 waves after that (not 10) since monster count already grows every wave, so
-            // stacking a faster per-kill escalation on top of that was compounding into a gold snowball.
-            zone.gold += this.wave <= 5 ? 3 : 2 + Math.floor(this.wave / 20);
+            this.awardKillGold(zone);
             zone.kills++;
             this.monsters = this.monsters.filter((m) => m !== target);
           }

@@ -137,7 +137,7 @@ function statusFor(world: MerandiWorld, myId: string): string {
   const threat = `몹${world.aliveMonsters}/${world.aliveThreshold}`;
   if (!me) return `${wave} · ${threat}`;
   const mode = me.armed === 'upgrade' ? ' · 업글1~4' : me.armed === 'sell' ? (me.pendingArche ? ' · 판매등급1~8' : ' · 판매1~5') : '';
-  return `${wave} · ${threat} · ${me.gold}G${mode}`;
+  return `${wave} · ${threat} · ${Math.floor(me.gold)}G${mode}`;
 }
 
 class MerandiMatch implements GameMatch {

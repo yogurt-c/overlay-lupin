@@ -406,7 +406,9 @@ export function renderMerandiScene(
     const labelInset = 30;
     const cx = sx * (HALF_TRACK - labelInset);
     const cy = sy * (HALF_TRACK - labelInset);
-    const text = `${label}${label === myLabel ? ' (나)' : ''} ${zone.gold}G`;
+    // Shared kill gold (see engine.ts's awardKillGold) accumulates in fractional amounts to avoid
+    // rounding leakage — floored here purely for display, the real balance stays exact underneath.
+    const text = `${label}${label === myLabel ? ' (나)' : ''} ${Math.floor(zone.gold)}G`;
     ctx.font = (label === myLabel ? '700 11px' : '500 10px') + ' sans-serif';
     ctx.textAlign = sx === 1 ? 'right' : 'left';
     ctx.textBaseline = sy === 1 ? 'bottom' : 'top';
