@@ -47,15 +47,24 @@ export function limbsFor(pose: string, anim: number, actionTimer?: number): Limb
       // networked, so the opponent's dive just holds at full reach.
       const progress = actionTimer === undefined ? 1 : 1 - Math.min(1, actionTimer / ACTIVE_FRAMES);
       return {
+        // Trailing leg kicks further back and splits wider than a standing
+        // pose so the silhouette reads as stretched-out horizontal, not just
+        // leaning forward.
         legs: [
-          [-16, -1],
-          [-10, 3]
+          [-22, -4],
+          [-13, 5]
         ],
+        // One arm reaching well past the hand's own hitbox, the other
+        // swinging back behind the hip — a Superman-style dive line instead
+        // of both arms staying near the chest.
         hands: [
-          [DIVE_REACH.x, DIVE_REACH.y],
-          [9, CHEST_Y + 10]
+          [DIVE_REACH.x + 6, DIVE_REACH.y - 2],
+          [-15, CHEST_Y + 18]
         ],
-        lean: 4 + progress * 3,
+        lean: 6 + progress * 9,
+        // Drops the body low over the same window the arm/leg reach in, so
+        // it reads as lying out flat rather than a standing figure tilting.
+        crouch: 4 + progress * 8,
         trail: actionTimer === undefined ? 0 : 1,
         // A quick flick right as the pose is about to end, not a lingering cloud.
         impact: actionTimer !== undefined && actionTimer <= 3 ? 1 - actionTimer / 3 : 0

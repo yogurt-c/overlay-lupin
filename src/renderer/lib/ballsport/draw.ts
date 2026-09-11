@@ -100,12 +100,12 @@ function drawMotionTrail(
   color: string,
   halo: string
 ): void {
-  const copies = 3;
+  const copies = 4;
   for (let i = 1; i <= copies; i++) {
-    const back = i * 6;
+    const back = i * 9;
     ctx.save();
-    ctx.globalAlpha = (0.3 / i) * intensity;
-    roughStroke(ctx, -back, chestY, -back * 0.6, hipY, 3.4, color, halo);
+    ctx.globalAlpha = (0.42 / i) * intensity;
+    roughStroke(ctx, -back, chestY, -back * 0.6, hipY, 3.8, color, halo);
     ctx.restore();
   }
 }
