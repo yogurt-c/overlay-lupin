@@ -18,16 +18,21 @@ let sharedInputSource: InputSource | null = null;
 
 /**
  * Hover-to-inspect is a local UI concern with no network/engine involvement — the shell has no pointer
- * hooks in its GameModule contract, so this attaches its own listener on the shared canvas once and
+ * hooks in its GameModule contract, so this attaches its own listeners on the shared canvas once and
  * forwards mouse position to whichever MerandiMatch is currently alive (mirrors sharedInputSource's
  * "one instance at a time" assumption: only one game is ever actually playing at once).
  *
- * This started as click-to-inspect, but the whole window is a `-webkit-app-region: drag` surface (see
- * index.html) so the user can grab and move this frameless overlay from anywhere — and Electron drops
- * mouse events entirely inside a drag region, so a click on a unit never reached us. Hover sidesteps
- * that: `mousemove` already has to run continuously anyway to flip the canvas out of the drag region
- * while the cursor sits on a unit (so a click *would* land there if the user chose to click), so the
- * same hit-test can just drive the info panel directly instead of waiting for a click at all.
+ * The whole window is a `-webkit-app-region: drag` surface (see index.html) so the user can grab and
+ * move this frameless overlay from anywhere — and critically, Electron/Chromium suppresses essentially
+ * ALL mouse events inside a drag region, not just `click` but `mousemove` too. That rules out deciding
+ * the region *from* a mouse event (chicken-and-egg: the very event needed to decide never arrives while
+ * still a drag region). So this drives the region from game state instead: a rAF loop continuously sets
+ * the canvas `no-drag` while a MerandiMatch is actively being stepped by the shell's frame loop, and
+ * `drag` the instant it stops — mouse events then reliably reach the page the whole time merandi plays,
+ * so hover-to-inspect works throughout. But that alone would mean the OS no longer drags the window for
+ * us while playing, so this also reimplements click-and-drag-to-move by hand for empty space: mousedown
+ * on a spot with nothing under it starts tracking screen-space deltas, forwarded to the main process via
+ * `moveWindowBy` (see preload.ts/main.ts) to reposition the window every frame the drag continues.
  */
 let activeMatchForHover: MerandiMatch | null = null;
 let fieldHoverListenerAttached = false;
@@ -38,20 +43,42 @@ function attachFieldHoverListener(): void {
   const canvas = document.getElementById('field') as HTMLCanvasElement | null;
   if (!canvas) return;
 
-  let dragRegionOn = true;
-  const setDragRegion = (drag: boolean) => {
-    if (dragRegionOn === drag) return;
-    dragRegionOn = drag;
-    canvas.style.setProperty('-webkit-app-region', drag ? 'drag' : 'no-drag');
-  };
-  canvas.addEventListener('mousemove', (e) => {
-    const hit = activeMatchForHover?.updateHover(e.clientX, e.clientY) ?? false;
-    setDragRegion(!hit);
+  let dragging = false;
+  let lastScreenX = 0;
+  let lastScreenY = 0;
+
+  canvas.addEventListener('mousedown', (e) => {
+    if (activeMatchForHover?.hasTargetAt(e.clientX, e.clientY)) return; // let it register as hovering that unit, not a window-drag
+    dragging = true;
+    lastScreenX = e.screenX;
+    lastScreenY = e.screenY;
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (dragging) {
+      window.overlayLupin.moveWindowBy(e.screenX - lastScreenX, e.screenY - lastScreenY);
+      lastScreenX = e.screenX;
+      lastScreenY = e.screenY;
+      return;
+    }
+    activeMatchForHover?.updateHover(e.clientX, e.clientY);
+  });
+  window.addEventListener('mouseup', () => {
+    dragging = false;
   });
   canvas.addEventListener('mouseleave', () => {
-    setDragRegion(true);
-    activeMatchForHover?.clearHover();
+    if (!dragging) activeMatchForHover?.clearHover();
   });
+
+  let dragRegionOn = true;
+  const tick = () => {
+    const drag = !(activeMatchForHover?.isActive() ?? false);
+    if (drag !== dragRegionOn) {
+      dragRegionOn = drag;
+      canvas.style.setProperty('-webkit-app-region', drag ? 'drag' : 'no-drag');
+    }
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
 }
 
 const PAN_SPEED_PER_MS = 0.16; // world units per ms
@@ -107,26 +134,31 @@ class MerandiMatch implements GameMatch {
     activeMatchForHover = this;
   }
 
-  /** True only while the shell's frame loop is actively driving this instance — false once another game becomes the active match, since a stale MerandiMatch otherwise keeps existing (see `activeMatchForHover`). */
-  private isActive(): boolean {
+  /** True only while the shell's frame loop is actively driving this instance — false once another game becomes the active match, since a stale MerandiMatch otherwise keeps existing (see `activeMatchForHover`). Also drives whether the canvas is a drag region right now (see attachFieldHoverListener). */
+  isActive(): boolean {
     return Date.now() - this.lastSteppedAt < 250;
   }
 
-  /**
-   * `clientX`/`clientY` are raw mouse-event page coordinates. Updates `selection` to whatever's under
-   * the cursor (or clears it over empty space) and returns whether something was hit, so the caller
-   * can also use this to decide whether the canvas should stop being a drag region right now.
-   */
-  updateHover(clientX: number, clientY: number): boolean {
-    if (!this.isActive()) return false;
+  /** `clientX`/`clientY` are raw mouse-event page coordinates, converted to world space; null on a stale/empty canvas so callers can tell "nothing here" apart from "couldn't check." */
+  private resolveAt(clientX: number, clientY: number): Selection | null {
+    if (!this.isActive()) return null;
     const canvas = document.getElementById('field') as HTMLCanvasElement | null;
-    if (!canvas) return false;
+    if (!canvas) return null;
     const rect = canvas.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) return false;
+    if (rect.width === 0 || rect.height === 0) return null;
     const x = ((clientX - rect.left) / rect.width) * this.lastViewport.width;
     const y = ((clientY - rect.top) / rect.height) * this.lastViewport.height;
-    this.selection = pickAt(this.currentWorld(), this.lastViewport, this.camera ?? [0, 0], x, y);
-    return this.selection !== null;
+    return pickAt(this.currentWorld(), this.lastViewport, this.camera ?? [0, 0], x, y);
+  }
+
+  /** Updates `selection` to whatever's under the cursor, or clears it over empty space. */
+  updateHover(clientX: number, clientY: number): void {
+    this.selection = this.resolveAt(clientX, clientY);
+  }
+
+  /** Non-mutating check used to decide whether a mousedown should start a window-drag (empty space) or leave the hover alone (something's there). */
+  hasTargetAt(clientX: number, clientY: number): boolean {
+    return this.resolveAt(clientX, clientY) !== null;
   }
 
   clearHover(): void {

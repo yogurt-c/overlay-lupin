@@ -61,5 +61,7 @@ contextBridge.exposeInMainWorld('overlayLupin', {
   startRoom: () => ipcRenderer.send('net:start-room'),
   sendRoomState: (payload: unknown) => ipcRenderer.send('net:room-pos', payload),
 
-  quit: () => ipcRenderer.send('app:quit')
+  quit: () => ipcRenderer.send('app:quit'),
+
+  moveWindowBy: (dx: number, dy: number) => ipcRenderer.send('win:move-by', { dx, dy })
 });
