@@ -16,7 +16,11 @@ export function createGameWindow(): BrowserWindow {
     webPreferences: {
       preload: path.join(__dirname, '../preload/preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      // Without this, losing focus throttles requestAnimationFrame almost to a halt — the host then
+      // stops broadcasting room state, and everyone else's client-side ROOM_TIMEOUT_MS trips and boots
+      // them. This overlay is meant to sit unfocused in the background by design, so keep it full-rate.
+      backgroundThrottling: false
     }
   });
 

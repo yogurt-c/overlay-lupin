@@ -254,7 +254,7 @@ export class MerandiEngine {
 
           target.hp -= dmg;
           if (target.hp <= 0) {
-            zone.gold += 1 + Math.floor(this.wave / 2); // richer kills as waves escalate, but far more modestly than before
+            zone.gold += 1 + Math.floor(this.wave / 10); // richer kills as waves escalate, but slowly — monster count already grows with the wave, so this alone was snowballing gold
             this.monsters = this.monsters.filter((m) => m !== target);
           }
         }
