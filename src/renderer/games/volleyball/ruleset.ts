@@ -10,7 +10,7 @@ import type { Pose } from './types.js';
 
 const RECOVER_FRAMES = 14;
 /** Sustained for the whole dive window, not just the trigger tick, so the lunge actually covers ground — a short poke, not a cross-court slide. */
-const DIVE_LUNGE_SPEED = 8;
+const DIVE_LUNGE_SPEED = 6;
 
 function activePartFor(pose: string): ActivePartSpec | undefined {
   if ((pose as Pose) !== 'dive') return undefined;
