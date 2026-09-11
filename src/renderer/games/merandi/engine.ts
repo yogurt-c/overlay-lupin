@@ -258,9 +258,10 @@ export class MerandiEngine {
 
           target.hp -= dmg;
           if (target.hp <= 0) {
-            // +1 every 20 waves (not 10) — monster count already grows every wave, so stacking a faster
-            // per-kill escalation on top of that was compounding into a gold snowball by the early-mid game.
-            zone.gold += 2 + Math.floor(this.wave / 20);
+            // A small early boost (waves 1-5) to ease board-building before the main curve kicks in —
+            // +1 every 20 waves after that (not 10) since monster count already grows every wave, so
+            // stacking a faster per-kill escalation on top of that was compounding into a gold snowball.
+            zone.gold += this.wave <= 5 ? 3 : 2 + Math.floor(this.wave / 20);
             zone.kills++;
             this.monsters = this.monsters.filter((m) => m !== target);
           }
