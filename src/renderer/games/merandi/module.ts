@@ -6,7 +6,7 @@ import { SnapshotAssembler, buildOutgoingPacket as buildWirePacket, encodeHeavyC
 import type { InputSource } from './input.js';
 import type { Point } from './field.js';
 import type { WireChunk } from './wire.js';
-import type { MerandiInput, MerandiMemberPacket, MerandiMemberPacketTagged, MerandiWorld, Selection } from './types.js';
+import type { MerandiCommand, MerandiInput, MerandiMemberPacket, MerandiMemberPacketTagged, MerandiWorld, Selection } from './types.js';
 import type { GameMatch, GameModule, MatchHud, Viewport } from '../types.js';
 
 /**
@@ -108,8 +108,6 @@ const EMPTY_WORLD: MerandiWorld = {
   over: false,
   won: false
 };
-const NO_INPUT: MerandiInput = { commands: [] };
-
 function fmtClock(ms: number): string {
   const s = Math.max(0, Math.ceil(ms / 1000));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
@@ -145,7 +143,13 @@ function statusFor(world: MerandiWorld, myId: string): string {
 class MerandiMatch implements GameMatch {
   private engine: MerandiEngine | null;
   private world: MerandiWorld = EMPTY_WORLD;
-  private lastInput: MerandiInput = NO_INPUT;
+  /**
+   * Member only: commands queued by step() but not yet flushed to the host — see buildOutgoingPacket().
+   * step() runs at 60Hz but sends only go out at 30Hz (SEND_INTERVAL_MS in shell/main.ts), so a command
+   * captured on an "off" tick used to get silently overwritten by the next tick's (usually empty) read
+   * before it was ever sent — commands must accumulate here, not just hold "the latest step's input."
+   */
+  private outgoingCommands: MerandiCommand[] = [];
   private camera: Point | null = null; // null until we know our own corner, for the initial centering
   private selection: Selection | null = null;
   private lastViewport: Viewport = { width: 0, height: 0, pixelRatio: 1 };
@@ -225,10 +229,12 @@ class MerandiMatch implements GameMatch {
 
   step(input: unknown): void {
     this.lastSteppedAt = Date.now();
-    this.lastInput = (input as MerandiInput) ?? NO_INPUT;
+    const commands = (input as MerandiInput | null)?.commands ?? [];
     if (this.engine) {
-      this.engine.setInput(this.myId, this.lastInput);
+      this.engine.setInput(this.myId, { commands });
       this.engine.step(1000 / 60);
+    } else {
+      this.outgoingCommands.push(...commands);
     }
     this.updateCamera(1000 / 60);
 
@@ -283,7 +289,8 @@ class MerandiMatch implements GameMatch {
       }
       return buildWirePacket(world, this.pendingChunks[this.chunkCursor++]);
     }
-    const packet: MerandiMemberPacket = { name: this.myName, input: this.lastInput };
+    const packet: MerandiMemberPacket = { name: this.myName, input: { commands: this.outgoingCommands } };
+    this.outgoingCommands = [];
     return packet;
   }
 
