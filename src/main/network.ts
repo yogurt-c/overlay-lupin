@@ -172,7 +172,14 @@ export class GameNetwork extends EventEmitter {
         this.discoverySocket.setBroadcast(true);
         this.helloTimer = setInterval(() => {
           this.broadcastHello();
-          if (this.hostedRoom) this.broadcastRoomOpen();
+          if (this.hostedRoom) {
+            // In the lobby, re-send the full roster (not just ROOM_OPEN) so joined
+            // members' lastMsgAt keeps refreshing while they wait — otherwise a
+            // quiet lobby with no joins/leaves trips ROOM_TIMEOUT_MS and boots
+            // everyone back to idle.
+            if (this.hostedRoom.status === 'lobby') this.broadcastRosterToAll();
+            else this.broadcastRoomOpen();
+          }
         }, HELLO_INTERVAL_MS);
         this.sweepTimer = setInterval(() => this.sweep(), 1000);
         this.broadcastHello();
