@@ -1,9 +1,9 @@
 import { beginSketchFrame, roughSegment } from '../../lib/sketch.js';
-import { ARCHETYPES, ARCHETYPE_NAME, GRADES, MAIN_STATS, MAIN_STAT_NAME, MONSTER_KIND_NAME, SLOT_COUNT, computeMemberDamage } from './data.js';
+import { ARCHETYPES, ARCHETYPE_MAIN_STAT, ARCHETYPE_NAME, GRADES, MAIN_STATS, MONSTER_KIND_NAME, SLOT_COUNT, computeMemberDamage } from './data.js';
 import { HALF_TRACK, ZONE_SIGN, ZOOM_VIEW_SIZE, clampCamera, memberOffset, perimeterPoint, slotPosition, squareLoopPoints } from './field.js';
 import type { Point } from './field.js';
 import type { Viewport } from '../types.js';
-import type { MerandiWorld, Selection, Zone, ZoneLabel } from './types.js';
+import type { Archetype, MerandiWorld, Selection, Zone, ZoneLabel } from './types.js';
 
 /** How big a shot's dot/tracer look relative to the grade that fired it — kept subtle since the game is otherwise monochrome. */
 function shotEmphasis(grade: number): { r: number; alpha: number } {
@@ -166,30 +166,111 @@ function drawBottomPanel(ctx: CanvasRenderingContext2D, viewport: Viewport, titl
   ctx.restore();
 }
 
+type GlyphOption = { key: number } & ({ kind: 'arche'; arche: Archetype } | { kind: 'grade'; grade: number });
+
 /**
- * When the local player has armed 업그레이드/판매, the HUD status line alone
- * ("업글1~5") isn't enough to know what each number means — so this draws a
- * screen-space (not world-space, so it isn't affected by camera zoom/pan)
- * legend mapping each digit key to its option, directly over the canvas.
+ * Same rounded-panel chrome as drawBottomPanel, but draws each option as the actual field glyph/grade
+ * swatch instead of its job/stat name in text — the digit key is the only label, since the shape alone
+ * already carries the meaning everywhere else in the game (units on the field use the same glyphs).
+ */
+function drawGlyphOptionsPanel(ctx: CanvasRenderingContext2D, viewport: Viewport, title: string, options: GlyphOption[]): void {
+  const perRow = 5;
+  const rows = chunk(options, perRow);
+  const spacing = 30;
+  const glyphR = 6;
+
+  ctx.save();
+  ctx.font = '600 10px sans-serif';
+  const titleWidth = ctx.measureText(title).width;
+  const rowWidth = Math.min(perRow, options.length) * spacing;
+  const width = Math.min(viewport.width - 16, Math.max(titleWidth, rowWidth) + 20);
+
+  const pad = 8;
+  const titleH = 14;
+  const rowH = 30;
+  const height = pad * 2 + titleH + rows.length * rowH;
+  const x = (viewport.width - width) / 2;
+  const y = viewport.height - height - 10;
+
+  ctx.fillStyle = 'rgba(255,255,255,0.94)';
+  ctx.strokeStyle = 'rgba(20,24,26,0.3)';
+  ctx.lineWidth = 1;
+  const r = 8;
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + width, y, x + width, y + height, r);
+  ctx.arcTo(x + width, y + height, x, y + height, r);
+  ctx.arcTo(x, y + height, x, y, r);
+  ctx.arcTo(x, y, x + width, y, r);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = INK;
+  ctx.textAlign = 'center';
+  ctx.font = '600 10px sans-serif';
+  ctx.fillText(title, x + width / 2, y + pad + 9);
+
+  rows.forEach((row, ri) => {
+    const rowWidthActual = row.length * spacing;
+    const rowStartX = x + width / 2 - rowWidthActual / 2 + spacing / 2;
+    const rowY = y + pad + titleH + ri * rowH + rowH / 2 - 3;
+    row.forEach((opt, ci) => {
+      const cx = rowStartX + ci * spacing;
+      if (opt.kind === 'arche') {
+        drawArcheGlyph(ctx, cx, rowY, glyphR, opt.arche);
+        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = INK;
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(20,24,26,0.16)';
+        ctx.fill();
+      } else {
+        const g = GRADES[opt.grade];
+        const swatchR = 2.4 + g.sizeMult * 2.6;
+        ctx.beginPath();
+        ctx.arc(cx, rowY, swatchR, 0, Math.PI * 2);
+        ctx.lineWidth = Math.max(0.8, g.sizeMult * 1.1);
+        ctx.strokeStyle = INK;
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(20,24,26,0.12)';
+        ctx.fill();
+      }
+      ctx.font = '600 8.5px sans-serif';
+      ctx.fillStyle = INK;
+      ctx.fillText(String(opt.key), cx, rowY + 13);
+    });
+  });
+
+  ctx.textAlign = 'left';
+  ctx.restore();
+}
+
+/**
+ * When the local player has armed 업그레이드/판매, the HUD status line alone ("업글1~4") isn't enough to
+ * know what each number means — this draws a screen-space (not world-space, so camera zoom/pan doesn't
+ * affect it) legend mapping each digit key to its option, as shapes rather than job/stat names.
  */
 function drawActionLegend(ctx: CanvasRenderingContext2D, viewport: Viewport, mine: Zone | undefined): void {
   if (!mine || !mine.armed) return;
 
-  const title =
-    mine.armed === 'upgrade'
-      ? '숫자키로 업그레이드할 스탯 선택'
-      : mine.pendingArche
-        ? `${ARCHETYPE_NAME[mine.pendingArche]} · 숫자키로 판매 등급(이하 전체) 선택`
-        : '숫자키로 판매할 계열 선택';
+  if (mine.armed === 'upgrade') {
+    const options: GlyphOption[] = MAIN_STATS.map((s, i) => ({
+      key: i + 1,
+      kind: 'arche',
+      arche: ARCHETYPES.find((a) => ARCHETYPE_MAIN_STAT[a] === s) ?? ARCHETYPES[0]
+    }));
+    drawGlyphOptionsPanel(ctx, viewport, '업그레이드할 스탯 선택', options);
+    return;
+  }
 
-  const options: string[] =
-    mine.armed === 'upgrade'
-      ? MAIN_STATS.map((s, i) => `${i + 1} ${MAIN_STAT_NAME[s]}`)
-      : !mine.pendingArche
-        ? ARCHETYPES.map((a, i) => `${i + 1} ${ARCHETYPE_NAME[a]}`)
-        : GRADES.map((g, i) => `${i + 1} ${g.name}`);
+  if (!mine.pendingArche) {
+    const options: GlyphOption[] = ARCHETYPES.map((a, i) => ({ key: i + 1, kind: 'arche', arche: a }));
+    drawGlyphOptionsPanel(ctx, viewport, '판매할 계열 선택', options);
+    return;
+  }
 
-  drawBottomPanel(ctx, viewport, title, chunk(options, 5).map((row) => row.join('   ')));
+  const options: GlyphOption[] = GRADES.map((_, i) => ({ key: i + 1, kind: 'grade', grade: i }));
+  drawGlyphOptionsPanel(ctx, viewport, '등급 선택 (이하 전체 판매)', options);
 }
 
 /**
