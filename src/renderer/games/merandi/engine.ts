@@ -268,6 +268,16 @@ export class MerandiEngine {
     this.shots = this.shots.filter((s) => s.life > 0);
   }
 
+  /** A small flat reward (exactly one draw's worth) for every active player when a wave finishes, on top of whatever they earned from kills. */
+  private awardWaveClearBonus(): void {
+    for (const label of ZONE_LABELS) {
+      const zone = this.zones.get(label)!;
+      if (zone.id === '') continue;
+      zone.gold += DRAW_COST;
+      this.setMessage(zone, `웨이브 클리어! +${DRAW_COST}G`);
+    }
+  }
+
   private stepWaveClock(dtMs: number): void {
     if (this.over) return;
     this.waveMsLeft -= dtMs;
@@ -279,6 +289,7 @@ export class MerandiEngine {
       this.won = this.monsters.length <= this.aliveThreshold();
       return;
     }
+    this.awardWaveClearBonus();
     this.startWave(this.wave + 1);
   }
 
