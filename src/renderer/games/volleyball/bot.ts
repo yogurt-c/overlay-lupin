@@ -2,17 +2,18 @@
  * A lightweight rule-based pilot for solo mode, mirroring soccer/bot.ts: it
  * runs its own `Game` instance (see module.ts) and just needs an input each
  * tick, exactly like a real player. It leads the ball's own physics forward
- * a few frames to decide where to stand, dives for anything low that drifts
- * into reach on the ground, and times a jump to swing at anything overhead —
- * imperfect on purpose (hesitation, a fuzzy read on the landing spot, and a
- * real chance it just doesn't commit to the swing) so it plays like a decent
- * but beatable opponent instead of a wall.
+ * a few frames to decide where to stand, dives for anything that drifts into
+ * reach — grounded or still airborne from a jump, dive works the same either
+ * way — and times a jump to get under anything overhead first — imperfect on
+ * purpose (hesitation, a fuzzy read on the landing spot, and a real chance it
+ * just doesn't commit) so it plays like a decent but beatable opponent
+ * instead of a wall.
  */
 import { integrateBall } from '../../lib/ballsport/ball.js';
 import type { BallState } from '../../lib/ballsport/ball.js';
 import type { Input } from '../../lib/ballsport/engine.js';
 import { PLAYER_HALF } from '../../lib/ballsport/field.js';
-import { DIVE_REACH, SPIKE_HAND } from './field.js';
+import { DIVE_REACH } from './field.js';
 
 /** How far ahead the bot projects the ball's free flight to decide where to stand. */
 const PREDICT_FRAMES = 12;
@@ -25,15 +26,11 @@ const HESITATE_CHANCE = 0.15;
 /** How far its read on the ball's landing spot can drift off the real one, so it doesn't track a falling ball perfectly. */
 const PREDICT_ERROR_PX = 12;
 
-/** Horizontal/vertical reach of a ground dive, matching the dive anchor's own hitbox plus a little lead. */
+/** Horizontal/vertical reach of a dive, matching the dive anchor's own hitbox plus a little lead — checked regardless of grounded state, since dive works in the air too. */
 const DIVE_RANGE_X = PLAYER_HALF + DIVE_REACH.r + 8;
-const DIVE_RANGE_Y = -18;
-/** Horizontal/vertical reach of an overhead swing, matching the spike hand's own hitbox plus a little lead. */
-const SPIKE_RANGE_X = SPIKE_HAND.r + 14;
-const SPIKE_RANGE_Y_MAX = -30;
-/** Chance per tick it actually commits to the swing once everything lines up — imperfect on purpose. */
+const DIVE_RANGE_Y = -50;
+/** Chance per tick it actually commits to the dive once everything lines up — imperfect on purpose. */
 const DIVE_CHANCE = 0.7;
-const SPIKE_CHANCE = 0.55;
 
 /** How high and how close the predicted ball needs to be before the bot bothers jumping to meet it. */
 const JUMP_BALL_Y = -34;
@@ -66,11 +63,8 @@ export function computeBotInput(self: BotSelf, ball: BallState): Input {
   const jump = grounded && Math.abs(jumpPreview.x - self.x) < JUMP_RANGE_X && jumpPreview.y < JUMP_BALL_Y;
 
   const ballDx = Math.abs(ball.x - self.x);
-  const inDiveRange = grounded && ballDx < DIVE_RANGE_X && ball.y > DIVE_RANGE_Y;
-  const inSpikeRange = !grounded && ballDx < SPIKE_RANGE_X && ball.y < SPIKE_RANGE_Y_MAX;
-
-  const commitChance = inDiveRange ? DIVE_CHANCE : inSpikeRange ? SPIKE_CHANCE : 0;
-  const action = (inDiveRange || inSpikeRange) && Math.random() < commitChance;
+  const inDiveRange = ballDx < DIVE_RANGE_X && ball.y > DIVE_RANGE_Y;
+  const action = inDiveRange && Math.random() < DIVE_CHANCE;
 
   return { left: wantDir === -1, right: wantDir === 1, jump, down: false, action };
 }
