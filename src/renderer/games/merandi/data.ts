@@ -144,13 +144,16 @@ const EFFICIENCY_SCALE = 0.9;
  * investing in STR delivers roughly the same total army-wide value as focusing any other stat.
  *
  * INT is the mirror case: no archetype uses it as a sub stat (see ARCHETYPE_SUB_STAT), so mage gets no
- * synergy bonus from other upgrade tracks the way STR/DEX/LUK investors do. Its own rate is bumped up
- * so INT's total army-wide value (main only) still lands on par with a stat that gets both main+sub
- * coverage (~0.20 either way — see the SUB_GROWTH comment for the sub-side half of this balance).
+ * synergy bonus from other upgrade tracks the way STR/DEX/LUK investors do. Its base rate was first
+ * bumped just to match everyone else's ~0.20 total (main-only vs main+sub). On top of that, INT still
+ * carries an all-or-nothing risk no growth-rate tweak can fix — investing in it is worthless if you
+ * never draw a mage — so INT_BUFF pushes its raw value deliberately above the other three, as
+ * compensation for that risk rather than for pure coverage parity.
  */
+const INT_BUFF = 1.25;
 export const LEVEL_GROWTH: Record<MainStat, number> = {
   str: 0.075 * EFFICIENCY_SCALE,
-  int: 0.2 * EFFICIENCY_SCALE,
+  int: 0.2 * EFFICIENCY_SCALE * INT_BUFF,
   dex: 0.15 * EFFICIENCY_SCALE,
   luk: 0.15 * EFFICIENCY_SCALE
 };
@@ -162,12 +165,23 @@ export const LEVEL_GROWTH: Record<MainStat, number> = {
  * happen to lean on it. Always far weaker than any main stat's growth — this is flavor/synergy on top
  * of the main stat, not a second main stat.
  */
-const BASE_SUB_GROWTH = 0.05 * EFFICIENCY_SCALE;
+/** Separate dial from EFFICIENCY_SCALE (which only covers main stats) — sub stats are meant to stay a minor flavor bonus, not approach main-stat value. */
+const SUB_EFFICIENCY_SCALE = 0.7;
+const BASE_SUB_GROWTH = 0.05 * EFFICIENCY_SCALE * SUB_EFFICIENCY_SCALE;
+/**
+ * Equal expected value per level across all 4 sub stats still left DEX feeling stronger in practice:
+ * it's the sub stat for 3 archetypes plus the main stat for archer, so 4 of 5 archetypes benefit from
+ * it regardless of draw luck (vs. e.g. INT, useless unless you specifically drew mages) — lower
+ * variance reads as "always good" even at equal average value. This extra penalty trims DEX's actual
+ * payout on top of the 1/3 coverage split below, paid for that reliability.
+ */
+const DEX_SUB_PENALTY = 0.7;
 export const SUB_GROWTH: Record<MainStat, number> = (() => {
   const coverage: Record<MainStat, number> = { str: 0, int: 0, dex: 0, luk: 0 };
   for (const a of ARCHETYPES) coverage[ARCHETYPE_SUB_STAT[a]]++;
   const result = {} as Record<MainStat, number>;
   for (const s of MAIN_STATS) result[s] = coverage[s] > 0 ? BASE_SUB_GROWTH / coverage[s] : 0;
+  result.dex *= DEX_SUB_PENALTY;
   return result;
 })();
 
@@ -214,13 +228,16 @@ export const MONSTER_KIND_NAME: Record<MonsterKind, string> = {
 export const TOTAL_WAVES = 50;
 export const NORMAL_WAVE_MS = 30_000;
 export const BOSS_WAVE_MS = 60_000;
-export const HP_GROWTH_PER_WAVE = 1.08;
+/** Bumped slightly (was 1.08) to partly offset the wave-50 spawn count cut (285 -> 200) — otherwise total late-game difficulty would just drop along with the monster count. */
+export const HP_GROWTH_PER_WAVE = 1.085;
 /**
  * Per-corner monster baseline — the engine multiplies this by the number of active players/corners
  * (see engine.ts's startWave), so density per corner stays constant regardless of player count instead
- * of a fixed total getting divided down for fewer players. 1p wave1 = 40, growing +5/wave from there.
+ * of a fixed total getting divided down for fewer players. 1p wave1 = 40, growing to exactly 200 by
+ * wave 50 (was +5/wave -> 285 by wave 50, felt like too many were spawning per wave).
  */
-export const MONSTERS_PER_WAVE_PER_PLAYER = (wave: number): number => 40 + (wave - 1) * 5;
+const SPAWN_GROWTH_PER_WAVE = (200 - 40) / (TOTAL_WAVES - 1);
+export const MONSTERS_PER_WAVE_PER_PLAYER = (wave: number): number => Math.round(40 + (wave - 1) * SPAWN_GROWTH_PER_WAVE);
 /**
  * Cap on how many monsters may be alive at once before it's a loss — doesn't grow per wave, only per
  * active player: 1p ≈ 150, 4p ≈ 400 (see engine.ts's aliveThreshold(), linear on player count).
