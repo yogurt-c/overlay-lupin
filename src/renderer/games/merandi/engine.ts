@@ -17,6 +17,7 @@ import {
   drawCost,
   GRADES,
   HP_GROWTH_PER_WAVE,
+  LAST_PLACE_GRADE_BOOST,
   MONSTER_KINDS,
   NORMAL_WAVE_MS,
   SELL_REFUND,
@@ -380,13 +381,21 @@ export class MerandiEngine {
     return true;
   }
 
+  /** True once at least one other active player exists and this zone is (tied for) the fewest kills — see LAST_PLACE_GRADE_BOOST. */
+  private isLastPlace(zone: Zone): boolean {
+    const active = ZONE_LABELS.map((l) => this.zones.get(l)!).filter((z) => z.id !== '');
+    if (active.length < 2) return false;
+    const minKills = Math.min(...active.map((z) => z.kills));
+    return zone.kills === minKills;
+  }
+
   private doDraw(zone: Zone): void {
     const cost = drawCost(this.wave);
     if (zone.gold < cost) {
       this.setMessage(zone, '골드가 부족합니다.');
       return;
     }
-    const grade = rollGrade();
+    const grade = rollGrade(this.isLastPlace(zone) ? LAST_PLACE_GRADE_BOOST : 1);
     const arche = rollArchetype();
     const job = rollJobName(arche);
     if (!this.placeDraw(zone, grade, arche, job)) {

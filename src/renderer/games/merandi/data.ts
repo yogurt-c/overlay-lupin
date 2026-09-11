@@ -92,11 +92,21 @@ export function jobIdToName(id: number): string {
   return JOB_ID_LIST[id] ?? JOB_ID_LIST[0];
 }
 
-export function rollGrade(): number {
-  const roll = Math.random();
+/** Comeback assist for whoever has the fewest kills — see engine.ts's doDraw. Boosts every 레어+ (index >= 2) weight by this factor before rolling. */
+export const LAST_PLACE_GRADE_BOOST = 1.4;
+
+/**
+ * `boost` (default 1 = no change) multiplies every 레어+ (index >= 2) weight before rolling — rather
+ * than renormalizing 노멀/매직 down to compensate, the roll is drawn against the new (larger) total
+ * weight directly, which has the same effect without needing to touch the base GRADES table at all.
+ */
+export function rollGrade(boost = 1): number {
+  const weights = GRADES.map((g, i) => (i >= 2 ? g.prob * boost : g.prob));
+  const total = weights.reduce((sum, w) => sum + w, 0);
+  const roll = Math.random() * total;
   let acc = 0;
-  for (let i = 0; i < GRADES.length; i++) {
-    acc += GRADES[i].prob;
+  for (let i = 0; i < weights.length; i++) {
+    acc += weights[i];
     if (roll < acc) return i;
   }
   return GRADES.length - 1;
@@ -189,11 +199,17 @@ export const SUB_GROWTH: Record<MainStat, number> = (() => {
  * Shared by the engine (actual combat) and the UI (inspect panel) so the displayed damage number is
  * always exactly what the unit deals — never a separately-hand-computed approximation.
  */
+/**
+ * Xenon only ever comes up ~2.5% of draws (1/8 chance on an already 1-in-5 pirate roll) and averaging
+ * three stat tracks instead of focusing one usually loses to a focused build anyway — this buff
+ * compensates a rare pull for being weaker in practice than its rarity would suggest.
+ */
+const XENON_BUFF = 1.4;
 export function computeMemberMultiplier(upLevels: UpgradeLevels, member: Pick<UnitMember, 'arche' | 'job'>): number {
   if (member.job === XENON_NAME) {
     const stats: MainStat[] = ['str', 'dex', 'luk'];
     const avg = stats.reduce((sum, s) => sum + upLevels[s] * LEVEL_GROWTH[s], 0) / stats.length;
-    return 1 + avg;
+    return 1 + avg * XENON_BUFF;
   }
   const mainStat = ARCHETYPE_MAIN_STAT[member.arche];
   const subStat = ARCHETYPE_SUB_STAT[member.arche];
@@ -233,10 +249,10 @@ export const HP_GROWTH_PER_WAVE = 1.095;
 /**
  * Per-corner monster baseline — the engine multiplies this by the number of active players/corners
  * (see engine.ts's startWave), so density per corner stays constant regardless of player count instead
- * of a fixed total getting divided down for fewer players. 1p wave1 = 40, growing to exactly 200 by
- * wave 50 (was +5/wave -> 285 by wave 50, felt like too many were spawning per wave).
+ * of a fixed total getting divided down for fewer players. 1p wave1 = 40, growing to 210 by wave 50
+ * (nudged up slightly from 200 to offset LAST_PLACE_GRADE_BOOST making good units easier to find overall).
  */
-const SPAWN_GROWTH_PER_WAVE = (200 - 40) / (TOTAL_WAVES - 1);
+const SPAWN_GROWTH_PER_WAVE = (210 - 40) / (TOTAL_WAVES - 1);
 export const MONSTERS_PER_WAVE_PER_PLAYER = (wave: number): number => Math.round(40 + (wave - 1) * SPAWN_GROWTH_PER_WAVE);
 /**
  * Cap on how many monsters may be alive at once before it's a loss — doesn't grow per wave, only per
