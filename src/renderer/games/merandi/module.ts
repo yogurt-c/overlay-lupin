@@ -2,7 +2,7 @@ import { MerandiEngine } from './engine.js';
 import { pickAt, renderMerandiScene } from './draw.js';
 import { createInputSource as createMerandiInputSource } from './input.js';
 import { WORLD_CLAMP, ZONE_SIGN, ZOOM_VIEW_SIZE, clampCamera } from './field.js';
-import { SnapshotAssembler, encodeWorldToChunks } from './wire.js';
+import { SnapshotAssembler, buildOutgoingPacket as buildWirePacket, encodeHeavyChunks } from './wire.js';
 import type { InputSource } from './input.js';
 import type { Point } from './field.js';
 import type { WireChunk } from './wire.js';
@@ -153,13 +153,12 @@ class MerandiMatch implements GameMatch {
   /** When `world.over` first went true — see OVER_GRACE_MS and isOver(). */
   private overSince: number | null = null;
 
-  // Outgoing (host only): the current snapshot's chunks, drip-fed one per buildOutgoingPacket() call.
+  // Outgoing (host only): the current heavy cycle's chunks, drip-fed one per buildOutgoingPacket() call.
   private wireVersion = 0;
   private pendingChunks: WireChunk[] = [];
   private chunkCursor = 0;
-  // Incoming (member only): reassembles chunks back into a full world — see wire.ts.
+  // Incoming (member only): applies quick atoms immediately and reassembles heavy chunks over time — see wire.ts.
   private assembler = new SnapshotAssembler();
-  private lastWorldAt = 0;
 
   constructor(
     private isHost: boolean,
@@ -242,9 +241,11 @@ class MerandiMatch implements GameMatch {
 
   render(ctx: CanvasRenderingContext2D, viewport: Viewport): void {
     this.lastViewport = viewport;
-    // Host always renders its own live simulation, zero staleness — only a member needs extrapolation.
-    const world = this.engine ? this.currentWorld() : extrapolateWorld(this.world, Date.now() - this.lastWorldAt);
-    renderMerandiScene(ctx, world, this.myId, viewport, this.camera ?? [0, 0], this.selection);
+    // Host always renders its own live simulation, zero staleness — only a member needs extrapolation,
+    // and only for the heavy (monster/shot) portion; quick atoms (gold/menus) are already fresh.
+    const world = this.engine ? this.currentWorld() : extrapolateWorld(this.world, this.assembler.heavyAgeMs());
+    const showGradeTable = sharedInputSource?.isInfoHeld() ?? false;
+    renderMerandiScene(ctx, world, this.myId, viewport, this.camera ?? [0, 0], this.selection, showGradeTable);
   }
 
   hud(): MatchHud {
@@ -266,18 +267,21 @@ class MerandiMatch implements GameMatch {
 
   /**
    * Host: rather than send the (potentially tens-of-KB) full snapshot in one shot — see wire.ts's
-   * header comment for why that was causing frequent disconnects — this drip-feeds one MTU-safe chunk
-   * of the current snapshot per call, re-encoding a fresh snapshot only once the previous one's chunks
-   * are exhausted. Member: unchanged, just its own tiny local input.
+   * header comment for why that was causing frequent disconnects — this drip-feeds one MTU-safe heavy
+   * chunk (units/monsters/shots) per call, re-encoding a fresh heavy cycle only once the previous one's
+   * chunks are exhausted, while always attaching a fresh complete quick-atom snapshot (gold/upgrades/
+   * armed-menu/wave clock) on top so members see those update every tick regardless of how long the
+   * heavy cycle takes. Member: unchanged, just its own tiny local input.
    */
   buildOutgoingPacket(): unknown {
     if (this.engine) {
+      const world = this.engine.snapshot();
       if (this.chunkCursor >= this.pendingChunks.length) {
         this.wireVersion++;
-        this.pendingChunks = encodeWorldToChunks(this.engine.snapshot(), this.wireVersion);
+        this.pendingChunks = encodeHeavyChunks(world, this.wireVersion);
         this.chunkCursor = 0;
       }
-      return this.pendingChunks[this.chunkCursor++];
+      return buildWirePacket(world, this.pendingChunks[this.chunkCursor++]);
     }
     const packet: MerandiMemberPacket = { name: this.myName, input: this.lastInput };
     return packet;
@@ -289,13 +293,11 @@ class MerandiMatch implements GameMatch {
       this.engine.ensurePlayer(from, name);
       this.engine.setInput(from, input);
     } else {
-      // A chunk of the host's snapshot — only replaces `world` once every chunk of its version has
-      // arrived; a lost chunk just means one extra stale-but-harmless frame, never a crash.
+      // Quick atoms apply the instant they arrive; heavy atoms only replace once every chunk of a
+      // cycle has arrived. A lost chunk just means one extra stale-but-harmless frame for units/
+      // monsters, never a crash — see wire.ts.
       const decoded = this.assembler.ingest(packet);
-      if (decoded) {
-        this.world = decoded;
-        this.lastWorldAt = Date.now();
-      }
+      if (decoded) this.world = decoded;
     }
   }
 
@@ -307,7 +309,7 @@ class MerandiMatch implements GameMatch {
 export const merandiModule: GameModule = {
   id: 'merandi',
   label: '메랜디',
-  hint: 'Z 뽑기 · X 업그레이드(1~4 스탯: STR/INT/DEX/LUK) · C 판매(1~5 계열 → 1~8 등급 이하) · Esc 취소',
+  hint: 'Z 뽑기 · X 업그레이드(1~4 스탯: STR/INT/DEX/LUK) · C 판매(1~5 계열 → 1~8 등급 이하) · V 등급표 · Esc 취소',
   matching: 'room',
   roomCapacity: 4,
   createMatch: (isHost, myId, myName) => new MerandiMatch(isHost, myId, myName),

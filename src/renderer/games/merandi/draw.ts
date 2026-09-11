@@ -309,13 +309,24 @@ function drawKillBoard(ctx: CanvasRenderingContext2D, viewport: Viewport, world:
   );
 }
 
+/** V-held overlay — a quick reference for how rare each grade is, rounded to a friendly precision. */
+function drawGradeTable(ctx: CanvasRenderingContext2D, viewport: Viewport): void {
+  const rows = GRADES.map((g) => {
+    const pct = g.prob * 100;
+    const text = pct >= 1 ? pct.toFixed(1) : pct >= 0.1 ? pct.toFixed(2) : pct.toFixed(3);
+    return `${g.name}  ${text}%`;
+  });
+  drawBottomPanel(ctx, viewport, '등급별 확률', rows);
+}
+
 export function renderMerandiScene(
   ctx: CanvasRenderingContext2D,
   world: MerandiWorld,
   myId: string,
   viewport: Viewport,
   camera: Point = [0, 0],
-  selection: Selection | null = null
+  selection: Selection | null = null,
+  showGradeTable = false
 ): void {
   ctx.setTransform(viewport.pixelRatio, 0, 0, viewport.pixelRatio, 0, 0);
   ctx.clearRect(0, 0, viewport.width, viewport.height);
@@ -463,7 +474,8 @@ export function renderMerandiScene(
 
   // Screen-space overlays (drawn after restore, so camera zoom/pan doesn't affect them).
   const mine = world.zones.find((z) => z.id === myId);
-  if (mine?.armed) drawActionLegend(ctx, viewport, mine);
+  if (showGradeTable) drawGradeTable(ctx, viewport);
+  else if (mine?.armed) drawActionLegend(ctx, viewport, mine);
   else if (selection) drawInspectPanel(ctx, viewport, world, selection);
   else drawKillBoard(ctx, viewport, world);
 }

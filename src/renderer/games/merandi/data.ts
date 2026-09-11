@@ -110,8 +110,8 @@ export function drawCost(wave: number): number {
 }
 export const SELL_REFUND = 15; // ~50% of DRAW_COST_BASE, matching the intended refund ratio
 export const UPGRADE_BASE_COST = 15;
-export const UPGRADE_GROWTH = 1.35;
-export const UPGRADE_MAX_LEVEL = 10;
+export const UPGRADE_GROWTH = 1.011;
+export const UPGRADE_MAX_LEVEL = 300;
 export function upgradeCost(level: number): number {
   return Math.round(UPGRADE_BASE_COST * Math.pow(UPGRADE_GROWTH, level));
 }
