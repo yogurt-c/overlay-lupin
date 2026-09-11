@@ -1,6 +1,6 @@
 {
   "name": "overlay-lupin",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "같은 Wi-Fi/LAN에서 즉석으로 붙는, 화면 위에 몰래 떠 있는 미니게임 모음 오버레이",
   "author": "hyungi",
   "private": true,
