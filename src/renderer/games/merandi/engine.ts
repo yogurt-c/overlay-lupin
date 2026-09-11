@@ -36,7 +36,7 @@ import type { Archetype, MainStat, Monster, MonsterKind, MerandiInput, MerandiWo
 
 const PATH_PTS = squareLoopPoints(260, 24);
 const LOOP_MS = 9000; // one full lap at normal speed
-const BASE_MONSTER_HP = 10;
+const BASE_MONSTER_HP = 20;
 const BASE_RANGE_PX = 60;
 const BASE_COOLDOWN_MS = 650;
 /** How long a cosmetic shot stays on screen before fading out. */
@@ -53,7 +53,7 @@ function freshZone(label: ZoneLabel): Zone {
     id: '',
     label,
     name: '',
-    gold: 50,
+    gold: 125, // enough for 5 draws at DRAW_COST up front
     upLevels: freshUpLevels(),
     slots: new Array<UnitStack | null>(SLOT_COUNT).fill(null),
     armed: null,
@@ -254,7 +254,7 @@ export class MerandiEngine {
 
           target.hp -= dmg;
           if (target.hp <= 0) {
-            zone.gold += 4 + this.wave; // richer kills as waves escalate
+            zone.gold += 1 + Math.floor(this.wave / 2); // richer kills as waves escalate, but far more modestly than before
             this.monsters = this.monsters.filter((m) => m !== target);
           }
         }

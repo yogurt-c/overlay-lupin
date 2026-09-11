@@ -40,6 +40,9 @@ export interface OverlayLupinApi {
   sendRoomState(payload: unknown): void;
 
   quit(): void;
+
+  /** Moves the window by a relative offset (CSS px) — for games that need `#field` to be a `no-drag` region (so it can receive mouse events) but still want click-and-drag-to-move on empty space. */
+  moveWindowBy(dx: number, dy: number): void;
 }
 
 declare global {

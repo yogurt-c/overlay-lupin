@@ -51,6 +51,12 @@ app.whenReady().then(() => {
 
   ipcMain.on('app:quit', () => app.quit());
 
+  ipcMain.on('win:move-by', (_event, { dx, dy }: { dx: number; dy: number }) => {
+    if (!win) return;
+    const [x, y] = win.getPosition();
+    win.setPosition(Math.round(x + dx), Math.round(y + dy));
+  });
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) win = createGameWindow();
   });
