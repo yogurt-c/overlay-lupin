@@ -11,7 +11,7 @@
  */
 
 /** The arena is far wider than the camera: a game can use as much or as little of it as it wants. */
-export const WORLD_WIDTH = 1160;
+export const WORLD_WIDTH = 1400;
 export const LOGICAL_HEIGHT = 216;
 export const GROUND_MARGIN = 22;
 export const GROUND_Y = LOGICAL_HEIGHT - GROUND_MARGIN;

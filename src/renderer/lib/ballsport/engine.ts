@@ -15,8 +15,8 @@ const AIR_DRAG = 0.95;
 const AIR_CONTROL = 0.55;
 const SHOVE_STRENGTH = 0.45;
 
-/** 2s of countdown before the ball drops — long enough to read "2, 1" and reposition. */
-const KICKOFF_FRAMES = 120;
+/** 3s of countdown before the ball drops — long enough to read "3, 2, 1" and reposition. */
+const KICKOFF_FRAMES = 180;
 const GOAL_FREEZE_FRAMES = 84;
 const OVER_FRAMES = 240;
 export const WIN_SCORE = 5;
@@ -216,7 +216,10 @@ export class Game {
     this.trackRemote();
 
     const celebrating = this.phase === 'goal' || this.phase === 'over';
-    this.stepPlayer(celebrating ? { left: false, right: false, jump: false, down: false, action: false } : input);
+    const kickoffLocked = this.phase === 'kickoff' && this.rules.freezeDuringKickoff === true;
+    this.stepPlayer(
+      celebrating || kickoffLocked ? { left: false, right: false, jump: false, down: false, action: false } : input
+    );
 
     if (this.phase === 'play') {
       this.stepBall(true);
