@@ -4,19 +4,32 @@ import { cameraTarget, followCamera, renderScene } from '../../lib/ballsport/sce
 import { limbsFor } from './draw.js';
 import { volleyballRules } from './ruleset.js';
 import { createInputSource } from './input.js';
+import { computeBotInput } from './bot.js';
 import type { GameMatch, GameModule, MatchHud, Viewport } from '../types.js';
 
 class VolleyballMatch implements GameMatch {
   private game = new Game(volleyballRules);
+  /** Solo mode only: a second, independent engine playing the opposite side, fed by bot.ts instead of the network. */
+  private bot: Game | null = null;
   private cameraX = 0;
   private snapCamera = true;
 
-  constructor(isHost: boolean) {
+  constructor(isHost: boolean, vsBot = false) {
     this.game.startMatch(isHost);
+    if (vsBot) {
+      this.bot = new Game(volleyballRules);
+      this.bot.startMatch(!isHost);
+    }
   }
 
   step(input: unknown): void {
     this.game.step(input as Input);
+    if (this.bot) {
+      this.bot.step(computeBotInput(this.bot.local, this.bot.ball));
+      // Same exchange two networked peers would do each tick, just with no wire in between.
+      this.game.applyOpponentPacket(this.bot.buildOutgoingPacket());
+      this.bot.applyOpponentPacket(this.game.buildOutgoingPacket());
+    }
   }
 
   render(ctx: CanvasRenderingContext2D, viewport: Viewport, alpha: number): void {
@@ -70,5 +83,6 @@ export const volleyballModule: GameModule = {
   label: '배구',
   hint: '← → 이동 · ↑ 점프 · Space 다이빙/스파이크(공중 ↓·전진 방향으로 세게) · 먼저 5점 내면 승리',
   createMatch: (isHost) => new VolleyballMatch(isHost),
+  createSoloMatch: () => new VolleyballMatch(true, true),
   createInputSource: (target) => createInputSource(target)
 };

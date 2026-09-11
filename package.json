@@ -1,6 +1,6 @@
 {
   "name": "overlay-lupin",
-  "version": "0.2.0",
+  "version": "0.6.1",
   "description": "같은 Wi-Fi/LAN에서 즉석으로 붙는, 화면 위에 몰래 떠 있는 미니게임 모음 오버레이",
   "author": "hyungi",
   "private": true,
@@ -8,11 +8,17 @@
   "scripts": {
     "build": "tsc -p tsconfig.main.json && tsc -p tsconfig.renderer.json && npm run copy-assets",
     "copy-assets": "node -e \"const fs=require('fs');fs.mkdirSync('dist/renderer',{recursive:true});fs.copyFileSync('src/renderer/index.html','dist/renderer/index.html')\"",
-    "test": "npm run build && node tests/simulation.test.mjs && node tests/cell.test.mjs && node tests/fence.test.mjs",
+    "test": "npm run build && node tests/simulation.test.mjs && node tests/cell.test.mjs && node tests/fence.test.mjs && node tests/worm.test.mjs",
     "dev": "npm run build && electron .",
     "start": "electron .",
     "release:mac": "npm run build && electron-builder --mac --publish=never",
-    "release:win": "npm run build && electron-builder --win --publish=never"
+    "release:win": "npm run build && electron-builder --win --publish=never",
+    "release:mac:publish": "npm run build && electron-builder --mac --publish=always",
+    "release:win:publish": "npm run build && electron-builder --win --publish=always",
+    "release:publish": "npm run build && electron-builder --mac --win --publish=always"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
   },
   "devDependencies": {
     "@types/node": "*",
@@ -23,21 +29,45 @@
   "build": {
     "appId": "com.hyungi.overlaylupin",
     "productName": "Overlay Lupin",
-    "files": ["dist/**/*", "package.json"],
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
     "directories": {
       "output": "release"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "yogurt-c",
+      "repo": "overlay-lupin"
     },
     "mac": {
       "icon": "build/icon.icns",
       "target": [
-        { "target": "dmg", "arch": ["universal"] }
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "universal"
+          ]
+        }
       ],
       "category": "public.app-category.games"
     },
     "win": {
       "icon": "build/icon.ico",
       "target": [
-        { "target": "nsis", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
       ]
     },
     "nsis": {

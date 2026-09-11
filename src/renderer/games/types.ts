@@ -50,5 +50,7 @@ export interface GameModule {
   roomCapacity?: number;
   /** `myId`/`myName` are this machine's network identity — only games that need to tell "me" apart in an N-player snapshot use them. */
   createMatch(isHost: boolean, myId: string, myName: string): GameMatch;
+  /** Present only for games with a bot opponent — lets the matching panel offer "혼자하기" with no networking involved. */
+  createSoloMatch?(myId: string, myName: string): GameMatch;
   createInputSource(target: Window): { read(): unknown; clear(): void };
 }

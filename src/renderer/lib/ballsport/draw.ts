@@ -20,6 +20,8 @@ export interface Limbs {
   lean: number;
   /** A held weapon as hilt then tip. Games whose figures carry nothing omit it. */
   blade?: [number, number][];
+  /** Lowers the hip/chest/head anchors for a crouched stance. Omit for the standard standing height. */
+  crouch?: number;
 }
 
 const HALO = 'rgba(255,255,255,0.92)';
@@ -58,17 +60,19 @@ export function drawPlayer(
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 
-  const { legs, hands, lean, blade } = limbsFor(pose, anim);
+  const { legs, hands, lean, blade, crouch = 0 } = limbsFor(pose, anim);
+  const hipY = HIP_Y + crouch;
+  const chestY = CHEST_Y + crouch;
 
   for (const [fx, fy] of legs) {
-    roughLimb(ctx, 0, HIP_Y, fx * 0.55 + 2, (HIP_Y + fy) / 2, fx, fy, 3.4, color, HALO);
+    roughLimb(ctx, 0, hipY, fx * 0.55 + 2, (hipY + fy) / 2, fx, fy, 3.4, color, HALO);
   }
-  roughStroke(ctx, lean, CHEST_Y, 0, HIP_Y, 4, color, HALO);
+  roughStroke(ctx, lean, chestY, 0, hipY, 4, color, HALO);
   for (const [hx, hy] of hands) {
-    roughLimb(ctx, lean, CHEST_Y, (lean + hx) / 2 + 1, CHEST_Y + 5, hx, hy, 2.8, color, HALO);
+    roughLimb(ctx, lean, chestY, (lean + hx) / 2 + 1, chestY + 5, hx, hy, 2.8, color, HALO);
   }
 
-  drawHead(ctx, lean * 1.2, HEAD.y, HEAD.r, color);
+  drawHead(ctx, lean * 1.2, HEAD.y + crouch * 0.6, HEAD.r, color);
   // Last, so a weapon reads as held in front of the body rather than behind it.
   if (blade) drawBlade(ctx, blade, color);
   ctx.restore();

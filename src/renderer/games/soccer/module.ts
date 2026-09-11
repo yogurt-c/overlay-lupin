@@ -4,19 +4,33 @@ import { cameraTarget, followCamera, renderScene } from '../../lib/ballsport/sce
 import { limbsFor } from './draw.js';
 import { soccerRules } from './ruleset.js';
 import { createInputSource } from './input.js';
+import { computeBotInput } from './bot.js';
 import type { GameMatch, GameModule, MatchHud, Viewport } from '../types.js';
 
 class SoccerMatch implements GameMatch {
   private game = new Game(soccerRules);
+  /** Solo mode only: a second, independent engine playing the opposite side, fed by bot.ts instead of the network. */
+  private bot: Game | null = null;
   private cameraX = 0;
   private snapCamera = true;
 
-  constructor(isHost: boolean) {
+  constructor(isHost: boolean, vsBot = false) {
     this.game.startMatch(isHost);
+    if (vsBot) {
+      this.bot = new Game(soccerRules);
+      this.bot.startMatch(!isHost);
+    }
   }
 
   step(input: unknown): void {
     this.game.step(input as Input);
+    if (this.bot) {
+      const mySide: 1 | -1 = this.bot.isHost ? 1 : -1;
+      this.bot.step(computeBotInput(this.bot.local, this.bot.ball, mySide));
+      // Same exchange two networked peers would do each tick, just with no wire in between.
+      this.game.applyOpponentPacket(this.bot.buildOutgoingPacket());
+      this.bot.applyOpponentPacket(this.game.buildOutgoingPacket());
+    }
   }
 
   render(ctx: CanvasRenderingContext2D, viewport: Viewport, alpha: number): void {
@@ -71,5 +85,6 @@ export const soccerModule: GameModule = {
   hint: '← → 이동 · ↑ 점프 · Space 슛 · 먼저 5골 넣으면 승리',
   matching: 'duel',
   createMatch: (isHost) => new SoccerMatch(isHost),
+  createSoloMatch: () => new SoccerMatch(true, true),
   createInputSource: (target) => createInputSource(target)
 };
