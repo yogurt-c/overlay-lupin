@@ -24,16 +24,17 @@ export const BALL_RADIUS = 13;
 /** How far off dead-centre a serve is allowed to drop, so kickoffs aren't perfectly identical every time. */
 export const SERVE_JITTER = 30;
 
-/** Reach extended by a ground dive — low and wide, just enough to save a ball that would otherwise land untouched. */
-export const DIVE_REACH = { x: 26, y: -4, r: 12 };
+/**
+ * Reach extended by a dive — the one and only way to reach for the ball,
+ * whether the figure is grounded or still falling from a jump. Forward and
+ * low relative to the feet; a bit short on purpose, so it's a quick poke
+ * rather than a committed cross-court lunge.
+ */
+export const DIVE_REACH = { x: 20, y: -6, r: 11 };
 
 /**
- * Commit window shared by every action pose (dive and every spike/tip
- * variant) — how long the pose (and its active body part) stays live once
- * triggered. Lives here rather than in ruleset.ts so draw.ts can read it too,
- * without draw.ts and ruleset.ts importing each other.
+ * Commit window for the dive pose — how long it (and its active body part)
+ * stays live once triggered. Lives here rather than in ruleset.ts so draw.ts
+ * can read it too, without draw.ts and ruleset.ts importing each other.
  */
-export const ACTIVE_FRAMES = 13;
-
-/** The overhead contact point for an airborne spike/tip. */
-export const SPIKE_HAND = { x: 10, y: -38, r: 9 };
+export const ACTIVE_FRAMES = 9;
