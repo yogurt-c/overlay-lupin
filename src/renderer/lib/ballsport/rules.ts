@@ -25,6 +25,14 @@ export interface RuleActor extends Figure {
   actionTimer: number;
   actionCooldown: number;
   activePart?: ActivePartSpec;
+  /**
+   * Set by `stepAction` for a tick where it has already assigned `vx` itself
+   * (a lunge/dash pose) — the engine skips its own accel/drag/speed-cap that
+   * tick and just integrates position with whatever `vx` was set, instead of
+   * clamping a deliberately fast pose back down to normal running speed.
+   * Left false outside of the tick(s) that need it.
+   */
+  vxOverridden?: boolean;
 }
 
 /**

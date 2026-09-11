@@ -40,7 +40,8 @@ function fieldTransform(viewport: Viewport): { scale: number; offsetX: number; o
 /** The bits of drawing only the active game knows how to do. */
 export interface SceneHooks {
   drawField(ctx: CanvasRenderingContext2D, cameraX: number, viewWidth: number): void;
-  limbsFor(pose: string, anim: number): Limbs;
+  /** `actionTimer` is only ever set for the local figure — see ViewState.local. */
+  limbsFor(pose: string, anim: number, actionTimer?: number): Limbs;
 }
 
 /** Draws one complete frame of the match, clearing whatever was there before. */
