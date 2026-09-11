@@ -2,6 +2,7 @@ import { app, ipcMain, BrowserWindow } from 'electron';
 import { createGameWindow } from './window';
 import { GameNetwork } from './network';
 import { installQuitMenu, installVisibilityShortcuts, uninstallVisibilityShortcuts } from './shortcuts';
+import { installAutoUpdater } from './updater';
 
 let win: BrowserWindow | null = null;
 const net = new GameNetwork();
@@ -12,6 +13,7 @@ app.whenReady().then(() => {
 
   installQuitMenu();
   installVisibilityShortcuts(() => win);
+  installAutoUpdater();
 
   net.on('peers', (peers) => win?.webContents.send('net:peers', peers));
   net.on('invite-sent', (peer) => win?.webContents.send('net:invite-sent', peer));

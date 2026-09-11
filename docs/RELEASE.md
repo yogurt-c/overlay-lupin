@@ -59,9 +59,24 @@ spctl -a -vv "release/mac-universal/Overlay Lupin.app"   # "accepted / source=No
 xcrun stapler validate "release/mac-universal/Overlay Lupin.app"
 ```
 
-## 배포
+## 배포 (자동 업데이트 포함, 평소 이 방법 사용)
 
-`release/*.dmg` 파일을 GitHub Release에 올리거나 AirDrop/파일 전송으로 넘기면 됨. 받는 사람은 dmg 열어서 Applications로 드래그 후 더블클릭.
+앱에 `electron-updater`가 내장돼 있어서, GitHub Release에 `--publish=always`로 올리면 이미 설치된 사용자들이 앱을 켤 때 자동으로 새 버전을 감지·다운로드하고, 재시작하면 적용됨. **일반 릴리즈 빌드(`--publish=never`)로 올린 dmg는 자동 업데이트 대상이 아님** — 반드시 아래 `:publish` 스크립트로 올려야 latest-mac.yml + zip 아티팩트가 함께 생성/업로드됨.
+
+```
+GH_TOKEN="<repo에 대한 쓰기 권한이 있는 GitHub PAT>" \
+APPLE_KEYCHAIN="$HOME/Library/Keychains/login.keychain-db" \
+APPLE_KEYCHAIN_PROFILE="overlaylupin-notary" \
+npm run release:mac:publish
+```
+
+- `GH_TOKEN`은 https://github.com/settings/tokens 에서 `repo` 스코프로 발급 (electron-builder가 이 환경변수를 읽어서 GitHub Release에 자동 업로드함).
+- Draft 상태로 올라가므로, GitHub Releases 페이지에서 확인 후 **Publish**로 전환해야 사용자 앱들이 실제로 감지함.
+- 결과물: `Overlay Lupin-x.x.x-universal.dmg` (수동 배포/최초 설치용), `Overlay Lupin-x.x.x-universal-mac.zip` + `latest-mac.yml` (자동 업데이트용 — 사용자가 직접 받을 필요 없음).
+
+## 수동 배포 (자동 업데이트 없이 dmg만 전달할 때)
+
+`release/*.dmg` 파일을 GitHub Release에 올리거나 AirDrop/파일 전송으로 넘기면 됨. 받는 사람은 dmg 열어서 Applications로 드래그 후 더블클릭. 이렇게 설치한 버전도 이후 정식 `:publish` 릴리즈가 올라오면 자동 업데이트를 받음 (업데이트 체크 자체는 모든 패키징된 빌드에서 항상 켜져 있음).
 
 **주의**: 공증되지 않은(서명 없이 ad-hoc로만 빌드한) 과거 버전은 macOS Sequoia 이후부터 우클릭 열기 우회가 막혀서 "손상되었습니다" 오류가 뜰 수 있음 — 정식 공증이 붙은 빌드는 해당 없음.
 
@@ -84,6 +99,17 @@ npm run release:win
 - 결과물: `release/Overlay Lupin Setup x.x.x.exe` (NSIS 설치 파일, x64)
 - Wine 없이 Windows 머신이나 CI(GitHub Actions windows-latest 러너 등)에서 직접 빌드해도 됨 — 그쪽에는 Wine이 필요 없음.
 
-## 배포
+## 배포 (자동 업데이트 포함, 평소 이 방법 사용)
 
-`release/*.exe` 파일을 GitHub Release에 mac dmg와 함께 올리면 됨.
+Windows NSIS 설치본은 자동 업데이트 아티팩트를 만드는 데 별도 서명/공증이 필요 없음:
+
+```
+GH_TOKEN="<repo에 대한 쓰기 권한이 있는 GitHub PAT>" npm run release:win:publish
+```
+
+- 결과물: `Overlay Lupin Setup x.x.x.exe` + `latest.yml` (자동 업데이트용).
+- mac과 마찬가지로 Draft로 올라가므로 GitHub Releases에서 **Publish**로 전환해야 함. mac/win 아티팩트는 같은 릴리즈에 함께 올려도 되고 따로 올려도 무방 — electron-builder가 버전 태그 기준으로 합쳐서 처리함.
+
+## 수동 배포 (자동 업데이트 없이 exe만 전달할 때)
+
+`release/*.exe` 파일을 GitHub Release에 mac dmg와 함께 올리면 됨. 이렇게 설치해도 이후 `:publish` 릴리즈가 올라오면 자동으로 업데이트를 받음.
