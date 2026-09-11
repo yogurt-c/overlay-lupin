@@ -84,5 +84,7 @@ export const cellModule: GameModule = {
   matching: 'room',
   roomCapacity: 6,
   createMatch: (isHost, myId, myName) => new CellMatch(isHost, myId, myName),
+  // Solo mode is just a host running alone — syncBotPopulation already fills the room with bots either way.
+  createSoloMatch: (myId, myName) => new CellMatch(true, myId, myName),
   createInputSource: (target) => createInputSource(target)
 };

@@ -16,21 +16,21 @@ export const WALL_RIGHT = DOJO_X + DOJO_HALF;
 /** How far from the centre each fencer stands when a round starts. */
 export const START_GAP = 60;
 
-export type AttackKind = 'slash' | 'slashLow' | 'thrust' | 'plunge';
+export type AttackKind = 'slash' | 'slashLow' | 'plunge';
 
 /** Frames spent telegraphing, before the blade means anything. */
 export const WINDUP: Record<AttackKind, number> = {
-  slash: 6,
-  slashLow: 8,
-  thrust: 11,
-  plunge: 7
+  slash: 10,
+  // Longer than the others: blocking it needs an extra key (guard + down
+  // together), so it needs more time to react than a plain guard does.
+  slashLow: 17,
+  plunge: 11
 };
 
 /** Frames the blade is live and can cut. */
 export const ACTIVE: Record<AttackKind, number> = {
   slash: 5,
   slashLow: 5,
-  thrust: 4,
   plunge: 8
 };
 
@@ -38,7 +38,6 @@ export const ACTIVE: Record<AttackKind, number> = {
 export const RECOVER: Record<AttackKind, number> = {
   slash: 12,
   slashLow: 16,
-  thrust: 22,
   plunge: 14
 };
 

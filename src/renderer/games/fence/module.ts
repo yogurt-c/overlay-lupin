@@ -1,18 +1,31 @@
 import { FenceEngine } from './engine.js';
 import { renderFenceScene } from './scene.js';
 import { createInputSource } from './input.js';
+import { computeBotInput } from './bot.js';
 import type { FenceInput, FencePacket } from './types.js';
 import type { GameMatch, GameModule, MatchHud, Viewport } from '../types.js';
 
 class FenceMatch implements GameMatch {
   private game = new FenceEngine();
+  /** Solo mode only: a second, independent engine playing the opposite side, fed by bot.ts instead of the network. */
+  private bot: FenceEngine | null = null;
 
-  constructor(isHost: boolean) {
+  constructor(isHost: boolean, vsBot = false) {
     this.game.startMatch(isHost);
+    if (vsBot) {
+      this.bot = new FenceEngine();
+      this.bot.startMatch(!isHost);
+    }
   }
 
   step(input: unknown): void {
     this.game.step(input as FenceInput);
+    if (this.bot) {
+      this.bot.step(computeBotInput(this.bot.local, this.bot.remote));
+      // Same exchange two networked peers would do each tick, just with no wire in between.
+      this.game.applyOpponentPacket(this.bot.buildOutgoingPacket());
+      this.bot.applyOpponentPacket(this.game.buildOutgoingPacket());
+    }
   }
 
   render(ctx: CanvasRenderingContext2D, viewport: Viewport, alpha: number): void {
@@ -58,7 +71,8 @@ class FenceMatch implements GameMatch {
 export const fenceModule: GameModule = {
   id: 'fence',
   label: '칼싸움',
-  hint: '← → 이동 · ↑ 점프 · Space 베기(↓ 하단 · 전진 찌르기 · 공중 내려베기) · Shift 막기 · 목숨 5개, 다 잃으면 패배',
+  hint: '← → 이동 · ↑ 점프 · Space 베기(↓ 하단 · 공중 내려베기) · Shift 막기 · 목숨 5개, 다 잃으면 패배',
   createMatch: (isHost) => new FenceMatch(isHost),
+  createSoloMatch: () => new FenceMatch(true, true),
   createInputSource: (target) => createInputSource(target)
 };
