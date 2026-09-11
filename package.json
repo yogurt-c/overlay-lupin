@@ -14,7 +14,8 @@
     "release:mac": "npm run build && electron-builder --mac --publish=never",
     "release:win": "npm run build && electron-builder --win --publish=never",
     "release:mac:publish": "npm run build && electron-builder --mac --publish=always",
-    "release:win:publish": "npm run build && electron-builder --win --publish=always"
+    "release:win:publish": "npm run build && electron-builder --win --publish=always",
+    "release:publish": "npm run build && electron-builder --mac --win --publish=always"
   },
   "dependencies": {
     "electron-updater": "^6.8.9"
