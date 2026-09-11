@@ -29,6 +29,9 @@
   "build": {
     "appId": "com.hyungi.overlaylupin",
     "productName": "Overlay Lupin",
+    "releaseInfo": {
+      "releaseNotesFile": "build/release-notes.md"
+    },
     "files": [
       "dist/**/*",
       "package.json"
