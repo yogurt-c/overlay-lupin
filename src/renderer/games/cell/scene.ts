@@ -1,6 +1,6 @@
 import { beginSketchFrame } from '../../lib/sketch.js';
-import { drawArenaBounds, drawArenaDots, drawCell, drawFoodDot } from './draw.js';
-import { ARENA_HEIGHT, ARENA_WIDTH, VIEW_SIZE, radiusFor } from './arena.js';
+import { drawArenaBounds, drawArenaDots, drawCell, drawFoodDot, drawVirus } from './draw.js';
+import { ARENA_HEIGHT, ARENA_WIDTH, VIEW_SIZE, VIRUS_RADIUS, radiusFor } from './arena.js';
 import type { Viewport } from '../types.js';
 import type { CellWorld } from './types.js';
 
@@ -37,6 +37,16 @@ function fieldTransform(viewport: Viewport): { scale: number; offsetX: number; o
   };
 }
 
+/** Mass-weighted center of all of "me"'s cells, so the camera tracks somewhere sane right after a split. */
+function myCenter(cells: { x: number; y: number; mass: number }[]): { x: number; y: number } {
+  const totalMass = cells.reduce((sum, c) => sum + c.mass, 0);
+  if (totalMass <= 0) return { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT / 2 };
+  return {
+    x: cells.reduce((sum, c) => sum + c.x * c.mass, 0) / totalMass,
+    y: cells.reduce((sum, c) => sum + c.y * c.mass, 0) / totalMass
+  };
+}
+
 export function renderCellScene(
   ctx: CanvasRenderingContext2D,
   world: CellWorld,
@@ -47,7 +57,8 @@ export function renderCellScene(
   ctx.clearRect(0, 0, viewport.width, viewport.height);
 
   const me = world.players.find((p) => p.id === myId);
-  const { camX, camY } = cameraFor(me?.x ?? ARENA_WIDTH / 2, me?.y ?? ARENA_HEIGHT / 2);
+  const center = myCenter(me?.cells ?? []);
+  const { camX, camY } = cameraFor(center.x, center.y);
   const { scale, offsetX, offsetY } = fieldTransform(viewport);
 
   ctx.save();
@@ -64,9 +75,14 @@ export function renderCellScene(
     else drawFoodDot(ctx, dot.x, dot.y, 'rgba(20,24,26,0.4)');
   }
 
-  // Draw smallest-first so a big cell never hides one it's about to pass.
-  const alive = world.players.filter((p) => p.alive).sort((a, b) => a.mass - b.mass);
-  for (const p of alive) drawCell(ctx, p.x, p.y, radiusFor(p.mass), colorFor(p.id, myId), p.name);
+  for (const virus of world.viruses) drawVirus(ctx, virus.x, virus.y, VIRUS_RADIUS);
+
+  // Flatten every alive player's blobs into one list, smallest-first, so a big cell never hides one it's about to pass.
+  const blobs = world.players
+    .filter((p) => p.alive)
+    .flatMap((p) => p.cells.map((c) => ({ ...c, color: colorFor(p.id, myId), name: p.name })))
+    .sort((a, b) => a.mass - b.mass);
+  for (const b of blobs) drawCell(ctx, b.x, b.y, radiusFor(b.mass), b.color, b.name);
 
   ctx.restore();
 }
