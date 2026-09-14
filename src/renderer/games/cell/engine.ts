@@ -44,6 +44,13 @@ interface EngineCell {
   mergeAt: number;
   /** Ticks of post-split/pop momentum remaining — see `stepCellMovement`. */
   launchTicksLeft: number;
+  /**
+   * False from the moment a split/pop creates this cell until it's actually been seen apart from its
+   * sibling at least once. A piece that never manages to get away (launched straight into a wall, say)
+   * stays false forever, which lets `stepMerge` fold it back immediately once its launch window ends
+   * instead of leaving it sitting stacked on its sibling for the rest of `MERGE_COOLDOWN_MS`.
+   */
+  hasSeparated: boolean;
 }
 
 interface EnginePlayer {
@@ -67,7 +74,17 @@ function randomSpot(): { x: number; y: number } {
 }
 
 function newCell(x: number, y: number, mass: number): EngineCell {
-  return { id: `c${Math.random().toString(36).slice(2, 9)}`, x, y, vx: 0, vy: 0, mass, mergeAt: 0, launchTicksLeft: 0 };
+  return {
+    id: `c${Math.random().toString(36).slice(2, 9)}`,
+    x,
+    y,
+    vx: 0,
+    vy: 0,
+    mass,
+    mergeAt: 0,
+    launchTicksLeft: 0,
+    hasSeparated: true
+  };
 }
 
 /** The player's current input direction, or — failing that — a cell's own heading, for aiming a split/pop launch. */
@@ -230,11 +247,13 @@ export class CellEngine {
       const half = cell.mass / 2;
       cell.mass = half;
       cell.mergeAt = now + MERGE_COOLDOWN_MS;
+      cell.hasSeparated = false;
       const twin = newCell(cell.x, cell.y, half);
       twin.vx = dir.x * SPLIT_LAUNCH_SPEED;
       twin.vy = dir.y * SPLIT_LAUNCH_SPEED;
       twin.mergeAt = now + MERGE_COOLDOWN_MS;
       twin.launchTicksLeft = SPLIT_LAUNCH_TICKS;
+      twin.hasSeparated = false;
       spawned.push(twin);
       slots--;
     }
@@ -279,7 +298,13 @@ export class CellEngine {
     cell.mass = MIN_CELL_MASS + (cell.mass - MIN_CELL_MASS) * MASS_DECAY;
   }
 
-  /** Merges a player's own cells back together once their post-split cooldown has passed and they're touching. */
+  /**
+   * Merges a player's own cells back together once they're touching, either because the post-split cooldown
+   * has passed, or — regardless of the cooldown — because a pair never actually got away from each other in
+   * the first place (still touching once both have cleared their launch window). The latter covers a split
+   * that had nowhere to fly to (a wall, a corner) and would otherwise just sit stacked on its sibling,
+   * looking frozen, for the rest of `MERGE_COOLDOWN_MS`.
+   */
   private stepMerge(p: EnginePlayer, now: number): void {
     let mergedAny = true;
     while (mergedAny) {
@@ -288,14 +313,24 @@ export class CellEngine {
         for (let j = i + 1; j < p.cells.length; j++) {
           const a = p.cells[i];
           const b = p.cells[j];
-          if (now < a.mergeAt || now < b.mergeAt) continue;
-          if (Math.hypot(a.x - b.x, a.y - b.y) > (radiusFor(a.mass) + radiusFor(b.mass)) / 2) continue;
+          const touching = Math.hypot(a.x - b.x, a.y - b.y) <= (radiusFor(a.mass) + radiusFor(b.mass)) / 2;
+          if (!touching) {
+            // Cleared merge range at least once — from here on this pair owes the full cooldown to rejoin.
+            a.hasSeparated = true;
+            b.hasSeparated = true;
+            continue;
+          }
+          const stillLaunching = a.launchTicksLeft > 0 || b.launchTicksLeft > 0;
+          const neverGotAway = !stillLaunching && !a.hasSeparated && !b.hasSeparated;
+          if (!neverGotAway && (now < a.mergeAt || now < b.mergeAt)) continue;
+
           const totalMass = a.mass + b.mass;
           a.x = (a.x * a.mass + b.x * b.mass) / totalMass;
           a.y = (a.y * a.mass + b.y * b.mass) / totalMass;
           a.vx = (a.vx * a.mass + b.vx * b.mass) / totalMass;
           a.vy = (a.vy * a.mass + b.vy * b.mass) / totalMass;
           a.mass = totalMass;
+          a.hasSeparated = true;
           p.cells.splice(j, 1);
           mergedAny = true;
           break merge;
@@ -384,6 +419,7 @@ export class CellEngine {
       piece.vy = Math.sin(angle) * VIRUS_LAUNCH_SPEED;
       piece.mergeAt = now + MERGE_COOLDOWN_MS;
       piece.launchTicksLeft = SPLIT_LAUNCH_TICKS;
+      piece.hasSeparated = false;
       player.cells.push(piece);
     }
   }
