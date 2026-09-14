@@ -103,6 +103,7 @@ function soleCell(engine, id) {
   e.step();
   e.players.get('small').respawnAt = Date.now() - 1; // force the delay to have already elapsed
   e.food.length = 0; // a random respawn spot can land on a pellet and eat it in the same tick
+  e.removePlayer('big'); // ...or land inside the big blob and get eaten again before the assertion below
   e.step();
   const snap = e.snapshot();
   const s = snap.players.find((p) => p.id === 'small');
@@ -159,6 +160,7 @@ function soleCell(engine, id) {
 {
   const e = new CellEngine();
   e.ensurePlayer('a', 'A');
+  e.food.length = 0; // a pellet landing under the blob would get eaten in the same tick and skew the total
   const a = soleCell(e, 'a');
   a.mass = SPLIT_MIN_MASS;
   Object.assign(a, { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT / 2 });
@@ -393,6 +395,9 @@ function soleCell(engine, id) {
   e.syncBotPopulation();
   const bot = Array.from(e.players.values()).find((p) => p.isBot);
   const botCell = bot.cells[0];
+  // Bots spawn anywhere, so pin this one down first — off a spawn near the right edge the pellet below would
+  // land outside the arena, where the bot can't reach it and has no reason to head right at all.
+  Object.assign(botCell, { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT / 2 });
   e.food.length = 0;
   e.food.push({ x: botCell.x + 200, y: botCell.y });
   const startX = botCell.x;

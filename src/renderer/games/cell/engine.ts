@@ -286,14 +286,28 @@ export class CellEngine {
     }
   }
 
-  /** A gentle nudge toward the main blob, closing whatever gap a split's launch opened up. */
+  /**
+   * A gentle nudge toward the main blob, closing whatever gap a split's launch opened up. Once the piece is
+   * home it stops pulling and drops whatever inward speed it arrived with, so it rests against the main blob
+   * instead of grinding into it against `stepSeparation` every tick.
+   */
   private pullTowardMain(cell: EngineCell, main: EngineCell): void {
     const dx = main.x - cell.x;
     const dy = main.y - cell.y;
     const dist = Math.hypot(dx, dy);
     if (dist < 1) return;
-    cell.vx += (dx / dist) * REJOIN_PULL_ACCEL;
-    cell.vy += (dy / dist) * REJOIN_PULL_ACCEL;
+    const nx = dx / dist;
+    const ny = dy / dist;
+
+    if (dist > radiusFor(cell.mass) + radiusFor(main.mass)) {
+      cell.vx += nx * REJOIN_PULL_ACCEL;
+      cell.vy += ny * REJOIN_PULL_ACCEL;
+      return;
+    }
+    const inward = cell.vx * nx + cell.vy * ny;
+    if (inward <= 0) return;
+    cell.vx -= nx * inward;
+    cell.vy -= ny * inward;
   }
 
   private stepCellMovement(input: CellInput, cell: EngineCell): void {
@@ -370,9 +384,10 @@ export class CellEngine {
    * Pushes any of a player's own cells that still overlap apart, edge to edge, after `stepMerge` has already
    * folded together whatever pairs are actually eligible to merge this tick. Without this, a pair sitting out
    * the rest of the merge cooldown (or a split still flying apart) just sits stacked on top of each other.
-   * Heavier cells give way less than lighter ones.
+   * The main blob never gives way; between two pieces, the heavier one gives way less.
    */
   private stepSeparation(p: EnginePlayer): void {
+    const main = mainCellOf(p);
     for (let i = 0; i < p.cells.length; i++) {
       for (let j = i + 1; j < p.cells.length; j++) {
         const a = p.cells[i];
@@ -391,8 +406,10 @@ export class CellEngine {
         const overlap = minDist - dist;
         const nx = dx / dist;
         const ny = dy / dist;
-        const aShare = b.mass / (a.mass + b.mass);
-        const bShare = a.mass / (a.mass + b.mass);
+        // The main blob is an anchor: a piece pressed against it slides around it instead of shoving it, or
+        // the player's steering would get nudged off course every tick by their own tail.
+        const aShare = b === main ? 1 : a === main ? 0 : b.mass / (a.mass + b.mass);
+        const bShare = 1 - aShare;
         a.x -= nx * overlap * aShare;
         a.y -= ny * overlap * aShare;
         b.x += nx * overlap * bShare;
