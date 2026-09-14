@@ -16,9 +16,12 @@
  *
  * It then splits the result into two independent streams sent together every
  * tick (see module.ts's buildOutgoingPacket):
- *  - "quick" atoms (wave clock + each zone's gold/upgrades/armed-menu/message)
- *    — always small (4 zones, no unit/monster data), so they always fit a
- *    single packet whole and are sent complete every tick, no reassembly.
+ *  - "quick" atoms (wave clock + each zone's gold/upgrades/armed-menu/message,
+ *    plus any active map-wide celebration — see types.ts's Celebration) —
+ *    always small (4 zones, and celebrations are rare/short-lived), so they
+ *    always fit a single packet whole and are sent complete every tick, no
+ *    reassembly. A 2-second celebration riding the slower heavy stream instead
+ *    would often finish decaying before it ever fully arrived.
  *  - "heavy" atoms (placed units, monsters, shots) — can be arbitrarily large
  *    at high entity counts, so these still use the old chunk-and-reassemble
  *    scheme, one MTU-safe chunk per tick, applied once every chunk of a
@@ -32,7 +35,7 @@
  */
 import { ARCHETYPES, SLOT_COUNT, jobIdToName, jobNameToId } from './data.js';
 import { ZONE_LABELS } from './field.js';
-import type { MerandiWorld, Monster, MonsterKind, Shot, UnitMember, UnitStack, Zone, ZoneLabel } from './types.js';
+import type { Celebration, MerandiWorld, Monster, MonsterKind, Shot, UnitMember, UnitStack, Zone, ZoneLabel } from './types.js';
 
 const MONSTER_KIND_LIST: MonsterKind[] = ['normal', 'speed', 'tank', 'boss'];
 const ARMED_CODE: Record<'upgrade' | 'sell' | 'none', number> = { none: 0, upgrade: 1, sell: 2 };
@@ -78,6 +81,9 @@ function buildQuickAtoms(world: MerandiWorld): unknown[] {
       z.kills
     ]);
   });
+  for (const c of world.celebrations) {
+    atoms.push(['C', c.id, ZONE_LABELS.indexOf(c.zoneLabel), c.grade, ARCHETYPES.indexOf(c.arche), Math.round(c.life), Math.round(c.maxLife)]);
+  }
   return atoms;
 }
 
@@ -163,11 +169,13 @@ interface QuickState {
   over: boolean;
   won: boolean;
   zones: Zone[]; // slots always empty here — filled in from the heavy stream at merge time
+  celebrations: Celebration[];
 }
 
 function decodeQuickAtoms(atoms: unknown[]): QuickState {
   let meta: unknown[] | null = null;
   const zonesByIdx = new Map<number, Zone>();
+  const celebrations: Celebration[] = [];
 
   for (const raw of atoms) {
     if (!Array.isArray(raw) || raw.length === 0) continue;
@@ -188,6 +196,16 @@ function decodeQuickAtoms(atoms: unknown[]): QuickState {
         pendingArche: pendingArcheIdx >= 0 ? ARCHETYPES[pendingArcheIdx] : null,
         lastMessage
       });
+    } else if (raw[0] === 'C') {
+      const [, id, zi, grade, archeIdx, life, maxLife] = raw;
+      celebrations.push({
+        id,
+        zoneLabel: ZONE_LABELS[zi] ?? ZONE_LABELS[0],
+        grade,
+        arche: ARCHETYPES[archeIdx] ?? ARCHETYPES[0],
+        life,
+        maxLife
+      });
     }
   }
 
@@ -203,7 +221,8 @@ function decodeQuickAtoms(atoms: unknown[]): QuickState {
     aliveThreshold,
     over: !!over,
     won: !!won,
-    zones: ZONE_LABELS.map((label, zi) => zonesByIdx.get(zi) ?? freshEmptyZone(label))
+    zones: ZONE_LABELS.map((label, zi) => zonesByIdx.get(zi) ?? freshEmptyZone(label)),
+    celebrations
   };
 }
 
@@ -263,6 +282,7 @@ function mergeQuickAndHeavy(quick: QuickState, heavy: HeavyState | null): Merand
     won: quick.won,
     monsters: heavy?.monsters ?? [],
     shots: heavy?.shots ?? [],
+    celebrations: quick.celebrations,
     zones: quick.zones.map((z, zi) => {
       const slots = heavy?.slotsByZoneIndex.get(zi);
       return slots ? { ...z, slots } : z;

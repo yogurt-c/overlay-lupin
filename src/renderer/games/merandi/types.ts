@@ -72,6 +72,24 @@ export interface Shot {
   grade: number;
 }
 
+/**
+ * A map-wide celebration triggered by drawing 레전더리(grade 5)+ — see data.ts's CELEBRATION_MIN_GRADE,
+ * engine.ts's doDraw/stepCelebrations, and draw.ts's drawCelebrations. Travels over the wire as a quick
+ * atom (wire.ts) rather than a heavy one, same as zone gold/menus, so it never waits behind a heavy
+ * chunk's up-to-~800ms reassembly — a 2-second spectacle arriving late would barely read as one.
+ * `life` counts down from `maxLife` just like Shot; draw.ts derives elapsed as `maxLife - life`, so every
+ * viewer's burst/particle physics are a pure function of this one server-authoritative number — nobody's
+ * fireworks can drift out of sync with anyone else's.
+ */
+export interface Celebration {
+  id: number;
+  zoneLabel: ZoneLabel;
+  grade: number;
+  arche: Archetype;
+  life: number;
+  maxLife: number;
+}
+
 /** The host's authoritative simulation, broadcast to every member each tick. */
 export interface MerandiWorld {
   wave: number;
@@ -83,6 +101,7 @@ export interface MerandiWorld {
   monsters: Monster[];
   zones: Zone[];
   shots: Shot[];
+  celebrations: Celebration[];
   over: boolean;
   won: boolean;
 }

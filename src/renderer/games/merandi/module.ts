@@ -105,6 +105,7 @@ const EMPTY_WORLD: MerandiWorld = {
   monsters: [],
   zones: [],
   shots: [],
+  celebrations: [],
   over: false,
   won: false
 };
