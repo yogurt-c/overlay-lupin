@@ -8,7 +8,10 @@ import {
   ARCHETYPE_ROLE,
   ALIVE_THRESHOLD_PER_EXTRA_PLAYER,
   ALIVE_THRESHOLD_SOLO,
+  ARCHER_COOLDOWN_MULT,
   CELEBRATION_MIN_GRADE,
+  MAGE_SPLASH_DAMAGE_FACTOR,
+  MAGE_SPLASH_RADIUS,
   MAIN_STATS,
   MAIN_STAT_NAME,
   MONSTERS_PER_WAVE_PER_PLAYER,
@@ -22,21 +25,30 @@ import {
   LAST_PLACE_GRADE_BOOST,
   MONSTER_KINDS,
   NORMAL_WAVE_MS,
+  PIRATE_KILL_BONUS,
   SELL_REFUND,
   SLOT_COUNT,
   SPAWN_WINDOW_MS,
+  SPECIAL_EFFECT_MIN_GRADE,
   STACK_MAX,
+  THIEF_DOT_DURATION_MS,
+  THIEF_DOT_RATE,
   TOTAL_WAVES,
   UPGRADE_MAX_LEVEL,
+  WARRIOR_STAGGER_MS,
+  WARRIOR_VULNERABLE_FACTOR,
+  WARRIOR_VULNERABLE_MS,
   computeMemberDamage,
   isBossWave,
   rollArchetype,
   rollGradeWithPity,
   rollJobName,
   settleFactor,
+  specialEffectTier,
   upgradeCost
 } from './data.js';
-import { ZONE_LABELS, perimeterPoint, slotDepth, slotPosition, squareLoopPoints } from './field.js';
+import { ZONE_LABELS, perimeterPoint, slotPosition, squareLoopPoints } from './field.js';
+import type { Point } from './field.js';
 import type {
   Archetype,
   Celebration,
@@ -257,7 +269,10 @@ export class MerandiEngine {
   }
 
   private stepMonsters(dtMs: number): void {
-    for (const m of this.monsters) m.t += m.speed * dtMs;
+    for (const m of this.monsters) {
+      if ((m.staggerMsLeft ?? 0) > 0) continue; // 전사 special — frozen in place, see stepStatusEffects
+      m.t += m.speed * dtMs;
+    }
   }
 
   /**
@@ -265,9 +280,11 @@ export class MerandiEngine {
    * player still benefits most from their own kills, but can't hoard the entire team's gold while
    * everyone else falls behind. Shares are kept exact (no per-kill rounding) so nothing leaks from the
    * economy over hundreds of kills — see draw.ts/module.ts for where gold gets floored for display.
+   * `bonus` is 해적's flat per-kill special (see killMonster) — folded in before the split so the team
+   * benefits from a legendary+ pirate's kills too, same as any other kill gold.
    */
-  private awardKillGold(killer: Zone): void {
-    const reward = this.wave <= 5 ? 3 : 2 + Math.floor(this.wave / 20);
+  private awardKillGold(killer: Zone, bonus = 0): void {
+    const reward = (this.wave <= 5 ? 3 : 2 + Math.floor(this.wave / 20)) + bonus;
     const others = ZONE_LABELS.filter((l) => l !== killer.label && this.zones.get(l)!.id !== '');
     if (!others.length) {
       killer.gold += reward;
@@ -289,6 +306,42 @@ export class MerandiEngine {
     }
   }
 
+  /**
+   * Applies damage with 전사's vulnerability special folded in (amplifies every source — direct hits,
+   * 마법사 splash, 도적 dot ticks — the same way), and returns the resulting hp so callers can just
+   * check `<= 0` instead of re-reading target.hp themselves.
+   */
+  private applyDamage(target: Monster, dmg: number): number {
+    const factor = (target.vulnerableMsLeft ?? 0) > 0 ? (target.vulnerableFactor ?? 1) : 1;
+    target.hp -= dmg * factor;
+    return target.hp;
+  }
+
+  /** Single place a monster actually leaves the field — used by the primary hit, 마법사's splash targets, and 도적's dot ticks alike, so every kill (however it happened) is credited the same way. */
+  private killMonster(target: Monster, creditLabel: ZoneLabel, bonusGold = 0): void {
+    const zone = this.zones.get(creditLabel)!;
+    this.awardKillGold(zone, bonusGold);
+    if (target.kind === 'boss') this.awardBossClearBonus();
+    zone.kills++;
+    this.monsters = this.monsters.filter((m) => m !== target);
+  }
+
+  /** Ticks every monster's 레전더리+ status timers (전사 stagger/vulnerable, 도적 dot) and applies dot damage — runs once per frame, independent of whether anyone's currently firing. */
+  private stepStatusEffects(dtMs: number): void {
+    for (const m of [...this.monsters]) {
+      if (m.staggerMsLeft && m.staggerMsLeft > 0) m.staggerMsLeft -= dtMs;
+      if (m.vulnerableMsLeft && m.vulnerableMsLeft > 0) m.vulnerableMsLeft -= dtMs;
+      if (m.dotMsLeft && m.dotMsLeft > 0) {
+        m.dotMsLeft -= dtMs;
+        const tick = (m.dotDamagePerSec ?? 0) * (dtMs / 1000);
+        const label = m.dotZoneLabel;
+        if (tick > 0 && label && this.applyDamage(m, tick) <= 0) {
+          this.killMonster(m, label);
+        }
+      }
+    }
+  }
+
   private stepCombat(dtMs: number): void {
     if (!this.monsters.length) return;
     for (const label of ZONE_LABELS) {
@@ -305,7 +358,10 @@ export class MerandiEngine {
           if (member.cooldownMs > 0) continue;
 
           const grade = GRADES[member.grade];
-          const range = BASE_RANGE_PX * grade.rangeMult;
+          const special = member.grade >= SPECIAL_EFFECT_MIN_GRADE;
+          const tier = specialEffectTier(member.grade);
+          // 궁수's special is unlimited range — every other archetype keeps the normal grade-scaled reach.
+          const range = special && member.arche === 'archer' ? Infinity : BASE_RANGE_PX * grade.rangeMult;
 
           let target: Monster | null = null;
           let bestDist = Infinity;
@@ -324,9 +380,11 @@ export class MerandiEngine {
           let cooldown = BASE_COOLDOWN_MS;
           if (role === 'attackSpeed') cooldown *= 0.65;
           if (role === 'crit' && Math.random() < 0.25) dmg *= 2;
+          if (special && member.arche === 'archer') cooldown *= ARCHER_COOLDOWN_MULT[tier];
           member.cooldownMs = cooldown;
 
           const targetPosAtFire = perimeterPoint(PATH_PTS, target.t);
+          const isMageSplash = special && member.arche === 'mage';
           this.shots.push({
             x: pos[0],
             y: pos[1],
@@ -334,15 +392,37 @@ export class MerandiEngine {
             ty: targetPosAtFire[1],
             life: SHOT_LIFE_MS,
             maxLife: SHOT_LIFE_MS,
-            grade: member.grade
+            grade: member.grade,
+            ...(isMageSplash ? { splash: true } : {})
           });
 
-          target.hp -= dmg;
-          if (target.hp <= 0) {
-            this.awardKillGold(zone);
-            if (target.kind === 'boss') this.awardBossClearBonus();
-            zone.kills++;
-            this.monsters = this.monsters.filter((m) => m !== target);
+          if (special && member.arche === 'warrior') {
+            target.staggerMsLeft = WARRIOR_STAGGER_MS[tier];
+            // Take the stronger of an existing amplification vs. this hit's — never let a weaker re-hit water down an already-applied buff, but always refresh its remaining duration.
+            target.vulnerableFactor = Math.max(target.vulnerableFactor ?? 0, WARRIOR_VULNERABLE_FACTOR[tier]);
+            target.vulnerableMsLeft = WARRIOR_VULNERABLE_MS;
+          }
+
+          const pirateBonus = special && member.arche === 'pirate' ? PIRATE_KILL_BONUS[tier] : 0;
+          if (this.applyDamage(target, dmg) <= 0) {
+            this.killMonster(target, label, pirateBonus);
+          } else if (special && member.arche === 'thief') {
+            const dotAmount = dmg * THIEF_DOT_RATE[tier];
+            target.dotDamagePerSec = Math.max(target.dotDamagePerSec ?? 0, dotAmount);
+            target.dotMsLeft = THIEF_DOT_DURATION_MS;
+            target.dotZoneLabel = label;
+          }
+
+          if (isMageSplash) {
+            const splashRadius = MAGE_SPLASH_RADIUS[tier];
+            const splashDmg = dmg * MAGE_SPLASH_DAMAGE_FACTOR[tier];
+            for (const m of [...this.monsters]) {
+              if (m === target) continue;
+              const mp = perimeterPoint(PATH_PTS, m.t);
+              if (Math.hypot(mp[0] - targetPosAtFire[0], mp[1] - targetPosAtFire[1]) <= splashRadius) {
+                if (this.applyDamage(m, splashDmg) <= 0) this.killMonster(m, label);
+              }
+            }
           }
         }
       }
@@ -409,42 +489,42 @@ export class MerandiEngine {
 
   // ---------------------------------------------------------------- commands
 
-  private slotReach(index: number, grade: (typeof GRADES)[number]): boolean {
-    // slotDepth 0 (corner) .. 1 (center); range scales the same way the design's grade table intends —
-    // a low grade can only sit near the corner, a high grade can sit anywhere in the zone.
-    return slotDepth(index) <= (grade.rangeMult - 1) / (GRADES[GRADES.length - 1].rangeMult - 1) + 0.18;
+  /** How many points around the loop to sample when scoring a slot's coverage — plenty of resolution for a 36-slot grid, and this only ever runs once per draw (a rate-limited, player-triggered action), never per combat tick. */
+  private static readonly COVERAGE_SAMPLES = 200;
+
+  /** Fraction (0..1) of the loop that lies within `range` of `pos` — how much of a monster's lap this slot could actually hit. */
+  private slotCoverage(pos: Point, range: number): number {
+    let hits = 0;
+    for (let k = 0; k < MerandiEngine.COVERAGE_SAMPLES; k++) {
+      const p = perimeterPoint(PATH_PTS, k / MerandiEngine.COVERAGE_SAMPLES);
+      if (Math.hypot(p[0] - pos[0], p[1] - pos[1]) <= range) hits++;
+    }
+    return hits / MerandiEngine.COVERAGE_SAMPLES;
   }
 
   /**
    * A slot is just a shared tile for up to STACK_MAX independent units — it never requires them to
    * match grade or archetype. So placement only ever fails once the whole 36-slot grid is truly full
    * at capacity (36 * STACK_MAX units), never because "this exact combo has nowhere to go."
+   *
+   * Picks whichever slot with room actually covers the most of the loop at this grade's real range —
+   * not just "the deepest slot within an idealized reach band," since that band was only a proxy and
+   * (per a manual audit) isn't always the slot that truly sees the most of the track.
    */
   private placeDraw(zone: Zone, grade: number, arche: Archetype, job: string): boolean {
     const spec = GRADES[grade];
+    const range = BASE_RANGE_PX * spec.rangeMult;
     const member: UnitMember = { id: this.nextMemberId++, grade, arche, job, cooldownMs: 0 };
 
-    // 1) Prefer the deepest slot with room that this grade's range comfortably reaches — keeps the "낮은 등급은 앞줄" flavor.
     let best = -1;
-    let bestDepth = -1;
+    let bestCoverage = -1;
     for (let i = 0; i < zone.slots.length; i++) {
       const s = zone.slots[i];
       if (s && s.members.length >= STACK_MAX) continue;
-      if (!this.slotReach(i, spec)) continue;
-      const d = slotDepth(i);
-      if (d > bestDepth) {
-        bestDepth = d;
+      const coverage = this.slotCoverage(slotPosition(zone.label, i), range);
+      if (coverage > bestCoverage) {
+        bestCoverage = coverage;
         best = i;
-      }
-    }
-    // 2) Nothing in the ideal reach band has room — fall back to ANY slot with room at all, empty or not.
-    if (best === -1) {
-      for (let i = 0; i < zone.slots.length; i++) {
-        const s = zone.slots[i];
-        if (!s || s.members.length < STACK_MAX) {
-          best = i;
-          break;
-        }
       }
     }
     if (best === -1) return false; // every slot is at the 3-member cap — the zone is genuinely full (108 units)
@@ -575,6 +655,7 @@ export class MerandiEngine {
     this.stepSpawning(dtMs);
     this.stepMonsters(dtMs);
     this.stepCombat(dtMs);
+    this.stepStatusEffects(dtMs);
     this.checkLoss();
     this.stepWaveClock(dtMs);
   }

@@ -184,6 +184,39 @@ export const ARCHETYPE_ROLE: Record<Archetype, 'attack' | 'attackSpeed' | 'crit'
   thief: 'crit'
 };
 
+/**
+ * Grade at which every archetype's unique special effect kicks in — shares CELEBRATION_MIN_GRADE's
+ * threshold (레전더리+) on purpose: pulling one of these already triggers the map-wide celebration, so
+ * the same rare pull immediately pays off again in actual combat. All five per-archetype effects below
+ * scale across the 3 grades at/above this threshold via `tier = grade - SPECIAL_EFFECT_MIN_GRADE` (0/1/2
+ * for 레전더리/신화/초월) — see engine.ts's stepCombat/stepStatusEffects for where each is applied.
+ */
+export const SPECIAL_EFFECT_MIN_GRADE = CELEBRATION_MIN_GRADE;
+
+/** 마법사: splash radius (px) and secondary-target damage share, by tier. */
+export const MAGE_SPLASH_RADIUS: [number, number, number] = [30, 45, 60];
+export const MAGE_SPLASH_DAMAGE_FACTOR: [number, number, number] = [0.4, 0.5, 0.65];
+
+/** 궁수: unlimited range (see BASE_RANGE_PX's use in engine.ts) plus an extra cooldown multiplier at the two highest tiers. */
+export const ARCHER_COOLDOWN_MULT: [number, number, number] = [1, 0.9, 0.8];
+
+/** 도적: DoT damage-per-second as a share of the triggering hit's damage, and how long it lasts (flat across tiers — only the strength scales). */
+export const THIEF_DOT_RATE: [number, number, number] = [0.3, 0.45, 0.6];
+export const THIEF_DOT_DURATION_MS = 3000;
+
+/** 해적: flat bonus gold on top of the normal kill reward (goes through the same killer/team split as awardKillGold). */
+export const PIRATE_KILL_BONUS: [number, number, number] = [5, 10, 20];
+
+/** 전사: freezes the target in place, and separately amplifies ALL damage it takes (from anyone, including 도적's dot) for a bit longer than the freeze itself. */
+export const WARRIOR_STAGGER_MS: [number, number, number] = [400, 600, 800];
+export const WARRIOR_VULNERABLE_FACTOR: [number, number, number] = [1.15, 1.25, 1.35];
+export const WARRIOR_VULNERABLE_MS = 2000;
+
+/** Clamps an out-of-range grade into the 0..2 tier index the arrays above expect. */
+export function specialEffectTier(grade: number): number {
+  return Math.min(2, Math.max(0, grade - SPECIAL_EFFECT_MIN_GRADE));
+}
+
 export const BASE_DMG = 3;
 /** Across-the-board upgrade efficiency dial — scales every LEVEL_GROWTH/SUB_GROWTH value down together so the carefully-tuned ratios between stats never drift while the overall payoff gets cheaper or richer. */
 const EFFICIENCY_SCALE = 0.9;
