@@ -1,24 +1,34 @@
 import type { Archetype, MainStat, MonsterKind, UnitMember, UpgradeLevels } from './types.js';
 
-/** 8-tier gacha ladder. No color is ever used to tell these apart — see draw.ts (size + border only). */
+/**
+ * 8-tier gacha ladder. `color` ("그림자 염료") is deliberately desaturated (15-25% saturation, lightness
+ * pulled in close to the ink itself) so the field still reads as plain ink from a glance — grade shows
+ * up as size + border thickness first, color is only a secondary tell for anyone looking closely. See
+ * draw.ts for how 레전더리(5)+ layer a halo and a foil light-sweep on top of this, and engine.ts/draw.ts
+ * for the map-wide celebration triggered on the same threshold.
+ */
 export interface GradeSpec {
   name: string;
   prob: number; // 0..1, sums to 1 across the table
   dmgMult: number;
   sizeMult: number; // also drives the icon border thickness in draw.ts
   rangeMult: number; // multiplies BASE_RANGE_PX
+  color: string; // stroke color for this grade's unit icon — see draw.ts
 }
 
 export const GRADES: GradeSpec[] = [
-  { name: '노멀', prob: 0.545, dmgMult: 1, sizeMult: 1.0, rangeMult: 1.0 },
-  { name: '매직', prob: 0.305, dmgMult: 1.5, sizeMult: 1.1, rangeMult: 1.15 },
-  { name: '레어', prob: 0.0886, dmgMult: 2.2, sizeMult: 1.2, rangeMult: 1.3 },
-  { name: '에픽', prob: 0.0409, dmgMult: 3.3, sizeMult: 1.35, rangeMult: 1.5 },
-  { name: '유니크', prob: 0.0136, dmgMult: 5, sizeMult: 1.5, rangeMult: 1.75 },
-  { name: '레전더리', prob: 0.0065, dmgMult: 7.5, sizeMult: 1.7, rangeMult: 2.1 },
-  { name: '신화', prob: 0.0003, dmgMult: 11, sizeMult: 2.0, rangeMult: 2.5 },
-  { name: '초월', prob: 0.0001, dmgMult: 20, sizeMult: 2.5, rangeMult: 3.0 }
+  { name: '노멀', prob: 0.545, dmgMult: 1, sizeMult: 1.0, rangeMult: 1.0, color: '#5b5d54' },
+  { name: '매직', prob: 0.305, dmgMult: 1.5, sizeMult: 1.1, rangeMult: 1.15, color: '#4d5c50' },
+  { name: '레어', prob: 0.0886, dmgMult: 2.2, sizeMult: 1.2, rangeMult: 1.3, color: '#47565f' },
+  { name: '에픽', prob: 0.0409, dmgMult: 3.3, sizeMult: 1.35, rangeMult: 1.5, color: '#565064' },
+  { name: '유니크', prob: 0.0136, dmgMult: 5, sizeMult: 1.5, rangeMult: 1.75, color: '#63515d' },
+  { name: '레전더리', prob: 0.0065, dmgMult: 7.5, sizeMult: 1.7, rangeMult: 2.1, color: '#6b5a48' },
+  { name: '신화', prob: 0.0003, dmgMult: 11, sizeMult: 2.0, rangeMult: 2.5, color: '#6e4d3f' },
+  { name: '초월', prob: 0.0001, dmgMult: 20, sizeMult: 2.5, rangeMult: 3.0, color: '#7c5a3a' }
 ];
+
+/** 레전더리(5) 이상 — 후광·포일 스윕(draw.ts)과 맵 전체 축하 연출(engine.ts doDraw, draw.ts drawCelebrations) 둘 다 이 문턱을 공유한다. */
+export const CELEBRATION_MIN_GRADE = 5;
 
 export const ARCHETYPES: Archetype[] = ['warrior', 'mage', 'archer', 'thief', 'pirate'];
 
@@ -244,8 +254,15 @@ export const MONSTER_KIND_NAME: Record<MonsterKind, string> = {
 export const TOTAL_WAVES = 50;
 export const NORMAL_WAVE_MS = 30_000;
 export const BOSS_WAVE_MS = 60_000;
-/** Raised again (1.08 -> 1.085 -> 1.095) to keep offsetting the wave-50 spawn count cut (285 -> 200) and push late-game difficulty higher — exponential, so small bumps compound a lot by wave 50. */
-export const HP_GROWTH_PER_WAVE = 1.095;
+/**
+ * Raised again (1.08 -> 1.085 -> 1.095 -> 1.105) to keep offsetting the wave-50 spawn count cut
+ * (285 -> 200) and push late-game difficulty higher — exponential, so small bumps compound a lot by
+ * wave 50. This last bump also compensates for settleFactor now cutting waves 1-2 far below their old
+ * 50% floor (see below): those early waves no longer contribute meaningfully to how hard wave 50 feels
+ * (settleFactor is 1 from SETTLE_WAVES onward regardless), so the growth rate alone carries the
+ * late-game curve.
+ */
+export const HP_GROWTH_PER_WAVE = 1.105;
 /**
  * Per-corner monster baseline — the engine multiplies this by the number of active players/corners
  * (see engine.ts's startWave), so density per corner stays constant regardless of player count instead
@@ -253,7 +270,39 @@ export const HP_GROWTH_PER_WAVE = 1.095;
  * (nudged up slightly from 200 to offset LAST_PLACE_GRADE_BOOST making good units easier to find overall).
  */
 const SPAWN_GROWTH_PER_WAVE = (210 - 40) / (TOTAL_WAVES - 1);
-export const MONSTERS_PER_WAVE_PER_PLAYER = (wave: number): number => Math.round(40 + (wave - 1) * SPAWN_GROWTH_PER_WAVE);
+/**
+ * Waves 1..SETTLE_WAVES ease in instead of hitting the full designed curve immediately: at wave 1 nobody
+ * has placed a single unit yet, so the intended wave-1 count/HP was effectively unkillable for a 노멀
+ * draw and only a lucky high-grade pull could tag anything — letting that one player snowball the whole
+ * economy off kill gold while everyone else's board never gets off the ground. Ramping count and HP
+ * back up to full by SETTLE_WAVES gives every grade a real chance to start clearing before the curve
+ * catches up to its old (unchanged) shape from wave SETTLE_WAVES+1 onward.
+ */
+export const SETTLE_WAVES = 4;
+/**
+ * A flat 50% wave-1 floor still wasn't gentle enough in practice — with the old linear ramp, waves 1-2
+ * still took most of the wave to clear (see BASE_RANGE_PX's fix for the bigger reason why: 노멀 units
+ * couldn't hit anything at all until that changed). Squaring the ramp (t*t instead of t) front-loads the
+ * easing hard: wave 1 drops to SETTLE_FLOOR, wave 2 barely rises off the floor, and only wave 3 climbs
+ * back toward the full curve by wave SETTLE_WAVES — so the very first waves are near-instant clears
+ * while players are still drawing/placing their first units, without moving wave 4+ at all.
+ */
+const SETTLE_FLOOR = 0.15;
+/** wave1 spawns/HP at SETTLE_FLOOR, ramping (quadratically) to 100% by SETTLE_WAVES; untouched after. */
+export function settleFactor(wave: number): number {
+  if (wave >= SETTLE_WAVES) return 1;
+  const t = (wave - 1) / (SETTLE_WAVES - 1);
+  return SETTLE_FLOOR + (1 - SETTLE_FLOOR) * t * t;
+}
+export const MONSTERS_PER_WAVE_PER_PLAYER = (wave: number): number =>
+  Math.round((40 + (wave - 1) * SPAWN_GROWTH_PER_WAVE) * settleFactor(wave));
+/**
+ * Only wave 1 gets this — every player starts with zero units on the field, so the very first monster
+ * shouldn't appear before anyone has had a chance to draw and place one. Folded into startWave's spawn
+ * tickets rather than a separate timer so the rest of the spawn/wave-clock logic doesn't need to know
+ * about it.
+ */
+export const INITIAL_GRACE_MS = 4000;
 /**
  * Cap on how many monsters may be alive at once before it's a loss — doesn't grow per wave, only per
  * active player: 1p ≈ 150, 4p ≈ 400 (see engine.ts's aliveThreshold(), linear on player count).
@@ -266,7 +315,11 @@ export const ALIVE_THRESHOLD_PER_EXTRA_PLAYER = 83;
  * regardless of how many monsters that wave actually spawns, leaving a quiet tail before the next wave.
  */
 export const SPAWN_WINDOW_MS = 25_000;
-/** How long after the last regular monster a boss wave's boss appears. */
+/**
+ * How long after wave start (on top of any INITIAL_GRACE_MS) a boss wave's boss appears — spawns
+ * alongside the regular roster now, not after it finishes, so the full BOSS_WAVE_MS timer is real time
+ * to fight the boss instead of mostly burning on the trash spawn window first.
+ */
 export const BOSS_SPAWN_DELAY_MS = 400;
 
 export function isBossWave(wave: number): boolean {
