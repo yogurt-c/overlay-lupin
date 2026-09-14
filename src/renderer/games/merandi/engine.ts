@@ -18,6 +18,7 @@ import {
   drawCost,
   GRADES,
   HP_GROWTH_PER_WAVE,
+  hpGrowthExponent,
   INITIAL_GRACE_MS,
   LAST_PLACE_GRADE_BOOST,
   MONSTER_KINDS,
@@ -79,11 +80,12 @@ const KILLER_GOLD_SHARE = 0.6;
  */
 const BOSS_CLEAR_BONUS_BASE = 100;
 /**
- * A boss at wave 50 has ~90x the HP of the wave-5 boss (HP_GROWTH_PER_WAVE compounding), but a flat
- * BOSS_CLEAR_BONUS paid the exact same 100G regardless — the reward for clearing the hardest boss checks
- * in the game didn't track the effort at all. Mild linear growth (same "+X per N waves" shape as
- * drawCost/awardKillGold, not an attempt to match the boss's own exponential curve 1:1) at least makes
- * late bosses pay out more than early ones.
+ * A boss at wave 50 has ~40x the HP of the wave-5 boss (HP_GROWTH_PER_WAVE compounding, tapered past
+ * wave 30 by hpGrowthExponent() — was ~90x before that taper), but a flat BOSS_CLEAR_BONUS paid the
+ * exact same 100G regardless — the reward for clearing the hardest boss checks in the game didn't track
+ * the effort at all. Mild linear growth (same "+X per N waves" shape as drawCost/awardKillGold, not an
+ * attempt to match the boss's own exponential curve 1:1) at least makes late bosses pay out more than
+ * early ones.
  */
 function bossClearBonus(wave: number): number {
   return BOSS_CLEAR_BONUS_BASE + Math.floor(wave / 5) * 20;
@@ -253,7 +255,7 @@ export class MerandiEngine {
     const cornerT = ZONE_LABELS.indexOf(label) / 4;
     const spec = MONSTER_KINDS[kind];
     const hp = Math.round(
-      BASE_MONSTER_HP * spec.hpMult * Math.pow(HP_GROWTH_PER_WAVE, this.wave - 1) * settleFactor(this.wave)
+      BASE_MONSTER_HP * spec.hpMult * Math.pow(HP_GROWTH_PER_WAVE, hpGrowthExponent(this.wave)) * settleFactor(this.wave)
     );
     this.monsters.push({
       id: this.nextMonsterId++,

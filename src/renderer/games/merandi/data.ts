@@ -185,8 +185,14 @@ export const ARCHETYPE_ROLE: Record<Archetype, 'attack' | 'attackSpeed' | 'crit'
 };
 
 export const BASE_DMG = 3;
-/** Across-the-board upgrade efficiency dial — scales every LEVEL_GROWTH/SUB_GROWTH value down together so the carefully-tuned ratios between stats never drift while the overall payoff gets cheaper or richer. */
-const EFFICIENCY_SCALE = 0.9;
+/**
+ * Across-the-board upgrade efficiency dial — scales every LEVEL_GROWTH/SUB_GROWTH value together so the
+ * carefully-tuned ratios between stats never drift while the overall payoff gets cheaper or richer.
+ * Raised from 0.9 to 1.0 (full value, no reduction) as a global +11% damage buff paired with HP_TAPER —
+ * even rosters with several high-grade pulls and heavy upgrade investment were still walled by
+ * exponential HP growth outrunning their (linear, capped-at-UPGRADE_MAX_LEVEL) damage growth.
+ */
+const EFFICIENCY_SCALE = 1.0;
 /**
  * Flat growth per upgrade level, per main stat. STR powers two archetypes (전사+해적) instead of one —
  * at an equal rate it would let a single upgrade track cover 40% of all draws instead of the 20% every
@@ -201,8 +207,17 @@ const EFFICIENCY_SCALE = 0.9;
  * compensation for that risk rather than for pure coverage parity.
  */
 const INT_BUFF = 1.25;
+/**
+ * STR's base rate is halved above the coverage-fairness reasoning to cancel out 전사+해적 sharing it —
+ * but that cancellation left STR the single worst per-level payout of all four main stats (0.0675 vs
+ * 0.135 for DEX/LUK, 0.225 for INT under the old EFFICIENCY_SCALE), with none of INT_BUFF's
+ * risk-compensation to justify it: STR investors don't carry INT's all-or-nothing draw risk, they're
+ * just paying a straight tax for their stat's wider coverage. STR_BUFF claws back part of that gap
+ * without fully erasing the halving's original fairness point.
+ */
+const STR_BUFF = 1.3;
 export const LEVEL_GROWTH: Record<MainStat, number> = {
-  str: 0.075 * EFFICIENCY_SCALE,
+  str: 0.075 * EFFICIENCY_SCALE * STR_BUFF,
   int: 0.2 * EFFICIENCY_SCALE * INT_BUFF,
   dex: 0.15 * EFFICIENCY_SCALE,
   luk: 0.15 * EFFICIENCY_SCALE
@@ -293,6 +308,21 @@ export const BOSS_WAVE_MS = 60_000;
  * late-game curve.
  */
 export const HP_GROWTH_PER_WAVE = 1.105;
+/**
+ * From this wave on, the HP exponent advances at HP_TAPER_FACTOR of its normal rate instead of
+ * continuing the full exponential climb — the other half of the "HP × count" pairing that
+ * HP_GROWTH_PER_WAVE's own comment above warns about (SPAWN_TAPER_WAVE/FACTOR below already tapers the
+ * count side). Reasoning: army damage output grows roughly linearly per upgrade level (LEVEL_GROWTH) and
+ * hard-caps at UPGRADE_MAX_LEVEL, while unmitigated exponential HP growth never caps — so even a
+ * maxed-upgrade, top-tier-gacha roster (e.g. multiple 초월/신화 pulls) eventually hits a wall that's
+ * purely a function of which wave the two curves happen to cross, not skill or investment. Waves 1-30
+ * are left byte-for-byte unchanged; only the exponent's growth *rate* past 30 eases off.
+ */
+export const HP_TAPER_WAVE = 30;
+export const HP_TAPER_FACTOR = 0.6;
+export function hpGrowthExponent(wave: number): number {
+  return wave <= HP_TAPER_WAVE ? wave - 1 : HP_TAPER_WAVE - 1 + (wave - HP_TAPER_WAVE) * HP_TAPER_FACTOR;
+}
 /**
  * Per-corner monster baseline — the engine multiplies this by the number of active players/corners
  * (see engine.ts's startWave), so density per corner stays constant regardless of player count instead
