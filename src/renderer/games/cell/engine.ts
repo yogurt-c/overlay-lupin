@@ -31,10 +31,9 @@ const MOVE_ACCEL = 0.6;
 const DRAG = 0.86;
 const BASE_MAX_SPEED = 2.6;
 /**
- * Gentle homing accel applied to a player's non-main cells, once their split/pop launch has settled, pulling
- * them back toward the player's biggest cell. Input in this game is a shared direction (not a shared target
- * point the way agar.io's cursor-follow is), so nothing else would ever bring a split piece back on its own —
- * without this, two of a player's own cells that drifted apart just stay apart forever.
+ * Gentle homing accel applied to a player's non-main cells, once their split/pop launch has settled, closing
+ * the gap back to the player's biggest cell. The pieces are already carried along with the main blob (see
+ * `stepPlayerMovement`), so this only has to reel in the distance the launch opened up.
  */
 const REJOIN_PULL_ACCEL = 0.3;
 /** Applied only to mass above `MIN_CELL_MASS`, so no blob ever idles its way down to nothing. */
@@ -51,13 +50,6 @@ interface EngineCell {
   mergeAt: number;
   /** Ticks of post-split/pop momentum remaining — see `stepCellMovement`. */
   launchTicksLeft: number;
-  /**
-   * False from the moment a split/pop creates this cell until it's actually been seen apart from its
-   * sibling at least once. A piece that never manages to get away (launched straight into a wall, say)
-   * stays false forever, which lets `stepMerge` fold it back immediately once its launch window ends
-   * instead of leaving it sitting stacked on its sibling for the rest of `MERGE_COOLDOWN_MS`.
-   */
-  hasSeparated: boolean;
 }
 
 interface EnginePlayer {
@@ -89,9 +81,13 @@ function newCell(x: number, y: number, mass: number): EngineCell {
     vy: 0,
     mass,
     mergeAt: 0,
-    launchTicksLeft: 0,
-    hasSeparated: true
+    launchTicksLeft: 0
   };
+}
+
+/** A player's main blob: the biggest one. It's the only cell that steers, and the one the rest trail behind. */
+function mainCellOf(p: EnginePlayer): EngineCell {
+  return p.cells.reduce((biggest, c) => (c.mass > biggest.mass ? c : biggest), p.cells[0]);
 }
 
 /** The player's current input direction, or — failing that — a cell's own heading, for aiming a split/pop launch. */
@@ -218,11 +214,7 @@ export class CellEngine {
       }
       if (p.isBot) p.input = this.botInputFor(p);
       else this.handleSplit(p, now);
-      this.stepRejoinPull(p);
-      for (const cell of p.cells) {
-        this.stepCellMovement(p.input, cell);
-        this.decay(cell);
-      }
+      this.stepPlayerMovement(p);
       this.stepMerge(p, now);
       this.stepSeparation(p);
     }
@@ -256,13 +248,11 @@ export class CellEngine {
       const half = cell.mass / 2;
       cell.mass = half;
       cell.mergeAt = now + MERGE_COOLDOWN_MS;
-      cell.hasSeparated = false;
       const twin = newCell(cell.x, cell.y, half);
       twin.vx = dir.x * SPLIT_LAUNCH_SPEED;
       twin.vy = dir.y * SPLIT_LAUNCH_SPEED;
       twin.mergeAt = now + MERGE_COOLDOWN_MS;
       twin.launchTicksLeft = SPLIT_LAUNCH_TICKS;
-      twin.hasSeparated = false;
       spawned.push(twin);
       slots--;
     }
@@ -270,23 +260,40 @@ export class CellEngine {
   }
 
   /**
-   * Pulls every other cell of a player gently toward their single biggest cell, so a split piece drifts back
-   * home on its own instead of coasting off in whatever direction it launched forever. Skipped while a cell is
-   * still riding out its launch momentum (`launchTicksLeft`) — the whole point of a split is to actually get
-   * away first.
+   * Moves one player's blobs for the tick. Only the main blob steers: every settled piece is carried along by
+   * exactly the main blob's own displacement and then nudged back toward it, so a split reads as one body with
+   * bits stuck to it rather than several cells marching in parallel — and no piece can ever be left behind by
+   * the main blob's speed. A piece still riding its launch momentum owns itself until that runs out.
    */
-  private stepRejoinPull(p: EnginePlayer): void {
-    if (p.cells.length < 2) return;
-    const main = p.cells.reduce((biggest, c) => (c.mass > biggest.mass ? c : biggest), p.cells[0]);
+  private stepPlayerMovement(p: EnginePlayer): void {
+    const main = mainCellOf(p);
+    const fromX = main.x;
+    const fromY = main.y;
+    this.stepCellMovement(p.input, main);
+    this.decay(main);
+    const carryX = main.x - fromX;
+    const carryY = main.y - fromY;
+
     for (const cell of p.cells) {
-      if (cell === main || cell.launchTicksLeft > 0) continue;
-      const dx = main.x - cell.x;
-      const dy = main.y - cell.y;
-      const dist = Math.hypot(dx, dy);
-      if (dist < 1) continue;
-      cell.vx += (dx / dist) * REJOIN_PULL_ACCEL;
-      cell.vy += (dy / dist) * REJOIN_PULL_ACCEL;
+      if (cell === main) continue;
+      if (cell.launchTicksLeft <= 0) {
+        cell.x += carryX;
+        cell.y += carryY;
+        this.pullTowardMain(cell, main);
+      }
+      this.stepCellMovement(NO_INPUT, cell);
+      this.decay(cell);
     }
+  }
+
+  /** A gentle nudge toward the main blob, closing whatever gap a split's launch opened up. */
+  private pullTowardMain(cell: EngineCell, main: EngineCell): void {
+    const dx = main.x - cell.x;
+    const dy = main.y - cell.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 1) return;
+    cell.vx += (dx / dist) * REJOIN_PULL_ACCEL;
+    cell.vy += (dy / dist) * REJOIN_PULL_ACCEL;
   }
 
   private stepCellMovement(input: CellInput, cell: EngineCell): void {
@@ -342,16 +349,8 @@ export class CellEngine {
         for (let j = i + 1; j < p.cells.length; j++) {
           const a = p.cells[i];
           const b = p.cells[j];
-          const touching = Math.hypot(a.x - b.x, a.y - b.y) <= radiusFor(a.mass) + radiusFor(b.mass);
-          if (!touching) {
-            // Cleared merge range at least once — from here on this pair owes the full cooldown to rejoin.
-            a.hasSeparated = true;
-            b.hasSeparated = true;
-            continue;
-          }
-          const stillLaunching = a.launchTicksLeft > 0 || b.launchTicksLeft > 0;
-          const neverGotAway = !stillLaunching && !a.hasSeparated && !b.hasSeparated;
-          if (!neverGotAway && (now < a.mergeAt || now < b.mergeAt)) continue;
+          if (now < a.mergeAt || now < b.mergeAt) continue;
+          if (Math.hypot(a.x - b.x, a.y - b.y) > radiusFor(a.mass) + radiusFor(b.mass)) continue;
 
           const totalMass = a.mass + b.mass;
           a.x = (a.x * a.mass + b.x * b.mass) / totalMass;
@@ -359,7 +358,6 @@ export class CellEngine {
           a.vx = (a.vx * a.mass + b.vx * b.mass) / totalMass;
           a.vy = (a.vy * a.mass + b.vy * b.mass) / totalMass;
           a.mass = totalMass;
-          a.hasSeparated = true;
           p.cells.splice(j, 1);
           mergedAny = true;
           break merge;
@@ -488,7 +486,6 @@ export class CellEngine {
       piece.vy = Math.sin(angle) * VIRUS_LAUNCH_SPEED;
       piece.mergeAt = now + MERGE_COOLDOWN_MS;
       piece.launchTicksLeft = SPLIT_LAUNCH_TICKS;
-      piece.hasSeparated = false;
       player.cells.push(piece);
     }
   }
