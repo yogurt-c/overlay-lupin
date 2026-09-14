@@ -10,6 +10,8 @@ import {
   MAIN_STAT_NAME,
   MAIN_STATS,
   MONSTER_KIND_NAME,
+  POTENTIAL_GRADE_NAMES,
+  POTENTIAL_OPTION_NAME,
   SLOT_COUNT,
   XENON_NAME,
   computeMemberDamage,
@@ -18,7 +20,7 @@ import {
 import { HALF_TRACK, ZONE_SIGN, ZOOM_VIEW_SIZE, clampCamera, memberOffset, perimeterPoint, slotPosition, squareLoopPoints } from './field.js';
 import type { Point } from './field.js';
 import type { Viewport } from '../types.js';
-import type { Archetype, Celebration, MainStat, MerandiWorld, Monster, Selection, Zone, ZoneLabel } from './types.js';
+import type { Archetype, Celebration, MainStat, MerandiWorld, Monster, PotentialLine, Selection, Zone, ZoneLabel } from './types.js';
 
 /** Grade at which a shot starts getting its own colored glow, on top of the plain size/alpha bump every 에픽+ shot already gets. */
 const SHOT_GLOW_MIN_GRADE = 4;
@@ -379,6 +381,13 @@ function drawActionLegend(ctx: CanvasRenderingContext2D, viewport: Viewport, min
  * snapshot every render (a snapshot clones every object each tick, so a stale reference would go
  * stale immediately) — if the id no longer exists (unit sold, monster despawned), draws nothing.
  */
+function formatPotentialLine(line: PotentialLine): string {
+  if (line.type === 'statConvert' && line.fromStat && line.toStat) {
+    return `${MAIN_STAT_NAME[line.fromStat]}→${MAIN_STAT_NAME[line.toStat]} (${line.value}:1)`;
+  }
+  return `${POTENTIAL_OPTION_NAME[line.type]} +${line.value}${line.type === 'crit' ? '%p' : '%'}`;
+}
+
 function drawInspectPanel(ctx: CanvasRenderingContext2D, viewport: Viewport, world: MerandiWorld, selection: Selection): void {
   if (selection.kind === 'monster') {
     const live = world.monsters.find((m) => m.id === selection.monsterId);
@@ -398,7 +407,9 @@ function drawInspectPanel(ctx: CanvasRenderingContext2D, viewport: Viewport, wor
   drawBottomPanel(ctx, viewport, member.job, [
     `${ARCHETYPE_NAME[member.arche]} · 레어도 ${GRADES[member.grade].name}`,
     statLine,
-    `공격력 ${dmg.toFixed(1)}`
+    `공격력 ${dmg.toFixed(1)}`,
+    `잠재능력: ${POTENTIAL_GRADE_NAMES[member.potential.grade]} (R 재설정)`,
+    ...member.potential.lines.map(formatPotentialLine)
   ]);
 }
 

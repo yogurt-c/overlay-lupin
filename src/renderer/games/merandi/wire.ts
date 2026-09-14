@@ -33,9 +33,9 @@
  * wait entirely: gold, upgrades, and the sell/upgrade menu now update within
  * one network tick regardless of how many monsters are on screen.
  */
-import { ARCHETYPES, SLOT_COUNT, jobIdToName, jobNameToId } from './data.js';
+import { ARCHETYPES, MAIN_STATS, POTENTIAL_OPTION_TYPES, SLOT_COUNT, jobIdToName, jobNameToId } from './data.js';
 import { ZONE_LABELS } from './field.js';
-import type { Celebration, MerandiWorld, Monster, MonsterKind, Shot, UnitMember, UnitStack, Zone, ZoneLabel } from './types.js';
+import type { Celebration, MerandiWorld, Monster, MonsterKind, PotentialLine, Shot, UnitMember, UnitStack, Zone, ZoneLabel } from './types.js';
 
 const MONSTER_KIND_LIST: MonsterKind[] = ['normal', 'speed', 'tank', 'boss'];
 const ARMED_CODE: Record<'upgrade' | 'sell' | 'none', number> = { none: 0, upgrade: 1, sell: 2 };
@@ -94,7 +94,15 @@ function buildHeavyAtoms(world: MerandiWorld): unknown[] {
       if (!slot || !slot.members.length) return;
       const flat: unknown[] = ['S', zi, si];
       for (const m of slot.members) {
-        flat.push(m.id, m.grade, ARCHETYPES.indexOf(m.arche), jobNameToId(m.job), Math.round(m.cooldownMs));
+        flat.push(m.id, m.grade, ARCHETYPES.indexOf(m.arche), jobNameToId(m.job), Math.round(m.cooldownMs), m.potential.grade);
+        for (let li = 0; li < 3; li++) {
+          const line = m.potential.lines[li];
+          if (!line) {
+            flat.push(-1, 0, -1, -1);
+            continue;
+          }
+          flat.push(POTENTIAL_OPTION_TYPES.indexOf(line.type), line.value, line.fromStat ? MAIN_STATS.indexOf(line.fromStat) : -1, line.toStat ? MAIN_STATS.indexOf(line.toStat) : -1);
+        }
       }
       atoms.push(flat);
     });
@@ -224,7 +232,7 @@ function decodeQuickAtoms(atoms: unknown[]): QuickState {
     }
   }
 
-  const metaTuple = (meta ?? ['M', 1, 50, 0, 0, 0, 999, 0, 0]) as [string, number, number, number, number, number, number, number, number];
+  const metaTuple = (meta ?? ['M', 1, 60, 0, 0, 0, 999, 0, 0]) as [string, number, number, number, number, number, number, number, number];
   const [, wave, waveTotal, waveMsLeft, waveIsBoss, aliveMonsters, aliveThreshold, over, won] = metaTuple;
 
   return {
@@ -258,13 +266,25 @@ function decodeHeavyAtoms(atoms: unknown[]): HeavyState {
     if (tag === 'S') {
       const [, zi, si, ...rest] = raw;
       const members: UnitMember[] = [];
-      for (let k = 0; k + 4 < rest.length; k += 5) {
+      const STRIDE = 18; // 5 base fields + 1 potential grade + 3 lines * (typeIdx, value, fromIdx, toIdx)
+      for (let k = 0; k + STRIDE - 1 < rest.length; k += STRIDE) {
+        const lines: PotentialLine[] = [];
+        for (let li = 0; li < 3; li++) {
+          const base = k + 6 + li * 4;
+          const typeIdx = rest[base];
+          if (typeIdx < 0) continue;
+          const line: PotentialLine = { type: POTENTIAL_OPTION_TYPES[typeIdx], value: rest[base + 1] };
+          if (rest[base + 2] >= 0) line.fromStat = MAIN_STATS[rest[base + 2]];
+          if (rest[base + 3] >= 0) line.toStat = MAIN_STATS[rest[base + 3]];
+          lines.push(line);
+        }
         members.push({
           id: rest[k],
           grade: rest[k + 1],
           arche: ARCHETYPES[rest[k + 2]],
           job: jobIdToName(rest[k + 3]),
-          cooldownMs: rest[k + 4]
+          cooldownMs: rest[k + 4],
+          potential: { grade: rest[k + 5], lines }
         });
       }
       let slots = slotsByZoneIndex.get(zi);

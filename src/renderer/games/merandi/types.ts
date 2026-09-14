@@ -9,6 +9,29 @@ export type ZoneLabel = 'P1' | 'P2' | 'P3' | 'P4';
 
 export type MonsterKind = 'normal' | 'speed' | 'tank' | 'boss';
 
+/** MapleStory-style potential option types — see data.ts's POTENTIAL_OPTION_NAME/POTENTIAL_OPTION_VALUE. */
+export type PotentialOptionType = 'str' | 'int' | 'dex' | 'luk' | 'range' | 'crit' | 'killGold' | 'sellRefund' | 'jackpot' | 'statConvert';
+
+export interface PotentialLine {
+  type: PotentialOptionType;
+  /** Meaning depends on type — see data.ts's rollPotential/computeMemberMultiplier. For 'statConvert', this is the divisor N in "every N levels of fromStat grants 1 level of toStat" (smaller = stronger). */
+  value: number;
+  /** Only set when type === 'statConvert' — always fromStat !== toStat. */
+  fromStat?: MainStat;
+  toStat?: MainStat;
+}
+
+/**
+ * A unit's potential — separate from its grade (dmgMult/rangeMult/etc.) and completely independent of
+ * upgrades. Every unit starts at 레어 (grade 0) with 3 rolled lines; rerolling (see engine.ts's
+ * doRerollPotential) has a small, shrinking-per-tier chance to bump `grade` up one step
+ * (레어→에픽→유니크→레전더리, capped at 3), and always re-rolls all 3 lines fresh at whatever grade results.
+ */
+export interface Potential {
+  grade: number; // 0=레어 .. 3=레전더리 — an entirely separate scale from UnitMember.grade
+  lines: PotentialLine[];
+}
+
 /** One individual placed unit — fights fully independently even when it shares a slot with others. */
 export interface UnitMember {
   /** Stable identity across snapshots (each snapshot() clones members into fresh objects) — lets a click-to-inspect selection survive re-renders. */
@@ -17,6 +40,7 @@ export interface UnitMember {
   arche: Archetype;
   job: string; // flavor-only display name
   cooldownMs: number;
+  potential: Potential;
 }
 
 /** One occupied slot in a zone's 6x6 grid — up to 3 members, any mix of grade/archetype (a slot is just a shared tile, not a "must match" stack). */
@@ -126,7 +150,8 @@ export type MerandiCommand =
   | { type: 'armUpgrade' }
   | { type: 'armSell' }
   | { type: 'cancel' }
-  | { type: 'pick'; index: number }; // upgrade: 1..4 (stat) · sell: 1..5 (archetype) then 1..8 (grade)
+  | { type: 'pick'; index: number } // upgrade: 1..4 (stat) · sell: 1..5 (archetype) then 1..8 (grade)
+  | { type: 'rerollPotential'; memberId: number }; // memberId is -1 as queued by input.ts — module.ts's step() fills in the real id from the current selection (or drops the command if nothing's selected) before it ever reaches the network
 
 export interface MerandiInput {
   commands: MerandiCommand[];
