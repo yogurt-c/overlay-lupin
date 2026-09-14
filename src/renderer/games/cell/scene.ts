@@ -82,7 +82,7 @@ export function renderCellScene(
     .filter((p) => p.alive)
     .flatMap((p) => p.cells.map((c) => ({ ...c, color: colorFor(p.id, myId), name: p.name })))
     .sort((a, b) => a.mass - b.mass);
-  for (const b of blobs) drawCell(ctx, b.x, b.y, radiusFor(b.mass), b.color, b.name);
+  for (const b of blobs) drawCell(ctx, b.x, b.y, radiusFor(b.mass), b.color, b.name, b.id);
 
   ctx.restore();
 }

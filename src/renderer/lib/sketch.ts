@@ -12,10 +12,33 @@
  */
 let rngState = 1;
 let frameSeed = 1;
+/** Ticks once per `advanceSketchSeed` call — a plain counter (unlike `frameSeed`) so it's fit to drive a
+ * smoothly evolving wave phase (see `wobble` below) rather than just reseed random jitter. */
+let boilTick = 0;
 
 /** Advances the sketch's jitter pattern. Call this only a handful of times per second. */
 export function advanceSketchSeed(): void {
   frameSeed = (frameSeed * 1664525 + 1013904223) >>> 0 || 1;
+  boilTick++;
+}
+
+/**
+ * A slow, smooth, per-subject wave offset — unlike `jitter`, which is uncorrelated noise per call, this stays
+ * continuous across both angle and time, so a shape built from many calls (e.g. one per vertex around a
+ * cell's rim) reads as an organic squish traveling around the outline instead of a scribble. `seed` gives two
+ * subjects drawn in the same boil tick independent phases; `angle` is typically the vertex's position around
+ * the shape.
+ */
+export function wobble(seed: number, angle: number): number {
+  const phase = boilTick * 0.12 + seed;
+  return Math.sin(angle * 3 + phase) * 0.6 + Math.sin(angle * 5 - phase * 1.4) * 0.4;
+}
+
+/** Hashes a string (e.g. an id) into a stable seed for `wobble`, so the same cell wobbles the same way frame to frame. */
+export function seedFrom(key: string): number {
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
+  return (hash % 1000) / 1000;
 }
 
 /** Resets the jitter generator so this frame reproduces the previous one exactly. */

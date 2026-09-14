@@ -1,4 +1,4 @@
-import { jitter, roughSegment } from '../../lib/sketch.js';
+import { jitter, roughSegment, seedFrom, wobble } from '../../lib/sketch.js';
 import { ARENA_HEIGHT, ARENA_WIDTH } from './arena.js';
 
 const HALO = 'rgba(255,255,255,0.85)';
@@ -76,23 +76,30 @@ export function drawVirus(ctx: CanvasRenderingContext2D, x: number, y: number, r
   ctx.restore();
 }
 
-/** A cell: a wobbly ink blot, same hand-drawn technique as the soccer ball. `name` is whose cell this is — not who's a bot. */
+/**
+ * A cell: a squishy, slowly wobbling blot — real cell-growing games read as alive because the membrane never
+ * sits still, so on top of the hand-drawn ink jitter every vertex also rides a smooth traveling wave (`wobble`)
+ * that keeps evolving between redraws. `id` seeds that wave so two overlapping cells don't pulse in lockstep;
+ * `name` is whose cell this is — not who's a bot.
+ */
 export function drawCell(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
   radius: number,
   color: string,
-  name?: string
+  name?: string,
+  id?: string
 ): void {
   ctx.save();
   ctx.translate(x, y);
 
+  const seed = seedFrom(id ?? name ?? '');
   ctx.beginPath();
   const steps = 14;
   for (let i = 0; i <= steps; i++) {
     const angle = (i / steps) * Math.PI * 2;
-    const rr = radius + jitter(radius * 0.1);
+    const rr = radius + wobble(seed, angle) * radius * 0.09 + jitter(radius * 0.035);
     const px = Math.cos(angle) * rr;
     const py = Math.sin(angle) * rr;
     if (i === 0) ctx.moveTo(px, py);
