@@ -31,7 +31,7 @@ import {
   computeMemberDamage,
   isBossWave,
   rollArchetype,
-  rollGrade,
+  rollGradeWithPity,
   rollJobName,
   settleFactor,
   upgradeCost
@@ -123,6 +123,8 @@ export class MerandiEngine {
   private celebrations: Celebration[] = [];
   private nextCelebrationId = 1;
   private messageMsLeft = new Map<ZoneLabel, number>();
+  /** Consecutive sub-레어 draws per zone, host-side only — see data.ts's rollGradeWithPity/PITY_THRESHOLD. Never sent over the wire (not part of Zone/wire.ts) since members never need to see it, same as messageMsLeft. */
+  private pityStreaks = new Map<ZoneLabel, number>();
 
   private wave = 1;
   private waveMsLeft = NORMAL_WAVE_MS;
@@ -187,7 +189,10 @@ export class MerandiEngine {
 
   removePlayer(id: string): void {
     const z = this.zoneByPeer(id);
-    if (z) this.zones.set(z.label, freshZone(z.label));
+    if (z) {
+      this.zones.set(z.label, freshZone(z.label));
+      this.pityStreaks.delete(z.label);
+    }
   }
 
   /** Appends rather than overwrites — a peer can send more than one packet between two step() calls (network jitter), and each one's commands must survive, not just the most recent. */
@@ -464,7 +469,8 @@ export class MerandiEngine {
       this.setMessage(zone, '골드가 부족합니다.');
       return;
     }
-    const grade = rollGrade(this.isLastPlace(zone) ? LAST_PLACE_GRADE_BOOST : 1);
+    const streak = this.pityStreaks.get(zone.label) ?? 0;
+    const grade = rollGradeWithPity(streak, this.isLastPlace(zone) ? LAST_PLACE_GRADE_BOOST : 1);
     const arche = rollArchetype();
     const job = rollJobName(arche);
     if (!this.placeDraw(zone, grade, arche, job)) {
@@ -472,6 +478,7 @@ export class MerandiEngine {
       return;
     }
     zone.gold -= cost;
+    this.pityStreaks.set(zone.label, grade >= 2 ? 0 : streak + 1);
     this.setMessage(zone, `${GRADES[grade].name} · ${job} 획득!`);
     if (grade >= CELEBRATION_MIN_GRADE) {
       this.celebrations.push({

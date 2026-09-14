@@ -122,6 +122,36 @@ export function rollGrade(boost = 1): number {
   return GRADES.length - 1;
 }
 
+/**
+ * Soft pity floor: once a zone has drawn this many consecutive sub-레어 results, its next draw is
+ * guaranteed 레어(index 2) or higher — see rollGradeWithPity(). Unlike LAST_PLACE_GRADE_BOOST (which
+ * only ever helps whoever is behind in a 2+ player match), this applies to every zone unconditionally,
+ * including solo play, so a bad-luck streak always has a hard ceiling. 15 is deliberately generous: at
+ * the un-boosted ~15% 레어+ rate, P(no 레어+ in 15 draws) ≈ 0.85^15 ≈ 8.7%, so it only ever fires for a
+ * genuinely unlucky minority instead of shaping the average game the way a tighter pity would.
+ */
+export const PITY_THRESHOLD = 15;
+
+/**
+ * Same roll as rollGrade(), except once `subRareStreak` (consecutive sub-레어 draws this zone has made
+ * in a row) has reached PITY_THRESHOLD, the result is forced to land 레어+ — re-rolled among just the
+ * 레어+ tiers at their existing relative weights, so a forced roll still favors 레어 over 초월 the same
+ * way an unforced one would. `boost` is only applied to the normal (non-floored) path: pity is meant as
+ * a floor under bad luck, not an extra multiplier stacked on top of an already-guaranteed 레어+.
+ */
+export function rollGradeWithPity(subRareStreak: number, boost = 1): number {
+  if (subRareStreak < PITY_THRESHOLD) return rollGrade(boost);
+  const weights = GRADES.map((g, i) => (i >= 2 ? g.prob : 0));
+  const total = weights.reduce((sum, w) => sum + w, 0);
+  const roll = Math.random() * total;
+  let acc = 0;
+  for (let i = 0; i < weights.length; i++) {
+    acc += weights[i];
+    if (roll < acc) return i;
+  }
+  return GRADES.length - 1;
+}
+
 export function rollArchetype(): Archetype {
   return ARCHETYPES[Math.floor(Math.random() * ARCHETYPES.length)];
 }
@@ -271,6 +301,17 @@ export const HP_GROWTH_PER_WAVE = 1.105;
  */
 const SPAWN_GROWTH_PER_WAVE = (210 - 40) / (TOTAL_WAVES - 1);
 /**
+ * From this wave on, spawn-count growth runs at SPAWN_TAPER_FACTOR of its normal rate instead of
+ * continuing the full linear climb to 210. Reason: HP_GROWTH_PER_WAVE is already exponential, so late
+ * waves were compounding two growing numbers at once (HP per monster AND monster count) — by wave 50 the
+ * combined per-corner HP pool was roughly 160x wave 10's despite HP-per-monster alone only growing ~54x.
+ * Tapering count growth specifically past wave 30 (instead of touching HP_GROWTH_PER_WAVE, which still
+ * needs to carry the late-game curve on its own) leaves waves 1-30 byte-for-byte unchanged and only
+ * softens the exact regime where both curves were stacking.
+ */
+const SPAWN_TAPER_WAVE = 30;
+const SPAWN_TAPER_FACTOR = 0.5;
+/**
  * Waves 1..SETTLE_WAVES ease in instead of hitting the full designed curve immediately: at wave 1 nobody
  * has placed a single unit yet, so the intended wave-1 count/HP was effectively unkillable for a 노멀
  * draw and only a lucky high-grade pull could tag anything — letting that one player snowball the whole
@@ -294,8 +335,10 @@ export function settleFactor(wave: number): number {
   const t = (wave - 1) / (SETTLE_WAVES - 1);
   return SETTLE_FLOOR + (1 - SETTLE_FLOOR) * t * t;
 }
-export const MONSTERS_PER_WAVE_PER_PLAYER = (wave: number): number =>
-  Math.round((40 + (wave - 1) * SPAWN_GROWTH_PER_WAVE) * settleFactor(wave));
+export const MONSTERS_PER_WAVE_PER_PLAYER = (wave: number): number => {
+  const taperedWave = wave <= SPAWN_TAPER_WAVE ? wave : SPAWN_TAPER_WAVE + (wave - SPAWN_TAPER_WAVE) * SPAWN_TAPER_FACTOR;
+  return Math.round((40 + (taperedWave - 1) * SPAWN_GROWTH_PER_WAVE) * settleFactor(wave));
+};
 /**
  * Only wave 1 gets this — every player starts with zero units on the field, so the very first monster
  * shouldn't appear before anyone has had a chance to draw and place one. Folded into startWave's spawn
