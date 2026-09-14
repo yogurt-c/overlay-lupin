@@ -230,8 +230,8 @@ function soleCell(engine, id) {
   const p = e.players.get('a');
   const stillCoolingDown = Date.now() + MERGE_COOLDOWN_MS;
   p.cells = [
-    { id: 'x', x: 900, y: 600, vx: 0, vy: 0, mass: 200, mergeAt: stillCoolingDown, launchTicksLeft: 0, hasSeparated: true },
-    { id: 'y', x: 900, y: 600, vx: 0, vy: 0, mass: START_MASS, mergeAt: stillCoolingDown, launchTicksLeft: 0, hasSeparated: true }
+    { id: 'x', x: 900, y: 600, vx: 0, vy: 0, mass: 200, mergeAt: stillCoolingDown, launchTicksLeft: 0 },
+    { id: 'y', x: 900, y: 600, vx: 0, vy: 0, mass: START_MASS, mergeAt: stillCoolingDown, launchTicksLeft: 0 }
   ];
   e.step();
   check('자기 세포끼리는 서로 잡아먹지 않는다', e.players.get('a').cells.length === 2, `cells=${e.players.get('a').cells.length}`);
@@ -252,37 +252,33 @@ function soleCell(engine, id) {
   check('쿨다운이 지나고 겹치면 다시 합쳐진다', cells.length === 1 && Math.abs(cells[0].mass - 40) < 0.5, `cells=${JSON.stringify(cells)}`);
 }
 
-// 16. Before the merge cooldown expires, siblings that genuinely got away and came back stay separate.
+// 16. Before the merge cooldown expires, overlapping sibling cells stay separate.
 {
   const e = new CellEngine();
   e.ensurePlayer('a', 'A');
   const p = e.players.get('a');
   p.cells = [
-    { id: 'x', x: 900, y: 600, vx: 0, vy: 0, mass: 20, mergeAt: Date.now() + MERGE_COOLDOWN_MS, launchTicksLeft: 0, hasSeparated: true },
-    { id: 'y', x: 901, y: 600, vx: 0, vy: 0, mass: 20, mergeAt: Date.now() + MERGE_COOLDOWN_MS, launchTicksLeft: 0, hasSeparated: true }
+    { id: 'x', x: 900, y: 600, vx: 0, vy: 0, mass: 20, mergeAt: Date.now() + MERGE_COOLDOWN_MS, launchTicksLeft: 0 },
+    { id: 'y', x: 901, y: 600, vx: 0, vy: 0, mass: 20, mergeAt: Date.now() + MERGE_COOLDOWN_MS, launchTicksLeft: 0 }
   ];
   e.step();
-  check('쿨다운이 끝나기 전엔 실제로 떨어졌다 돌아온 세포는 겹쳐도 합쳐지지 않는다', e.players.get('a').cells.length === 2, `cells=${e.players.get('a').cells.length}`);
+  check('쿨다운이 끝나기 전엔 겹쳐도 합쳐지지 않는다', e.players.get('a').cells.length === 2, `cells=${e.players.get('a').cells.length}`);
 }
 
-// 16b. A split pair that never actually got away from its sibling (e.g. launched straight into a wall) merges
-// back immediately once its launch window ends, without waiting out the rest of the cooldown.
+// 16b. While a pair waits out that cooldown they're pushed apart instead of left stacked on each other.
 {
   const e = new CellEngine();
   e.ensurePlayer('a', 'A');
-  e.food.length = 0; // a stray pellet within the merged radius would otherwise make the resulting mass nondeterministic
   const p = e.players.get('a');
   p.cells = [
-    { id: 'x', x: 900, y: 600, vx: 0, vy: 0, mass: 20, mergeAt: Date.now() + MERGE_COOLDOWN_MS, launchTicksLeft: 0, hasSeparated: false },
-    { id: 'y', x: 901, y: 600, vx: 0, vy: 0, mass: 20, mergeAt: Date.now() + MERGE_COOLDOWN_MS, launchTicksLeft: 0, hasSeparated: false }
+    { id: 'x', x: 900, y: 600, vx: 0, vy: 0, mass: 20, mergeAt: Date.now() + MERGE_COOLDOWN_MS, launchTicksLeft: 0 },
+    { id: 'y', x: 901, y: 600, vx: 0, vy: 0, mass: 20, mergeAt: Date.now() + MERGE_COOLDOWN_MS, launchTicksLeft: 0 }
   ];
   e.step();
-  const cells = e.players.get('a').cells;
-  check(
-    '본체와 떨어지지 못하고 붙어있던 조각은 쿨다운을 기다리지 않고 바로 합쳐진다',
-    cells.length === 1 && Math.abs(cells[0].mass - 40) < 0.5,
-    `cells=${JSON.stringify(cells)}`
-  );
+  const [a, b] = e.players.get('a').cells;
+  const gap = Math.hypot(a.x - b.x, a.y - b.y);
+  const contact = radiusFor(a.mass) + radiusFor(b.mass);
+  check('합쳐지길 기다리는 동안에도 세포끼리 겹치지 않는다', gap >= contact - 0.01, `gap=${gap.toFixed(2)} contact=${contact.toFixed(2)}`);
 }
 
 // 17. A cell big enough to pop bursts into several pieces on touching a virus.
