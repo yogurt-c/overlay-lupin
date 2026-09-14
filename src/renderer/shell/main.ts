@@ -66,7 +66,15 @@ let currentRoster: RoomRoster | null = null;
 let incomingPeerId: string | null = null;
 /** null until the first sync, so a match that wants no status line still clears the HUD. */
 let lastScoreText: string | null = null;
-let lastBannerText = '';
+/**
+ * null (not '') for the same reason as lastScoreText above: syncHud only writes bannerEl when banner
+ * !== lastBannerText. If this were reset to '' on match start and the new game's own banner also
+ * happens to be '' (e.g. cell's hud() always returns banner: ''), the diff check would see '' === ''
+ * and skip the write forever — leaving the previous match's stale banner text (e.g. soccer's "승리")
+ * on screen indefinitely. null guarantees the very next syncHud() always writes, regardless of what
+ * the new match's banner value is.
+ */
+let lastBannerText: string | null = null;
 let stepAccumulator = 0;
 let boilAccumulator = 0;
 let lastFrameAt = performance.now();
@@ -107,6 +115,10 @@ function setUiState(next: UiState): void {
   lobbyBox.hidden = next !== 'lobby';
   leaveBtn.hidden = next !== 'play';
   hud.hidden = next !== 'play';
+  // Safety net alongside the lastBannerText fix above: syncHud only runs while uiState === 'play', so
+  // leaving play (match over, back to idle/panel) must hide any stale banner directly here rather than
+  // waiting for a syncHud() that won't run again until the next match starts.
+  if (next !== 'play') bannerEl.hidden = true;
   reconnectMsg.hidden = next !== 'reconnecting';
   if (next !== 'play') {
     for (const src of inputSources.values()) src.clear();
@@ -141,7 +153,7 @@ function startMatch(mode: 'duel' | 'room', isHost: boolean, gameId: string): voi
   stepAccumulator = 0;
   lastFrameAt = performance.now();
   lastScoreText = null;
-  lastBannerText = '';
+  lastBannerText = null;
   setUiState('play');
 }
 
@@ -155,7 +167,7 @@ function beginSoloMatch(): void {
   stepAccumulator = 0;
   lastFrameAt = performance.now();
   lastScoreText = null;
-  lastBannerText = '';
+  lastBannerText = null;
   setUiState('play');
 }
 
