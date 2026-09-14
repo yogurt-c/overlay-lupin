@@ -8,6 +8,7 @@ import {
   ARCHETYPE_ROLE,
   ALIVE_THRESHOLD_PER_EXTRA_PLAYER,
   ALIVE_THRESHOLD_SOLO,
+  CELEBRATION_MIN_GRADE,
   MAIN_STATS,
   MAIN_STAT_NAME,
   MONSTERS_PER_WAVE_PER_PLAYER,
@@ -17,6 +18,7 @@ import {
   drawCost,
   GRADES,
   HP_GROWTH_PER_WAVE,
+  INITIAL_GRACE_MS,
   LAST_PLACE_GRADE_BOOST,
   MONSTER_KINDS,
   NORMAL_WAVE_MS,
@@ -31,22 +33,53 @@ import {
   rollArchetype,
   rollGrade,
   rollJobName,
+  settleFactor,
   upgradeCost
 } from './data.js';
 import { ZONE_LABELS, perimeterPoint, slotDepth, slotPosition, squareLoopPoints } from './field.js';
-import type { Archetype, MainStat, Monster, MonsterKind, MerandiInput, MerandiWorld, Shot, UnitMember, UnitStack, Zone, ZoneLabel } from './types.js';
+import type {
+  Archetype,
+  Celebration,
+  MainStat,
+  Monster,
+  MonsterKind,
+  MerandiInput,
+  MerandiWorld,
+  Shot,
+  UnitMember,
+  UnitStack,
+  Zone,
+  ZoneLabel
+} from './types.js';
 
 const PATH_PTS = squareLoopPoints(260, 24);
 const LOOP_MS = 9000; // one full lap at normal speed
 const BASE_MONSTER_HP = 23;
-const BASE_RANGE_PX = 60;
+/**
+ * Was 60 — measured (see the min-slot-distance check this constant was tuned against) the closest any
+ * slot ever gets to the path is 65.6px, so at 60 a plain 노멀 (rangeMult 1.0 → 60px reach) could
+ * mathematically never hit a single monster no matter the wave, the grade table, or upgrade levels —
+ * it just never entered its own range. That's the real reason 노멀-heavy squads barely landed kills:
+ * only 매직+ (rangeMult ≥ 1.15, already ≥ 69px) could ever connect. Raised so every grade, including the
+ * most common 55%-of-draws 노멀 roll, has an actual (if brief) hit window near its corner.
+ */
+const BASE_RANGE_PX = 80;
 const BASE_COOLDOWN_MS = 650;
 /** How long a cosmetic shot stays on screen before fading out. */
 const SHOT_LIFE_MS = 220;
+/** How long a map-wide celebration (draw.ts's drawCelebrations) plays before it clears itself — long enough for every staggered burst to finish, short enough not to sit over real-time combat for long. */
+const CELEBRATION_LIFE_MS = 2000;
 /** How long a one-shot feedback message ("골드가 부족합니다" etc.) stays on screen before clearing itself. */
 const MESSAGE_TTL_MS = 2200;
 /** Fraction of kill gold the killer keeps — the rest splits evenly across every other active player, see awardKillGold(). */
 const KILLER_GOLD_SHARE = 0.6;
+/**
+ * Flat, fixed bonus paid to every active player the instant a boss dies — on top of whatever
+ * awardKillGold already paid out for that kill. A boss (10x HP, and now a hard timeout loss if it isn't
+ * killed in time) used to pay out exactly the same per-kill gold as a regular monster despite taking far
+ * more effort; this gives boss kills a reward that actually reflects that.
+ */
+const BOSS_CLEAR_BONUS = 100;
 
 function freshUpLevels() {
   return { str: 0, int: 0, dex: 0, luk: 0 };
@@ -87,6 +120,8 @@ export class MerandiEngine {
   private nextMonsterId = 1;
   private nextMemberId = 1;
   private shots: Shot[] = [];
+  private celebrations: Celebration[] = [];
+  private nextCelebrationId = 1;
   private messageMsLeft = new Map<ZoneLabel, number>();
 
   private wave = 1;
@@ -173,11 +208,18 @@ export class MerandiEngine {
     // Spread across a fixed window regardless of count, so every wave "still has monsters trickling in"
     // for the same ~25s stretch instead of finishing instantly once count gets large.
     const gap = SPAWN_WINDOW_MS / count;
+    // Wave 1 only: nobody has a unit on the field yet, so hold every spawn back by a flat grace
+    // window instead of dropping the first monster on an empty board at t=0 — see INITIAL_GRACE_MS.
+    const graceMs = wave === 1 ? INITIAL_GRACE_MS : 0;
     const tickets: SpawnTicket[] = [];
     for (let i = 0; i < count; i++) {
-      tickets.push({ atMs: Math.round(i * gap), kind: monsterKindFor(wave, false) });
+      tickets.push({ atMs: graceMs + Math.round(i * gap), kind: monsterKindFor(wave, false) });
     }
-    if (boss) tickets.push({ atMs: Math.round(count * gap) + BOSS_SPAWN_DELAY_MS, kind: 'boss' });
+    // Spawns alongside the regular roster (same grace delay), not after it — it used to wait until the
+    // whole SPAWN_WINDOW_MS trash roster finished (~25s in), which quietly burned over a third of
+    // BOSS_WAVE_MS before the boss (and its HP bar) ever appeared, leaving far less than 60s of real
+    // fight time against the boss-timeout loss. See BOSS_SPAWN_DELAY_MS.
+    if (boss) tickets.push({ atMs: graceMs + BOSS_SPAWN_DELAY_MS, kind: 'boss' });
     tickets.sort((a, b) => a.atMs - b.atMs);
     this.spawnQueue = tickets;
   }
@@ -188,7 +230,9 @@ export class MerandiEngine {
     const label = activeLabels[Math.floor(Math.random() * activeLabels.length)];
     const cornerT = ZONE_LABELS.indexOf(label) / 4;
     const spec = MONSTER_KINDS[kind];
-    const hp = Math.round(BASE_MONSTER_HP * spec.hpMult * Math.pow(HP_GROWTH_PER_WAVE, this.wave - 1));
+    const hp = Math.round(
+      BASE_MONSTER_HP * spec.hpMult * Math.pow(HP_GROWTH_PER_WAVE, this.wave - 1) * settleFactor(this.wave)
+    );
     this.monsters.push({
       id: this.nextMonsterId++,
       t: cornerT,
@@ -228,6 +272,16 @@ export class MerandiEngine {
     const perOther = (reward - killerShare) / others.length;
     killer.gold += killerShare;
     for (const l of others) this.zones.get(l)!.gold += perOther;
+  }
+
+  /** Flat reward for every active player the moment a boss dies — see BOSS_CLEAR_BONUS. */
+  private awardBossClearBonus(): void {
+    for (const label of ZONE_LABELS) {
+      const zone = this.zones.get(label)!;
+      if (zone.id === '') continue;
+      zone.gold += BOSS_CLEAR_BONUS;
+      this.setMessage(zone, `보스 클리어 보상! +${BOSS_CLEAR_BONUS}G`);
+    }
   }
 
   private stepCombat(dtMs: number): void {
@@ -281,6 +335,7 @@ export class MerandiEngine {
           target.hp -= dmg;
           if (target.hp <= 0) {
             this.awardKillGold(zone);
+            if (target.kind === 'boss') this.awardBossClearBonus();
             zone.kills++;
             this.monsters = this.monsters.filter((m) => m !== target);
           }
@@ -293,6 +348,12 @@ export class MerandiEngine {
     if (!this.shots.length) return;
     for (const s of this.shots) s.life -= dtMs;
     this.shots = this.shots.filter((s) => s.life > 0);
+  }
+
+  private stepCelebrations(dtMs: number): void {
+    if (!this.celebrations.length) return;
+    for (const c of this.celebrations) c.life -= dtMs;
+    this.celebrations = this.celebrations.filter((c) => c.life > 0);
   }
 
   /** A small flat reward (exactly one draw's worth) for every active player when a wave finishes, on top of whatever they earned from kills. */
@@ -312,6 +373,14 @@ export class MerandiEngine {
     // Cleared the whole roster early (nothing left alive and nothing left to spawn) — no reason to sit out the rest of the timer.
     const clearedEarly = this.spawnQueue.length === 0 && this.monsters.length === 0;
     if (this.waveMsLeft > 0 && !clearedEarly) return;
+    // Boss waves are a hard DPS check: letting the boss just carry over into the next wave once the
+    // clock runs out would make BOSS_WAVE_MS meaningless. If it's still alive at the buzzer, it's a loss —
+    // this also covers the final wave (50 is a boss wave), so clearing the last boss is required to win.
+    if (isBossWave(this.wave) && this.monsters.some((m) => m.kind === 'boss')) {
+      this.over = true;
+      this.won = false;
+      return;
+    }
     if (this.wave >= TOTAL_WAVES) {
       this.over = true;
       this.won = this.monsters.length <= this.aliveThreshold();
@@ -404,6 +473,16 @@ export class MerandiEngine {
     }
     zone.gold -= cost;
     this.setMessage(zone, `${GRADES[grade].name} · ${job} 획득!`);
+    if (grade >= CELEBRATION_MIN_GRADE) {
+      this.celebrations.push({
+        id: this.nextCelebrationId++,
+        zoneLabel: zone.label,
+        grade,
+        arche,
+        life: CELEBRATION_LIFE_MS,
+        maxLife: CELEBRATION_LIFE_MS
+      });
+    }
   }
 
   private doUpgrade(zone: Zone, stat: MainStat): void {
@@ -484,6 +563,7 @@ export class MerandiEngine {
     this.processCommands();
     this.stepMessages(dtMs);
     this.stepShots(dtMs);
+    this.stepCelebrations(dtMs);
     if (this.over) return;
     this.stepSpawning(dtMs);
     this.stepMonsters(dtMs);
@@ -510,6 +590,7 @@ export class MerandiEngine {
         };
       }),
       shots: this.shots.map((s) => ({ ...s })),
+      celebrations: this.celebrations.map((c) => ({ ...c })),
       over: this.over,
       won: this.won
     };

@@ -1,9 +1,22 @@
 import { beginSketchFrame, roughSegment } from '../../lib/sketch.js';
-import { ARCHETYPES, ARCHETYPE_MAIN_STAT, ARCHETYPE_NAME, ARCHETYPE_SUB_STAT, GRADES, MAIN_STAT_NAME, MAIN_STATS, MONSTER_KIND_NAME, SLOT_COUNT, XENON_NAME, computeMemberDamage } from './data.js';
+import {
+  ARCHETYPES,
+  ARCHETYPE_MAIN_STAT,
+  ARCHETYPE_NAME,
+  ARCHETYPE_SUB_STAT,
+  CELEBRATION_MIN_GRADE,
+  GRADES,
+  MAIN_STAT_NAME,
+  MAIN_STATS,
+  MONSTER_KIND_NAME,
+  SLOT_COUNT,
+  XENON_NAME,
+  computeMemberDamage
+} from './data.js';
 import { HALF_TRACK, ZONE_SIGN, ZOOM_VIEW_SIZE, clampCamera, memberOffset, perimeterPoint, slotPosition, squareLoopPoints } from './field.js';
 import type { Point } from './field.js';
 import type { Viewport } from '../types.js';
-import type { Archetype, MerandiWorld, Selection, Zone, ZoneLabel } from './types.js';
+import type { Archetype, Celebration, MainStat, MerandiWorld, Selection, Zone, ZoneLabel } from './types.js';
 
 /** How big a shot's dot/tracer look relative to the grade that fired it — kept subtle since the game is otherwise monochrome. */
 function shotEmphasis(grade: number): { r: number; alpha: number } {
@@ -54,6 +67,53 @@ function drawArcheGlyph(ctx: CanvasRenderingContext2D, x: number, y: number, r: 
     default: // pirate
       ctx.arc(x, y, r, 0, Math.PI * 2);
   }
+}
+
+function hexToRgba(hex: string, alpha: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+interface FoilSpec {
+  intensity: number;
+  periodMs: number;
+  colorRgb: string;
+}
+
+/** 레전더리(5)+ only — halo opacity and foil-sweep strength/speed both ramp up with grade, on top of the grade's own (already desaturated) color. Below CELEBRATION_MIN_GRADE, neither applies at all. */
+const HALO_ALPHA_BY_GRADE: Partial<Record<number, number>> = { 5: 0.14, 6: 0.2, 7: 0.26 };
+const FOIL_BY_GRADE: Partial<Record<number, FoilSpec>> = {
+  5: { intensity: 0.28, periodMs: 3000, colorRgb: '255,255,255' },
+  6: { intensity: 0.4, periodMs: 2400, colorRgb: '255,255,255' },
+  7: { intensity: 0.5, periodMs: 2000, colorRgb: '255,247,214' }
+};
+
+/**
+ * Foil-card light sweep for 레전더리+ units — a thin light band clipped to the unit's own silhouette,
+ * traveling across it on a loop. `seed` (the unit's stable member id) offsets the phase so a field full
+ * of rare units doesn't glint in lockstep — same idea as sketch.ts's jitter avoiding a uniform 60Hz
+ * vibration. Purely decorative and driven by this client's own clock: every viewer's copy runs on its
+ * own timer, which is fine since it carries no gameplay information (unlike the map celebration below,
+ * which has to be server-synced because it IS the shared information).
+ */
+function drawFoilSweep(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, arche: Archetype, seed: number, foil: FoilSpec): void {
+  ctx.save();
+  drawArcheGlyph(ctx, x, y, r, arche);
+  ctx.clip();
+  const offset = (seed * 137) % foil.periodMs;
+  const phase = ((performance.now() + offset) % foil.periodMs) / foil.periodMs;
+  const travel = r * 3.2;
+  const cx = x - travel / 2 + phase * travel;
+  const cy = y - r + phase * r * 2;
+  const grad = ctx.createLinearGradient(cx - r * 0.9, cy - r * 0.9, cx + r * 0.9, cy + r * 0.9);
+  grad.addColorStop(0, `rgba(${foil.colorRgb},0)`);
+  grad.addColorStop(0.5, `rgba(${foil.colorRgb},${foil.intensity})`);
+  grad.addColorStop(1, `rgba(${foil.colorRgb},0)`);
+  ctx.fillStyle = grad;
+  ctx.fillRect(x - r * 2, y - r * 2, r * 4, r * 4);
+  ctx.restore();
 }
 
 /** Reserved screen-space band at the top of the canvas, left empty so the shell's #hud status line never sits over busy map content. */
@@ -166,12 +226,14 @@ function drawBottomPanel(ctx: CanvasRenderingContext2D, viewport: Viewport, titl
   ctx.restore();
 }
 
-type GlyphOption = { key: number } & ({ kind: 'arche'; arche: Archetype } | { kind: 'grade'; grade: number });
+type GlyphOption = { key: number } & ({ kind: 'arche'; arche: Archetype } | { kind: 'grade'; grade: number } | { kind: 'stat'; stat: MainStat });
 
 /**
- * Same rounded-panel chrome as drawBottomPanel, but draws each option as the actual field glyph/grade
- * swatch instead of its job/stat name in text — the digit key is the only label, since the shape alone
- * already carries the meaning everywhere else in the game (units on the field use the same glyphs).
+ * Same rounded-panel chrome as drawBottomPanel. Archetype/grade options draw the actual field glyph or
+ * grade swatch — the digit key is the only extra label, since the shape alone already carries the
+ * meaning everywhere else in the game. Stat options draw the stat name itself (STR/INT/DEX/LUK): unlike
+ * archetypes and grades, a stat has no shape of its own on the field, so showing an arbitrary
+ * archetype's glyph to stand in for "this stat" (the old approach) just reads as "pick this job".
  */
 function drawGlyphOptionsPanel(ctx: CanvasRenderingContext2D, viewport: Viewport, title: string, options: GlyphOption[]): void {
   const perRow = 5;
@@ -224,16 +286,20 @@ function drawGlyphOptionsPanel(ctx: CanvasRenderingContext2D, viewport: Viewport
         ctx.stroke();
         ctx.fillStyle = 'rgba(20,24,26,0.16)';
         ctx.fill();
-      } else {
+      } else if (opt.kind === 'grade') {
         const g = GRADES[opt.grade];
         const swatchR = 2.4 + g.sizeMult * 2.6;
         ctx.beginPath();
         ctx.arc(cx, rowY, swatchR, 0, Math.PI * 2);
         ctx.lineWidth = Math.max(0.8, g.sizeMult * 1.1);
-        ctx.strokeStyle = INK;
+        ctx.strokeStyle = g.color;
         ctx.stroke();
         ctx.fillStyle = 'rgba(20,24,26,0.12)';
         ctx.fill();
+      } else {
+        ctx.font = '700 12px sans-serif';
+        ctx.fillStyle = INK;
+        ctx.fillText(MAIN_STAT_NAME[opt.stat], cx, rowY + 3);
       }
       ctx.font = '600 8.5px sans-serif';
       ctx.fillStyle = INK;
@@ -248,17 +314,14 @@ function drawGlyphOptionsPanel(ctx: CanvasRenderingContext2D, viewport: Viewport
 /**
  * When the local player has armed 업그레이드/판매, the HUD status line alone ("업글1~4") isn't enough to
  * know what each number means — this draws a screen-space (not world-space, so camera zoom/pan doesn't
- * affect it) legend mapping each digit key to its option, as shapes rather than job/stat names.
+ * affect it) legend mapping each digit key to its option: archetypes/grades as the same shapes/swatches
+ * used on the field, stats as their name (STR/INT/DEX/LUK) since a stat has no shape of its own.
  */
 function drawActionLegend(ctx: CanvasRenderingContext2D, viewport: Viewport, mine: Zone | undefined): void {
   if (!mine || !mine.armed) return;
 
   if (mine.armed === 'upgrade') {
-    const options: GlyphOption[] = MAIN_STATS.map((s, i) => ({
-      key: i + 1,
-      kind: 'arche',
-      arche: ARCHETYPES.find((a) => ARCHETYPE_MAIN_STAT[a] === s) ?? ARCHETYPES[0]
-    }));
+    const options: GlyphOption[] = MAIN_STATS.map((s, i) => ({ key: i + 1, kind: 'stat', stat: s }));
     drawGlyphOptionsPanel(ctx, viewport, '업그레이드할 스탯 선택', options);
     return;
   }
@@ -324,6 +387,142 @@ function drawGradeTable(ctx: CanvasRenderingContext2D, viewport: Viewport): void
   drawBottomPanel(ctx, viewport, '등급별 확률', rows);
 }
 
+/** Spark colors stay inside the same warm family the foil sweep already uses per grade, so a burst reads as belonging to this palette rather than a generic rainbow firework dropped on top of it. */
+const BURST_COLORS_BY_GRADE: Partial<Record<number, string[]>> = {
+  5: ['#f4ede0', '#d8cdb8', '#c7bda4'],
+  6: ['#e2795f', '#c8503a', '#9c3a28'],
+  7: ['#f7d98a', '#f2c94c', '#e0a83a']
+};
+const CELEBRATION_FLASH_MS = 380;
+const CELEBRATION_BURST_ORIGINS = 5;
+const CELEBRATION_BURST_DELAY_MS = 130;
+const CELEBRATION_PARTICLE_BASE = 22;
+const CELEBRATION_PARTICLE_LIFE_MS = 900;
+const CELEBRATION_PARTICLE_LIFE_JITTER_MS = 400;
+const CELEBRATION_SPEED_MIN = 40; // px/sec
+const CELEBRATION_SPEED_SPREAD = 90; // px/sec, added to the min
+const CELEBRATION_UPWARD_BIAS = 70; // px/sec, initial upward pop before gravity takes over
+const CELEBRATION_GRAVITY = 260; // px/sec^2
+
+/** Deterministic pseudo-random in [0,1) from an integer seed — a classic shader-style sine hash. Used
+ * instead of Math.random() so every viewer computes the exact same particle for the exact same
+ * (celebration id, burst, particle) triple purely from the server-authoritative `elapsed` below, with
+ * no per-frame state to keep in sync. */
+function seededUnit(seed: number): number {
+  const s = Math.sin(seed * 12.9898) * 43758.5453;
+  return s - Math.floor(s);
+}
+
+/**
+ * Map-wide celebration for a 레전더리+ draw (see data.ts's CELEBRATION_MIN_GRADE) — a brief full-viewport
+ * flash plus a handful of firework bursts staggered across the screen, so the whole room notices even if
+ * nobody's camera happens to be looking at the zone that drew it. Screen-space (drawn after ctx.restore(),
+ * same as the HUD panels below) rather than world-space, since each player's camera is independently
+ * panned/zoomed into their own ~300-unit window — a burst placed in world coordinates would often land
+ * off-screen for everyone but the player who drew it. Every value here is a pure function of `c.life` vs
+ * `c.maxLife` (both server-authoritative and identical across every client), so there is nothing to
+ * animate locally: the exact same frame renders for everyone at the same elapsed time.
+ */
+function drawCelebrations(ctx: CanvasRenderingContext2D, viewport: Viewport, celebrations: Celebration[]): void {
+  for (const c of celebrations) {
+    const elapsed = c.maxLife - c.life;
+    if (elapsed < 0) continue;
+    const colors = BURST_COLORS_BY_GRADE[c.grade] ?? BURST_COLORS_BY_GRADE[CELEBRATION_MIN_GRADE]!;
+
+    if (elapsed < CELEBRATION_FLASH_MS) {
+      const k = 1 - elapsed / CELEBRATION_FLASH_MS;
+      ctx.fillStyle = `rgba(247,231,190,${(k * 0.32).toFixed(3)})`;
+      ctx.fillRect(0, 0, viewport.width, viewport.height);
+    }
+
+    for (let oi = 0; oi < CELEBRATION_BURST_ORIGINS; oi++) {
+      const ox = (0.14 + 0.72 * (oi / (CELEBRATION_BURST_ORIGINS - 1)) + (seededUnit(c.id * 13 + oi) - 0.5) * 0.08) * viewport.width;
+      const oy = TOP_MARGIN_PX + (0.22 + seededUnit(c.id * 29 + oi) * 0.4) * (viewport.height - TOP_MARGIN_PX);
+      const delay = oi * CELEBRATION_BURST_DELAY_MS + seededUnit(c.id * 41 + oi) * 60;
+      const localElapsedMs = elapsed - delay;
+      if (localElapsedMs < 0) continue;
+      const t = localElapsedMs / 1000; // seconds, for the ballistic formulas below
+
+      const count = CELEBRATION_PARTICLE_BASE + c.grade * 5;
+      for (let pi = 0; pi < count; pi++) {
+        const seed = c.id * 977 + oi * 61 + pi;
+        const particleLifeMs = CELEBRATION_PARTICLE_LIFE_MS + seededUnit(seed * 7.7) * CELEBRATION_PARTICLE_LIFE_JITTER_MS;
+        const life = 1 - localElapsedMs / particleLifeMs;
+        if (life <= 0) continue;
+
+        const angle = seededUnit(seed) * Math.PI * 2;
+        const speed = CELEBRATION_SPEED_MIN + seededUnit(seed * 3.1) * CELEBRATION_SPEED_SPREAD;
+        const vx = Math.cos(angle) * speed;
+        const vy = Math.sin(angle) * speed - CELEBRATION_UPWARD_BIAS;
+        const px = ox + vx * t;
+        const py = oy + vy * t + 0.5 * CELEBRATION_GRAVITY * t * t;
+        const size = 1.1 + seededUnit(seed * 9.3) * 1.5;
+
+        ctx.globalAlpha = life;
+        ctx.beginPath();
+        ctx.arc(px, py, size, 0, Math.PI * 2);
+        ctx.fillStyle = colors[pi % colors.length];
+        ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
+
+    if (elapsed < c.maxLife) {
+      const text = `${c.zoneLabel} · ${GRADES[c.grade].name} ${ARCHETYPE_NAME[c.arche]} 등장!`;
+      ctx.font = '700 13px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = HALO;
+      ctx.strokeText(text, viewport.width / 2, TOP_MARGIN_PX + 26);
+      ctx.fillStyle = INK;
+      ctx.fillText(text, viewport.width / 2, TOP_MARGIN_PX + 26);
+      ctx.textAlign = 'left';
+    }
+  }
+}
+
+/** Screen-space band for the boss HP bar — pinned just under the HUD margin, unaffected by camera pan/zoom. */
+const BOSS_BAR_WIDTH = 220;
+const BOSS_BAR_HEIGHT = 8;
+const BOSS_BAR_Y = TOP_MARGIN_PX + 10;
+
+/**
+ * Unlike every other monster (HP only visible via click-to-inspect, see drawInspectPanel), a boss is the
+ * whole wave's DPS check — engine.ts now ends the run if it's still alive when BOSS_WAVE_MS runs out — so
+ * its HP stays pinned on screen at all times instead of requiring a click. Screen-space (drawn after the
+ * camera transform is restored) so it doesn't drift with pan/zoom like the world-space HP-by-alpha cue
+ * every other monster gets.
+ */
+function drawBossHpBar(ctx: CanvasRenderingContext2D, viewport: Viewport, world: MerandiWorld): void {
+  const boss = world.monsters.find((m) => m.kind === 'boss');
+  if (!boss) return;
+
+  const width = Math.min(viewport.width - 32, BOSS_BAR_WIDTH);
+  const x = (viewport.width - width) / 2;
+  const y = BOSS_BAR_Y;
+  const pct = Math.max(0, Math.min(1, boss.hp / boss.maxHp));
+
+  ctx.save();
+  const label = `${MONSTER_KIND_NAME.boss} ${Math.max(0, Math.ceil(boss.hp))} / ${boss.maxHp}`;
+  ctx.font = '700 10px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = HALO;
+  ctx.strokeText(label, viewport.width / 2, y - 4);
+  ctx.fillStyle = INK;
+  ctx.fillText(label, viewport.width / 2, y - 4);
+  ctx.textAlign = 'left';
+
+  ctx.fillStyle = 'rgba(20,24,26,0.12)';
+  ctx.fillRect(x, y, width, BOSS_BAR_HEIGHT);
+  ctx.fillStyle = MONSTER_COLOR;
+  ctx.fillRect(x, y, width * pct, BOSS_BAR_HEIGHT);
+  ctx.strokeStyle = 'rgba(20,24,26,0.3)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 0.5, y + 0.5, width - 1, BOSS_BAR_HEIGHT - 1);
+  ctx.restore();
+}
+
 export function renderMerandiScene(
   ctx: CanvasRenderingContext2D,
   world: MerandiWorld,
@@ -378,12 +577,27 @@ export function renderMerandiScene(
         const my = y + oy;
         const g = GRADES[member.grade];
         const r = UNIT_BASE_RADIUS * g.sizeMult;
+
+        const haloAlpha = HALO_ALPHA_BY_GRADE[member.grade];
+        if (haloAlpha) {
+          const halo = ctx.createRadialGradient(mx, my, r * 0.4, mx, my, r * 2.1);
+          halo.addColorStop(0, hexToRgba(g.color, haloAlpha));
+          halo.addColorStop(1, 'rgba(0,0,0,0)');
+          ctx.beginPath();
+          ctx.arc(mx, my, r * 2.1, 0, Math.PI * 2);
+          ctx.fillStyle = halo;
+          ctx.fill();
+        }
+
         drawArcheGlyph(ctx, mx, my, r, member.arche);
         ctx.lineWidth = Math.max(0.8, g.sizeMult * 1.1);
-        ctx.strokeStyle = INK;
+        ctx.strokeStyle = g.color;
         ctx.stroke();
         ctx.fillStyle = 'rgba(20,24,26,0.16)';
         ctx.fill();
+
+        const foil = FOIL_BY_GRADE[member.grade];
+        if (foil) drawFoilSweep(ctx, mx, my, r, member.arche, member.id, foil);
 
         if (selection?.kind === 'unit' && selection.zoneLabel === zone.label && selection.memberId === member.id) {
           ctx.beginPath();
@@ -480,9 +694,14 @@ export function renderMerandiScene(
   ctx.restore();
 
   // Screen-space overlays (drawn after restore, so camera zoom/pan doesn't affect them).
+  drawBossHpBar(ctx, viewport, world);
   const mine = world.zones.find((z) => z.id === myId);
   if (showGradeTable) drawGradeTable(ctx, viewport);
   else if (mine?.armed) drawActionLegend(ctx, viewport, mine);
   else if (selection) drawInspectPanel(ctx, viewport, world, selection);
   else drawKillBoard(ctx, viewport, world);
+
+  // Drawn last, unconditionally — a 레전더리+ draw shouldn't stay hidden just because someone's holding
+  // V or has a menu open.
+  if (world.celebrations.length) drawCelebrations(ctx, viewport, world.celebrations);
 }
