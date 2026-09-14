@@ -21,6 +21,7 @@ import {
   drawCost,
   GRADES,
   HP_GROWTH_PER_WAVE,
+  hpGrowthExponent,
   INITIAL_GRACE_MS,
   LAST_PLACE_GRADE_BOOST,
   MONSTER_KINDS,
@@ -86,12 +87,21 @@ const MESSAGE_TTL_MS = 2200;
 /** Fraction of kill gold the killer keeps — the rest splits evenly across every other active player, see awardKillGold(). */
 const KILLER_GOLD_SHARE = 0.6;
 /**
- * Flat, fixed bonus paid to every active player the instant a boss dies — on top of whatever
- * awardKillGold already paid out for that kill. A boss (10x HP, and now a hard timeout loss if it isn't
- * killed in time) used to pay out exactly the same per-kill gold as a regular monster despite taking far
- * more effort; this gives boss kills a reward that actually reflects that.
+ * Base bonus paid to every active player the instant a boss dies — on top of whatever awardKillGold
+ * already paid out for that kill. See bossClearBonus() for how this scales with wave.
  */
-const BOSS_CLEAR_BONUS = 100;
+const BOSS_CLEAR_BONUS_BASE = 100;
+/**
+ * A boss at wave 50 has ~40x the HP of the wave-5 boss (HP_GROWTH_PER_WAVE compounding, tapered past
+ * wave 30 by hpGrowthExponent() — was ~90x before that taper), but a flat BOSS_CLEAR_BONUS paid the
+ * exact same 100G regardless — the reward for clearing the hardest boss checks in the game didn't track
+ * the effort at all. Mild linear growth (same "+X per N waves" shape as drawCost/awardKillGold, not an
+ * attempt to match the boss's own exponential curve 1:1) at least makes late bosses pay out more than
+ * early ones.
+ */
+function bossClearBonus(wave: number): number {
+  return BOSS_CLEAR_BONUS_BASE + Math.floor(wave / 5) * 20;
+}
 
 function freshUpLevels() {
   return { str: 0, int: 0, dex: 0, luk: 0 };
@@ -137,6 +147,15 @@ export class MerandiEngine {
   private messageMsLeft = new Map<ZoneLabel, number>();
   /** Consecutive sub-레어 draws per zone, host-side only — see data.ts's rollGradeWithPity/PITY_THRESHOLD. Never sent over the wire (not part of Zone/wire.ts) since members never need to see it, same as messageMsLeft. */
   private pityStreaks = new Map<ZoneLabel, number>();
+  /**
+   * Highest activePlayerCount() ever observed this match — aliveThreshold() is pinned to this instead of
+   * the live count. this.monsters is one pool shared by every corner, so if it (correctly) grew to the
+   * capacity of a 4-player match and then 3 players disconnect, the live count would instantly shrink the
+   * threshold for whoever's left — turning a teammate's disconnect into an immediate, undeserved loss for
+   * the rest of the room. Peak only ever grows, so joining still raises capacity as intended, but leaving
+   * never retroactively shrinks the ceiling the shared monster pool was already sized against.
+   */
+  private peakActivePlayers = 1;
 
   private wave = 1;
   private waveMsLeft = NORMAL_WAVE_MS;
@@ -248,7 +267,7 @@ export class MerandiEngine {
     const cornerT = ZONE_LABELS.indexOf(label) / 4;
     const spec = MONSTER_KINDS[kind];
     const hp = Math.round(
-      BASE_MONSTER_HP * spec.hpMult * Math.pow(HP_GROWTH_PER_WAVE, this.wave - 1) * settleFactor(this.wave)
+      BASE_MONSTER_HP * spec.hpMult * Math.pow(HP_GROWTH_PER_WAVE, hpGrowthExponent(this.wave)) * settleFactor(this.wave)
     );
     this.monsters.push({
       id: this.nextMonsterId++,
@@ -284,7 +303,10 @@ export class MerandiEngine {
    * benefits from a legendary+ pirate's kills too, same as any other kill gold.
    */
   private awardKillGold(killer: Zone, bonus = 0): void {
-    const reward = (this.wave <= 5 ? 3 : 2 + Math.floor(this.wave / 20)) + bonus;
+    // max(3, ...) keeps this non-decreasing across waves — the un-wrapped "wave<=5 ? 3 : 2+floor(wave/20)"
+    // actually paid LESS for waves 6-19 (2G) than the easier waves 1-5 (3G), a dip that hit right as
+    // difficulty was ramping up past the first boss instead of easing into it.
+    const reward = Math.max(3, 2 + Math.floor(this.wave / 20)) + bonus;
     const others = ZONE_LABELS.filter((l) => l !== killer.label && this.zones.get(l)!.id !== '');
     if (!others.length) {
       killer.gold += reward;
@@ -296,13 +318,14 @@ export class MerandiEngine {
     for (const l of others) this.zones.get(l)!.gold += perOther;
   }
 
-  /** Flat reward for every active player the moment a boss dies — see BOSS_CLEAR_BONUS. */
+  /** Reward for every active player the moment a boss dies, scaled by wave — see bossClearBonus(). */
   private awardBossClearBonus(): void {
+    const bonus = bossClearBonus(this.wave);
     for (const label of ZONE_LABELS) {
       const zone = this.zones.get(label)!;
       if (zone.id === '') continue;
-      zone.gold += BOSS_CLEAR_BONUS;
-      this.setMessage(zone, `보스 클리어 보상! +${BOSS_CLEAR_BONUS}G`);
+      zone.gold += bonus;
+      this.setMessage(zone, `보스 클리어 보상! +${bonus}G`);
     }
   }
 
@@ -363,16 +386,32 @@ export class MerandiEngine {
           // 궁수's special is unlimited range — every other archetype keeps the normal grade-scaled reach.
           const range = special && member.arche === 'archer' ? Infinity : BASE_RANGE_PX * grade.rangeMult;
 
+          // Boss gets priority over anything else in range: a boss wave spawns its boss alongside the
+          // full trash roster (see BOSS_SPAWN_DELAY_MS), and trash can outnumber it 100+ to 1 by late
+          // waves. Pure nearest-of-any-kind targeting let that flood of trash monopolize every member's
+          // aim, so the boss routinely never got focused down before BOSS_WAVE_MS ran out — a loss driven
+          // by target starvation, not by the army actually lacking DPS. A member still falls back to
+          // nearest trash when no boss is in its own range, so units too far from the boss keep clearing
+          // trash instead of sitting idle.
           let target: Monster | null = null;
           let bestDist = Infinity;
+          let bossTarget: Monster | null = null;
+          let bestBossDist = Infinity;
           for (const m of this.monsters) {
             const mp = perimeterPoint(PATH_PTS, m.t);
             const d = Math.hypot(mp[0] - pos[0], mp[1] - pos[1]);
-            if (d <= range && d < bestDist) {
+            if (d > range) continue;
+            if (m.kind === 'boss') {
+              if (d < bestBossDist) {
+                bestBossDist = d;
+                bossTarget = m;
+              }
+            } else if (d < bestDist) {
               bestDist = d;
               target = m;
             }
           }
+          target = bossTarget ?? target;
           if (!target) continue;
 
           const role = ARCHETYPE_ROLE[member.arche];
@@ -476,7 +515,8 @@ export class MerandiEngine {
   }
 
   private aliveThreshold(): number {
-    return ALIVE_THRESHOLD_SOLO + (this.activePlayerCount() - 1) * ALIVE_THRESHOLD_PER_EXTRA_PLAYER;
+    if (this.activePlayerCount() > this.peakActivePlayers) this.peakActivePlayers = this.activePlayerCount();
+    return ALIVE_THRESHOLD_SOLO + (this.peakActivePlayers - 1) * ALIVE_THRESHOLD_PER_EXTRA_PLAYER;
   }
 
   private checkLoss(): void {
