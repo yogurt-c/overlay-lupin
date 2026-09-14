@@ -30,6 +30,13 @@ import type { CellInput, CellWorld, FoodDot, VirusDot } from './types.js';
 const MOVE_ACCEL = 0.6;
 const DRAG = 0.86;
 const BASE_MAX_SPEED = 2.6;
+/**
+ * Gentle homing accel applied to a player's non-main cells, once their split/pop launch has settled, pulling
+ * them back toward the player's biggest cell. Input in this game is a shared direction (not a shared target
+ * point the way agar.io's cursor-follow is), so nothing else would ever bring a split piece back on its own —
+ * without this, two of a player's own cells that drifted apart just stay apart forever.
+ */
+const REJOIN_PULL_ACCEL = 0.3;
 /** Applied only to mass above `MIN_CELL_MASS`, so no blob ever idles its way down to nothing. */
 const MASS_DECAY = 0.9998;
 
@@ -211,6 +218,7 @@ export class CellEngine {
       }
       if (p.isBot) p.input = this.botInputFor(p);
       else this.handleSplit(p, now);
+      this.stepRejoinPull(p);
       for (const cell of p.cells) {
         this.stepCellMovement(p.input, cell);
         this.decay(cell);
@@ -258,6 +266,26 @@ export class CellEngine {
       slots--;
     }
     p.cells.push(...spawned);
+  }
+
+  /**
+   * Pulls every other cell of a player gently toward their single biggest cell, so a split piece drifts back
+   * home on its own instead of coasting off in whatever direction it launched forever. Skipped while a cell is
+   * still riding out its launch momentum (`launchTicksLeft`) — the whole point of a split is to actually get
+   * away first.
+   */
+  private stepRejoinPull(p: EnginePlayer): void {
+    if (p.cells.length < 2) return;
+    const main = p.cells.reduce((biggest, c) => (c.mass > biggest.mass ? c : biggest), p.cells[0]);
+    for (const cell of p.cells) {
+      if (cell === main || cell.launchTicksLeft > 0) continue;
+      const dx = main.x - cell.x;
+      const dy = main.y - cell.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < 1) continue;
+      cell.vx += (dx / dist) * REJOIN_PULL_ACCEL;
+      cell.vy += (dy / dist) * REJOIN_PULL_ACCEL;
+    }
   }
 
   private stepCellMovement(input: CellInput, cell: EngineCell): void {
