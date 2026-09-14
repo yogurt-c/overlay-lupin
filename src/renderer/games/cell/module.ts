@@ -1,5 +1,6 @@
 import { CellEngine } from './engine.js';
 import { renderCellScene } from './scene.js';
+import { resetCellEffects } from './effects.js';
 import { createInputSource } from './input.js';
 import type { CellInput, CellMemberPacket, CellMemberPacketTagged, CellPlayer, CellWorld } from './types.js';
 import type { GameMatch, GameModule, MatchHud, Viewport } from '../types.js';
@@ -35,6 +36,8 @@ class CellMatch implements GameMatch {
   ) {
     this.engine = isHost ? new CellEngine() : null;
     this.engine?.ensurePlayer(myId, myName);
+    // Squash/swallow state is module-level, so a previous match's leftovers would otherwise pop up in this one.
+    resetCellEffects();
   }
 
   step(input: unknown): void {
