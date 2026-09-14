@@ -48,6 +48,34 @@ export function drawFoodDot(ctx: CanvasRenderingContext2D, x: number, y: number,
   ctx.fill();
 }
 
+const VIRUS_FILL = 'rgba(90,140,60,0.55)';
+const VIRUS_OUTLINE = 'rgba(60,100,40,0.9)';
+
+/** A spiky hazard blot — deliberately reads as dangerous, unlike the smooth food dots and cell blots. */
+export function drawVirus(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number): void {
+  ctx.save();
+  ctx.translate(x, y);
+
+  ctx.beginPath();
+  const spikes = 10;
+  for (let i = 0; i <= spikes * 2; i++) {
+    const angle = (i / (spikes * 2)) * Math.PI * 2;
+    const rr = (i % 2 === 0 ? radius : radius * 0.6) + jitter(radius * 0.08);
+    const px = Math.cos(angle) * rr;
+    const py = Math.sin(angle) * rr;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fillStyle = VIRUS_FILL;
+  ctx.fill();
+  ctx.lineWidth = 1.6;
+  ctx.strokeStyle = VIRUS_OUTLINE;
+  ctx.stroke();
+
+  ctx.restore();
+}
+
 /** A cell: a wobbly ink blot, same hand-drawn technique as the soccer ball. `name` is whose cell this is — not who's a bot. */
 export function drawCell(
   ctx: CanvasRenderingContext2D,
