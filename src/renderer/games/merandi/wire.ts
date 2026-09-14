@@ -100,10 +100,25 @@ function buildHeavyAtoms(world: MerandiWorld): unknown[] {
     });
   });
   for (const m of world.monsters) {
-    atoms.push(['N', m.id, Math.round(m.t * 1e5) / 1e5, Math.round(m.hp * 10) / 10, m.maxHp, MONSTER_KIND_LIST.indexOf(m.kind), m.speed]);
+    const atom: unknown[] = ['N', m.id, Math.round(m.t * 1e5) / 1e5, Math.round(m.hp * 10) / 10, m.maxHp, MONSTER_KIND_LIST.indexOf(m.kind), m.speed];
+    // 레전더리+ status effects (전사 stagger/vulnerable, 도적 dot) are rare and short-lived — only the
+    // handful of monsters actually affected pay these extra bytes, everyone else's atom is unchanged.
+    if ((m.staggerMsLeft ?? 0) > 0 || (m.vulnerableMsLeft ?? 0) > 0 || (m.dotMsLeft ?? 0) > 0) {
+      atom.push(
+        Math.round(m.staggerMsLeft ?? 0),
+        Math.round(m.vulnerableMsLeft ?? 0),
+        Math.round((m.vulnerableFactor ?? 1) * 100) / 100,
+        Math.round(m.dotMsLeft ?? 0),
+        Math.round((m.dotDamagePerSec ?? 0) * 10) / 10,
+        m.dotZoneLabel ? ZONE_LABELS.indexOf(m.dotZoneLabel) : -1
+      );
+    }
+    atoms.push(atom);
   }
   for (const s of world.shots) {
-    atoms.push(['T', Math.round(s.x * 10) / 10, Math.round(s.y * 10) / 10, Math.round(s.tx * 10) / 10, Math.round(s.ty * 10) / 10, Math.round(s.life), Math.round(s.maxLife), s.grade]);
+    const atom: unknown[] = ['T', Math.round(s.x * 10) / 10, Math.round(s.y * 10) / 10, Math.round(s.tx * 10) / 10, Math.round(s.ty * 10) / 10, Math.round(s.life), Math.round(s.maxLife), s.grade];
+    if (s.splash) atom.push(1);
+    atoms.push(atom);
   }
   return atoms;
 }
@@ -259,11 +274,20 @@ function decodeHeavyAtoms(atoms: unknown[]): HeavyState {
       }
       if (si >= 0 && si < slots.length) slots[si] = { members };
     } else if (tag === 'N') {
-      const [, id, t, hp, maxHp, kindIdx, speed] = raw;
-      monsters.push({ id, t, hp, maxHp, kind: MONSTER_KIND_LIST[kindIdx] ?? 'normal', speed });
+      const [, id, t, hp, maxHp, kindIdx, speed, staggerMsLeft, vulnerableMsLeft, vulnerableFactor, dotMsLeft, dotDamagePerSec, dotZoneIdx] = raw;
+      const monster: Monster = { id, t, hp, maxHp, kind: MONSTER_KIND_LIST[kindIdx] ?? 'normal', speed };
+      if (raw.length > 7) {
+        monster.staggerMsLeft = staggerMsLeft;
+        monster.vulnerableMsLeft = vulnerableMsLeft;
+        monster.vulnerableFactor = vulnerableFactor;
+        monster.dotMsLeft = dotMsLeft;
+        monster.dotDamagePerSec = dotDamagePerSec;
+        if (dotZoneIdx >= 0) monster.dotZoneLabel = ZONE_LABELS[dotZoneIdx];
+      }
+      monsters.push(monster);
     } else if (tag === 'T') {
-      const [, x, y, tx, ty, life, maxLife, grade] = raw;
-      shots.push({ x, y, tx, ty, life, maxLife, grade });
+      const [, x, y, tx, ty, life, maxLife, grade, splashFlag] = raw;
+      shots.push({ x, y, tx, ty, life, maxLife, grade, ...(splashFlag ? { splash: true } : {}) });
     }
   }
 

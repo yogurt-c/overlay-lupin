@@ -54,6 +54,18 @@ export interface Monster {
   maxHp: number;
   kind: MonsterKind;
   speed: number; // perimeter fraction per ms
+  /**
+   * 레전더리+ archetype special-effect state (see data.ts's SPECIAL_EFFECT_MIN_GRADE and engine.ts's
+   * stepStatusEffects) — all optional/absent on a fresh monster, only ever set once something with the
+   * matching grade actually lands a hit. Every field is a plain countdown the host ticks down each
+   * frame; a member never predicts these locally, it just renders whatever the snapshot says.
+   */
+  staggerMsLeft?: number; // 전사: frozen in place while > 0 (stepMonsters skips advancing t)
+  vulnerableMsLeft?: number; // 전사: all incoming damage (direct hits and dotDamagePerSec ticks alike) multiplied by vulnerableFactor while > 0
+  vulnerableFactor?: number;
+  dotMsLeft?: number; // 도적: ticks dotDamagePerSec worth of damage per second while > 0
+  dotDamagePerSec?: number;
+  dotZoneLabel?: ZoneLabel; // whichever zone's thief applied the current dot — credited for any kill it lands
 }
 
 /**
@@ -70,6 +82,8 @@ export interface Shot {
   life: number;
   maxLife: number;
   grade: number;
+  /** 레전더리+ 마법사's splash hit — draw.ts rings the impact point at splashRadiusForGrade(grade) once the shot lands. Absent for every other shot. */
+  splash?: boolean;
 }
 
 /**

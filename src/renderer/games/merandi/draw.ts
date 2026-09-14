@@ -6,17 +6,22 @@ import {
   ARCHETYPE_SUB_STAT,
   CELEBRATION_MIN_GRADE,
   GRADES,
+  MAGE_SPLASH_RADIUS,
   MAIN_STAT_NAME,
   MAIN_STATS,
   MONSTER_KIND_NAME,
   SLOT_COUNT,
   XENON_NAME,
-  computeMemberDamage
+  computeMemberDamage,
+  specialEffectTier
 } from './data.js';
 import { HALF_TRACK, ZONE_SIGN, ZOOM_VIEW_SIZE, clampCamera, memberOffset, perimeterPoint, slotPosition, squareLoopPoints } from './field.js';
 import type { Point } from './field.js';
 import type { Viewport } from '../types.js';
-import type { Archetype, Celebration, MainStat, MerandiWorld, Selection, Zone, ZoneLabel } from './types.js';
+import type { Archetype, Celebration, MainStat, MerandiWorld, Monster, Selection, Zone, ZoneLabel } from './types.js';
+
+/** Grade at which a shot starts getting its own colored glow, on top of the plain size/alpha bump every 에픽+ shot already gets. */
+const SHOT_GLOW_MIN_GRADE = 4;
 
 /** How big a shot's dot/tracer look relative to the grade that fired it — kept subtle since the game is otherwise monochrome. */
 function shotEmphasis(grade: number): { r: number; alpha: number } {
@@ -32,6 +37,38 @@ const INK = '#14181a';
 const FAINT = 'rgba(20,24,26,0.35)';
 const HALO = 'rgba(255,255,255,0.85)';
 const MONSTER_COLOR = 'rgba(160,50,40,0.85)';
+
+const STAGGER_COLOR = 'rgba(90,130,150,0.8)'; // 전사 — cool/icy, "frozen in place"
+const VULNERABLE_COLOR = 'rgba(190,60,50,0.7)'; // 전사 — warm/red, "takes more damage"
+const DOT_COLOR = 'rgba(110,150,60,0.85)'; // 도적 — sickly green, "bleeding/poisoned"
+
+/** 레전더리+ status-effect cues (전사 stagger/vulnerable, 도적 dot) — purely visual, driven by whatever the snapshot says is currently active on this monster. */
+function drawStatusEffects(ctx: CanvasRenderingContext2D, m: Monster, x: number, y: number, r: number): void {
+  if ((m.staggerMsLeft ?? 0) > 0) {
+    ctx.beginPath();
+    ctx.arc(x, y, r + 2, 0, Math.PI * 2);
+    ctx.strokeStyle = STAGGER_COLOR;
+    ctx.lineWidth = 1.4;
+    ctx.setLineDash([1.5, 1.5]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  if ((m.vulnerableMsLeft ?? 0) > 0) {
+    ctx.beginPath();
+    ctx.arc(x, y, r + 5, 0, Math.PI * 2);
+    ctx.strokeStyle = VULNERABLE_COLOR;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+  if ((m.dotMsLeft ?? 0) > 0) {
+    // A small pulsing mote riding above the monster — phase driven by real time so it visibly throbs.
+    const pulse = 0.6 + 0.4 * Math.sin(Date.now() / 140);
+    ctx.beginPath();
+    ctx.arc(x, y - r - 4, 1.6 * pulse, 0, Math.PI * 2);
+    ctx.fillStyle = DOT_COLOR;
+    ctx.fill();
+  }
+}
 
 /** Shape glyph per archetype — the only visual differentiator between jobs (no color, per the design doc). */
 function drawArcheGlyph(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, arche: string): void {
@@ -661,6 +698,8 @@ export function renderMerandiScene(
       ctx.setLineDash([]);
       ctx.globalAlpha = 1;
     }
+
+    drawStatusEffects(ctx, m, x, y, r);
   }
 
   // shots — a dot flying from shooter to where the target was at the instant it fired
@@ -675,6 +714,33 @@ export function renderMerandiScene(
     const tailLen = r * 4;
     const tx = x - (dx / dist) * tailLen;
     const ty = y - (dy / dist) * tailLen;
+
+    if (shot.grade >= SHOT_GLOW_MIN_GRADE) {
+      const glowColor = GRADES[shot.grade].color;
+      ctx.save();
+      ctx.globalAlpha = alpha * 0.45;
+      ctx.shadowColor = glowColor;
+      ctx.shadowBlur = shot.grade >= CELEBRATION_MIN_GRADE ? 12 : 7;
+      ctx.beginPath();
+      ctx.arc(x, y, r * 1.5, 0, Math.PI * 2);
+      ctx.fillStyle = glowColor;
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // 마법사 splash — a ring expanding out to the true splash radius as the shot nears impact, so the
+    // area that's about to take splash damage is visible right when it matters.
+    if (shot.splash && progress > 0.6) {
+      const splashRadius = MAGE_SPLASH_RADIUS[specialEffectTier(shot.grade)];
+      const ringT = (progress - 0.6) / 0.4; // 0 at 60% flight, 1 at impact
+      ctx.beginPath();
+      ctx.arc(x, y, splashRadius * ringT, 0, Math.PI * 2);
+      ctx.strokeStyle = GRADES[shot.grade].color;
+      ctx.globalAlpha = 0.5 * ringT;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
 
     ctx.beginPath();
     ctx.moveTo(tx, ty);
