@@ -18,6 +18,7 @@ import {
   BOSS_SPAWN_DELAY_MS,
   BOSS_WAVE_MS,
   DRAW_COST_BASE,
+  KILL_GOLD_SCALE,
   drawCost,
   GRADES,
   HP_GROWTH_PER_WAVE,
@@ -43,6 +44,10 @@ import {
   isBossWave,
   rollArchetype,
   rollGradeWithPity,
+  rollPotential,
+  rerollPotential,
+  POTENTIAL_GRADE_NAMES,
+  POTENTIAL_REROLL_COST,
   rollJobName,
   settleFactor,
   specialEffectTier,
@@ -58,6 +63,7 @@ import type {
   MonsterKind,
   MerandiInput,
   MerandiWorld,
+  PotentialOptionType,
   Shot,
   UnitMember,
   UnitStack,
@@ -101,6 +107,20 @@ const BOSS_CLEAR_BONUS_BASE = 100;
  */
 function bossClearBonus(wave: number): number {
   return BOSS_CLEAR_BONUS_BASE + Math.floor(wave / 5) * 20;
+}
+
+/** Sums every potential line of this type on `member` — duplicates just add up (e.g. three STR lines stack), see data.ts's rollPotentialLines. */
+function potentialBonus(member: UnitMember, type: PotentialOptionType): number {
+  let sum = 0;
+  for (const line of member.potential.lines) if (line.type === type) sum += line.value;
+  return sum;
+}
+
+/** Extra gold on top of a kill's base reward — see awardKillGold/killMonster. All optional since most kills carry none of these. */
+interface KillBonusOptions {
+  flatGold?: number; // 해적's flat per-kill special
+  goldMultiplier?: number; // 잠재 'killGold' lines
+  jackpotChance?: number; // 잠재 'jackpot' lines — % chance (0-100) to add base*5 extra
 }
 
 function freshUpLevels() {
@@ -239,8 +259,10 @@ export class MerandiEngine {
     this.waveMsLeft = boss ? BOSS_WAVE_MS : NORMAL_WAVE_MS;
     this.waveElapsedMs = 0;
 
-    // Per-corner baseline × active corners, so density per corner stays constant regardless of player count.
-    const count = Math.max(1, MONSTERS_PER_WAVE_PER_PLAYER(wave) * this.activePlayerCount());
+    // Ticket count is just the per-corner baseline now — spawnMonster() itself fans each ticket out to
+    // every active corner, so density per corner is guaranteed exactly this, not an average across a
+    // random per-ticket corner pick.
+    const count = Math.max(1, MONSTERS_PER_WAVE_PER_PLAYER(wave));
     // Spread across a fixed window regardless of count, so every wave "still has monsters trickling in"
     // for the same ~25s stretch instead of finishing instantly once count gets large.
     const gap = SPAWN_WINDOW_MS / count;
@@ -260,23 +282,24 @@ export class MerandiEngine {
     this.spawnQueue = tickets;
   }
 
+  /** One spawn ticket now means "every active corner gets one of these," not "roll a random corner" — see startWave's ticket count, which no longer multiplies by player count since this loop does that instead. Density per corner is deterministic, not an average that a bad run of dice could dodge. */
   private spawnMonster(kind: MonsterKind): void {
     const activeLabels = ZONE_LABELS.filter((l) => this.zones.get(l)!.id !== '');
     if (!activeLabels.length) return; // no one to defend against yet — hold off spawning
-    const label = activeLabels[Math.floor(Math.random() * activeLabels.length)];
-    const cornerT = ZONE_LABELS.indexOf(label) / 4;
     const spec = MONSTER_KINDS[kind];
     const hp = Math.round(
       BASE_MONSTER_HP * spec.hpMult * Math.pow(HP_GROWTH_PER_WAVE, hpGrowthExponent(this.wave)) * settleFactor(this.wave)
     );
-    this.monsters.push({
-      id: this.nextMonsterId++,
-      t: cornerT,
-      hp,
-      maxHp: hp,
-      kind,
-      speed: spec.speedMult / LOOP_MS
-    });
+    for (const label of activeLabels) {
+      this.monsters.push({
+        id: this.nextMonsterId++,
+        t: ZONE_LABELS.indexOf(label) / 4,
+        hp,
+        maxHp: hp,
+        kind,
+        speed: spec.speedMult / LOOP_MS
+      });
+    }
   }
 
   private stepSpawning(dtMs: number): void {
@@ -302,11 +325,18 @@ export class MerandiEngine {
    * `bonus` is 해적's flat per-kill special (see killMonster) — folded in before the split so the team
    * benefits from a legendary+ pirate's kills too, same as any other kill gold.
    */
-  private awardKillGold(killer: Zone, bonus = 0): void {
+  private awardKillGold(killer: Zone, opts: KillBonusOptions = {}): void {
     // max(3, ...) keeps this non-decreasing across waves — the un-wrapped "wave<=5 ? 3 : 2+floor(wave/20)"
     // actually paid LESS for waves 6-19 (2G) than the easier waves 1-5 (3G), a dip that hit right as
-    // difficulty was ramping up past the first boss instead of easing into it.
-    const reward = Math.max(3, 2 + Math.floor(this.wave / 20)) + bonus;
+    // difficulty was ramping up past the first boss instead of easing into it. KILL_GOLD_SCALE trims the
+    // base formula only — 해적's flat bonus and 잠재's % multiplier both ride on top, unscaled.
+    const base = Math.max(3, 2 + Math.floor(this.wave / 20)) * KILL_GOLD_SCALE;
+    let reward = (base + (opts.flatGold ?? 0)) * (opts.goldMultiplier ?? 1);
+    if (opts.jackpotChance && Math.random() * 100 < opts.jackpotChance) {
+      const jackpotAmount = base * 5;
+      reward += jackpotAmount;
+      this.setMessage(killer, `잭팟! +${Math.round(jackpotAmount)}G`);
+    }
     const others = ZONE_LABELS.filter((l) => l !== killer.label && this.zones.get(l)!.id !== '');
     if (!others.length) {
       killer.gold += reward;
@@ -341,9 +371,9 @@ export class MerandiEngine {
   }
 
   /** Single place a monster actually leaves the field — used by the primary hit, 마법사's splash targets, and 도적's dot ticks alike, so every kill (however it happened) is credited the same way. */
-  private killMonster(target: Monster, creditLabel: ZoneLabel, bonusGold = 0): void {
+  private killMonster(target: Monster, creditLabel: ZoneLabel, opts: KillBonusOptions = {}): void {
     const zone = this.zones.get(creditLabel)!;
-    this.awardKillGold(zone, bonusGold);
+    this.awardKillGold(zone, opts);
     if (target.kind === 'boss') this.awardBossClearBonus();
     zone.kills++;
     this.monsters = this.monsters.filter((m) => m !== target);
@@ -384,7 +414,8 @@ export class MerandiEngine {
           const special = member.grade >= SPECIAL_EFFECT_MIN_GRADE;
           const tier = specialEffectTier(member.grade);
           // 궁수's special is unlimited range — every other archetype keeps the normal grade-scaled reach.
-          const range = special && member.arche === 'archer' ? Infinity : BASE_RANGE_PX * grade.rangeMult;
+          // Potential's 'range' lines multiply on top either way (Infinity * anything positive is still Infinity).
+          const range = (special && member.arche === 'archer' ? Infinity : BASE_RANGE_PX * grade.rangeMult) * (1 + potentialBonus(member, 'range') / 100);
 
           // Boss gets priority over anything else in range: a boss wave spawns its boss alongside the
           // full trash roster (see BOSS_SPAWN_DELAY_MS), and trash can outnumber it 100+ to 1 by late
@@ -418,7 +449,8 @@ export class MerandiEngine {
           let dmg = computeMemberDamage(zone.upLevels, member);
           let cooldown = BASE_COOLDOWN_MS;
           if (role === 'attackSpeed') cooldown *= 0.65;
-          if (role === 'crit' && Math.random() < 0.25) dmg *= 2;
+          const critChance = (role === 'crit' ? 0.25 : 0) + potentialBonus(member, 'crit') / 100;
+          if (critChance > 0 && Math.random() < critChance) dmg *= 2;
           if (special && member.arche === 'archer') cooldown *= ARCHER_COOLDOWN_MULT[tier];
           member.cooldownMs = cooldown;
 
@@ -443,8 +475,13 @@ export class MerandiEngine {
           }
 
           const pirateBonus = special && member.arche === 'pirate' ? PIRATE_KILL_BONUS[tier] : 0;
+          const killOpts: KillBonusOptions = {
+            flatGold: pirateBonus,
+            goldMultiplier: 1 + potentialBonus(member, 'killGold') / 100,
+            jackpotChance: potentialBonus(member, 'jackpot')
+          };
           if (this.applyDamage(target, dmg) <= 0) {
-            this.killMonster(target, label, pirateBonus);
+            this.killMonster(target, label, killOpts);
           } else if (special && member.arche === 'thief') {
             const dotAmount = dmg * THIEF_DOT_RATE[tier];
             target.dotDamagePerSec = Math.max(target.dotDamagePerSec ?? 0, dotAmount);
@@ -459,7 +496,7 @@ export class MerandiEngine {
               if (m === target) continue;
               const mp = perimeterPoint(PATH_PTS, m.t);
               if (Math.hypot(mp[0] - targetPosAtFire[0], mp[1] - targetPosAtFire[1]) <= splashRadius) {
-                if (this.applyDamage(m, splashDmg) <= 0) this.killMonster(m, label);
+                if (this.applyDamage(m, splashDmg) <= 0) this.killMonster(m, label, killOpts);
               }
             }
           }
@@ -554,7 +591,7 @@ export class MerandiEngine {
   private placeDraw(zone: Zone, grade: number, arche: Archetype, job: string): boolean {
     const spec = GRADES[grade];
     const range = BASE_RANGE_PX * spec.rangeMult;
-    const member: UnitMember = { id: this.nextMemberId++, grade, arche, job, cooldownMs: 0 };
+    const member: UnitMember = { id: this.nextMemberId++, grade, arche, job, cooldownMs: 0, potential: rollPotential() };
 
     let best = -1;
     let bestCoverage = -1;
@@ -628,17 +665,51 @@ export class MerandiEngine {
     this.setMessage(zone, `${MAIN_STAT_NAME[stat]} Lv.${lvl + 1} (다음 ${upgradeCost(lvl + 1)}G)`);
   }
 
+  /** Costs the same as a draw (same wave-scaled formula) — finds the member by id anywhere in the zone's slots and re-rolls its potential (small chance to bump grade, always fresh lines) in place. */
+  private doRerollPotential(zone: Zone, memberId: number): void {
+    let target: UnitMember | null = null;
+    for (const slot of zone.slots) {
+      if (!slot) continue;
+      const found = slot.members.find((m) => m.id === memberId);
+      if (found) {
+        target = found;
+        break;
+      }
+    }
+    if (!target) {
+      this.setMessage(zone, '대상 유닛을 찾을 수 없습니다.');
+      return;
+    }
+    const cost = POTENTIAL_REROLL_COST[target.potential.grade];
+    if (zone.gold < cost) {
+      this.setMessage(zone, '골드가 부족합니다.');
+      return;
+    }
+    zone.gold -= cost;
+    const before = target.potential.grade;
+    target.potential = rerollPotential(target.potential);
+    if (target.potential.grade > before) {
+      this.setMessage(zone, `잠재능력 승급! ${POTENTIAL_GRADE_NAMES[target.potential.grade]}`);
+    } else {
+      this.setMessage(zone, '잠재능력을 재설정했습니다.');
+    }
+  }
+
   private doSellCombo(zone: Zone, arche: Archetype, maxGrade: number): void {
     let refund = 0;
     let sold = 0;
     for (let i = 0; i < zone.slots.length; i++) {
       const slot = zone.slots[i];
       if (!slot) continue;
-      const keep = slot.members.filter((m) => !(m.arche === arche && m.grade <= maxGrade));
-      const removed = slot.members.length - keep.length;
-      if (removed === 0) continue;
-      sold += removed;
-      refund += removed * SELL_REFUND;
+      const keep: UnitMember[] = [];
+      for (const m of slot.members) {
+        if (m.arche === arche && m.grade <= maxGrade) {
+          sold++;
+          refund += SELL_REFUND * (1 + potentialBonus(m, 'sellRefund') / 100);
+        } else {
+          keep.push(m);
+        }
+      }
       zone.slots[i] = keep.length ? { members: keep } : null;
     }
     if (!sold) {
@@ -646,7 +717,7 @@ export class MerandiEngine {
       return;
     }
     zone.gold += refund;
-    this.setMessage(zone, `${sold}마리 판매, +${refund}G`);
+    this.setMessage(zone, `${sold}마리 판매, +${Math.round(refund)}G`);
   }
 
   private processCommands(): void {
@@ -678,6 +749,8 @@ export class MerandiEngine {
               zone.pendingArche = null;
             }
           }
+        } else if (cmd.type === 'rerollPotential') {
+          this.doRerollPotential(zone, cmd.memberId);
         }
       }
     }

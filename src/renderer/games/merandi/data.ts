@@ -1,4 +1,4 @@
-import type { Archetype, MainStat, MonsterKind, UnitMember, UpgradeLevels } from './types.js';
+import type { Archetype, MainStat, MonsterKind, Potential, PotentialLine, PotentialOptionType, UnitMember, UpgradeLevels } from './types.js';
 
 /**
  * 8-tier gacha ladder. `color` ("그림자 염료") is deliberately desaturated (15-25% saturation, lightness
@@ -162,6 +162,9 @@ export const SLOT_ROWS = 6;
 export const SLOT_COUNT = SLOT_COLS * SLOT_ROWS;
 export const STACK_MAX = 3;
 
+/** Trims the kill-gold formula (see engine.ts's awardKillGold) so raising monster spawn counts doesn't automatically raise total gold income by the same amount — more monsters shouldn't just mean more money on top of more kills needed. */
+export const KILL_GOLD_SCALE = 0.8;
+
 export const DRAW_COST_BASE = 30;
 /** Keeps pace with the kill-reward curve (also +something per 10 waves) so the "kills needed per draw" ratio doesn't just get easier forever as waves escalate. */
 export function drawCost(wave: number): number {
@@ -293,21 +296,130 @@ export const SUB_GROWTH: Record<MainStat, number> = (() => {
  * compensates a rare pull for being weaker in practice than its rarity would suggest.
  */
 const XENON_BUFF = 1.4;
-export function computeMemberMultiplier(upLevels: UpgradeLevels, member: Pick<UnitMember, 'arche' | 'job'>): number {
+
+/** Which main stats count as "relevant" for this member's str/int/dex/luk potential lines — anything else is a dud, same rule computeMemberMultiplier's base bonus already follows. */
+function potentialRelevantStats(member: Pick<UnitMember, 'arche' | 'job'>): Set<MainStat> {
+  if (member.job === XENON_NAME) return new Set<MainStat>(['str', 'dex', 'luk']);
+  return new Set<MainStat>([ARCHETYPE_MAIN_STAT[member.arche], ARCHETYPE_SUB_STAT[member.arche]]);
+}
+
+const MAIN_STAT_SET = new Set<string>(MAIN_STATS);
+
+/** Potential's contribution to the damage multiplier — 'range'/'crit'/'killGold'/'sellRefund'/'jackpot' lines are applied at their own call sites in engine.ts, not here. */
+function potentialDamageBonus(upLevels: UpgradeLevels, member: Pick<UnitMember, 'arche' | 'job' | 'potential'>): number {
+  const relevant = potentialRelevantStats(member);
+  let bonus = 0;
+  for (const line of member.potential.lines) {
+    if (line.type === 'statConvert' && line.fromStat && line.toStat) {
+      bonus += Math.floor(upLevels[line.fromStat] / line.value) * LEVEL_GROWTH[line.toStat];
+    } else if (MAIN_STAT_SET.has(line.type) && relevant.has(line.type as MainStat)) {
+      bonus += line.value / 100;
+    }
+  }
+  return bonus;
+}
+
+export function computeMemberMultiplier(upLevels: UpgradeLevels, member: Pick<UnitMember, 'arche' | 'job' | 'potential'>): number {
+  let base: number;
   if (member.job === XENON_NAME) {
     const stats: MainStat[] = ['str', 'dex', 'luk'];
     const avg = stats.reduce((sum, s) => sum + upLevels[s] * LEVEL_GROWTH[s], 0) / stats.length;
-    return 1 + avg * XENON_BUFF;
+    base = 1 + avg * XENON_BUFF;
+  } else {
+    const mainStat = ARCHETYPE_MAIN_STAT[member.arche];
+    const subStat = ARCHETYPE_SUB_STAT[member.arche];
+    base = 1 + upLevels[mainStat] * LEVEL_GROWTH[mainStat] + upLevels[subStat] * SUB_GROWTH[subStat];
   }
-  const mainStat = ARCHETYPE_MAIN_STAT[member.arche];
-  const subStat = ARCHETYPE_SUB_STAT[member.arche];
-  const mainBonus = upLevels[mainStat] * LEVEL_GROWTH[mainStat];
-  const subBonus = upLevels[subStat] * SUB_GROWTH[subStat];
-  return 1 + mainBonus + subBonus;
+  return base + potentialDamageBonus(upLevels, member);
 }
 
-export function computeMemberDamage(upLevels: UpgradeLevels, member: Pick<UnitMember, 'arche' | 'job' | 'grade'>): number {
+export function computeMemberDamage(upLevels: UpgradeLevels, member: Pick<UnitMember, 'arche' | 'job' | 'grade' | 'potential'>): number {
   return BASE_DMG * GRADES[member.grade].dmgMult * computeMemberMultiplier(upLevels, member);
+}
+
+/**
+ * MapleStory-style potential — a separate axis from a unit's grade, rolled independently and only
+ * ever changed by rerolling (see engine.ts's doRerollPotential). Every unit starts at 레어 (tier 0).
+ */
+export const POTENTIAL_GRADE_NAMES: string[] = ['레어', '에픽', '유니크', '레전더리'];
+/** Chance a reroll bumps grade i -> i+1 — shrinks going up, same shape as real cube odds getting harder at higher tiers. Index 3 (레전더리) has no further entry: it's already the cap. */
+export const POTENTIAL_UPGRADE_CHANCE: number[] = [0.04, 0.02, 0.01];
+/** Lines 2-3 default to grade-1's value table (see rollPotentialLines); this is their chance to "break out" and use the current grade's table instead, same as line 1 always does. */
+export const POTENTIAL_LINE_ESCAPE_CHANCE = 0.03;
+/** Reroll cost, indexed by the unit's CURRENT potential grade (0=레어..3=레전더리) — cheap enough that chasing 레전더리 (~175 rerolls expected, given POTENTIAL_UPGRADE_CHANCE) costs ~1,050G total, not a rare luxury. */
+export const POTENTIAL_REROLL_COST: [number, number, number, number] = [2, 4, 8, 12];
+
+export const POTENTIAL_OPTION_TYPES: PotentialOptionType[] = ['str', 'int', 'dex', 'luk', 'range', 'crit', 'killGold', 'sellRefund', 'jackpot', 'statConvert'];
+
+export const POTENTIAL_OPTION_NAME: Record<PotentialOptionType, string> = {
+  str: 'STR',
+  int: 'INT',
+  dex: 'DEX',
+  luk: 'LUK',
+  range: '사거리',
+  crit: '크리티컬 확률',
+  killGold: '킬당 골드 획득',
+  sellRefund: '판매 환급',
+  jackpot: '골드 잭팟',
+  statConvert: '스탯 전환'
+};
+
+/**
+ * Fixed value per grade tier (0=레어..3=레전더리) — a lookup, not a rolled range, so the same (option,
+ * grade) pair always means exactly the same number. For 'statConvert' this is the "every N levels"
+ * divisor (smaller N = stronger); every other option is a plain %/%p.
+ */
+export const POTENTIAL_OPTION_VALUE: Record<PotentialOptionType, [number, number, number, number]> = {
+  // Calibrated so 3 matching-stat lines at 유니크 (or 2 at 레전더리) ≈ +50% damage, roughly one GRADES
+  // tier's worth of dmgMult jump (~1.5x between consecutive grades) — 레전더리 x3 lands at +75%, short of
+  // a full "two tiers up" (+125%) by design: hitting both targets exactly isn't possible with a flat
+  // per-line value, and 유니크3/레전더리2 parity was the one to keep exact.
+  str: [5, 10, 17, 25],
+  int: [5, 10, 17, 25],
+  dex: [5, 10, 17, 25],
+  luk: [5, 10, 17, 25],
+  range: [3, 7, 13, 20],
+  crit: [2, 4, 6, 10],
+  killGold: [5, 12, 20, 32],
+  sellRefund: [7, 15, 27, 42],
+  jackpot: [3, 6, 10, 15],
+  statConvert: [10, 8, 6, 4]
+};
+
+function rollPotentialLine(tier: number): PotentialLine {
+  const type = POTENTIAL_OPTION_TYPES[Math.floor(Math.random() * POTENTIAL_OPTION_TYPES.length)];
+  if (type === 'statConvert') {
+    const fromStat = MAIN_STATS[Math.floor(Math.random() * MAIN_STATS.length)];
+    const rest = MAIN_STATS.filter((s) => s !== fromStat);
+    const toStat = rest[Math.floor(Math.random() * rest.length)];
+    return { type, value: POTENTIAL_OPTION_VALUE.statConvert[tier], fromStat, toStat };
+  }
+  return { type, value: POTENTIAL_OPTION_VALUE[type][tier] };
+}
+
+/**
+ * Line 1 always uses `grade`'s own value table. Lines 2-3 default to grade-1's table (or `grade`'s own
+ * if already at the floor, 레어) — with POTENTIAL_LINE_ESCAPE_CHANCE odds to use `grade`'s table instead.
+ * Each line independently rolls its own option type — duplicates across the 3 lines are allowed and
+ * simply add up (e.g. three STR lines stack).
+ */
+export function rollPotentialLines(grade: number): PotentialLine[] {
+  const lines: PotentialLine[] = [];
+  for (let i = 0; i < 3; i++) {
+    const tier = i === 0 || grade === 0 ? grade : Math.random() < POTENTIAL_LINE_ESCAPE_CHANCE ? grade : grade - 1;
+    lines.push(rollPotentialLine(tier));
+  }
+  return lines;
+}
+
+export function rollPotential(): Potential {
+  return { grade: 0, lines: rollPotentialLines(0) };
+}
+
+/** Reroll: a shrinking-per-tier chance to bump grade up one step (capped at 레전더리), then always re-rolls all 3 lines fresh at whatever grade results. */
+export function rerollPotential(current: Potential): Potential {
+  const grade = current.grade < POTENTIAL_UPGRADE_CHANCE.length && Math.random() < POTENTIAL_UPGRADE_CHANCE[current.grade] ? current.grade + 1 : current.grade;
+  return { grade, lines: rollPotentialLines(grade) };
 }
 
 export interface MonsterSpec {
@@ -329,7 +441,7 @@ export const MONSTER_KIND_NAME: Record<MonsterKind, string> = {
   boss: '보스'
 };
 
-export const TOTAL_WAVES = 50;
+export const TOTAL_WAVES = 60;
 export const NORMAL_WAVE_MS = 30_000;
 export const BOSS_WAVE_MS = 60_000;
 /**
@@ -352,17 +464,24 @@ export const HP_GROWTH_PER_WAVE = 1.105;
  * are left byte-for-byte unchanged; only the exponent's growth *rate* past 30 eases off.
  */
 export const HP_TAPER_WAVE = 30;
-export const HP_TAPER_FACTOR = 0.6;
+export const HP_TAPER_FACTOR = 0.9;
 export function hpGrowthExponent(wave: number): number {
   return wave <= HP_TAPER_WAVE ? wave - 1 : HP_TAPER_WAVE - 1 + (wave - HP_TAPER_WAVE) * HP_TAPER_FACTOR;
 }
 /**
- * Per-corner monster baseline — the engine multiplies this by the number of active players/corners
- * (see engine.ts's startWave), so density per corner stays constant regardless of player count instead
- * of a fixed total getting divided down for fewer players. 1p wave1 = 40, growing to 210 by wave 50
- * (nudged up slightly from 200 to offset LAST_PLACE_GRADE_BOOST making good units easier to find overall).
+ * The original design target for the spawn-count ramp (see SPAWN_GROWTH_PER_WAVE below) — kept as its
+ * own constant, separate from TOTAL_WAVES, so extending the match length (e.g. 50 -> 60 waves) adds more
+ * waves on top of the existing curve instead of stretching the same 40->260 ramp thinner across more
+ * waves, which would quietly make waves 1-50 easier than before.
  */
-const SPAWN_GROWTH_PER_WAVE = (210 - 40) / (TOTAL_WAVES - 1);
+const SPAWN_CURVE_WAVES = 50;
+/**
+ * Per-corner monster baseline — engine.ts's spawnMonster() spawns one of every ticket at EACH active
+ * corner (not a random pick among them), so density per corner is always exactly this, regardless of
+ * player count. 1p wave1 = 40, growing to 260 by wave 50 (raised from 210 — spawn counts felt too thin
+ * after the deterministic-per-corner fix removed the variance that used to occasionally pad a corner out).
+ */
+const SPAWN_GROWTH_PER_WAVE = (260 - 40) / (SPAWN_CURVE_WAVES - 1);
 /**
  * From this wave on, spawn-count growth runs at SPAWN_TAPER_FACTOR of its normal rate instead of
  * continuing the full linear climb to 210. Reason: HP_GROWTH_PER_WAVE is already exponential, so late

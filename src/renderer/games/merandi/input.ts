@@ -5,9 +5,10 @@ const KEY_UPGRADE = 'KeyX';
 const KEY_SELL = 'KeyC';
 const KEY_CANCEL = 'Escape';
 const KEY_INFO = 'KeyV';
+const KEY_REROLL = 'KeyR';
 const DIGIT_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8'];
 
-const GAME_KEYS = new Set([KEY_DRAW, KEY_UPGRADE, KEY_SELL, KEY_CANCEL, ...DIGIT_KEYS]);
+const GAME_KEYS = new Set([KEY_DRAW, KEY_UPGRADE, KEY_SELL, KEY_CANCEL, KEY_REROLL, ...DIGIT_KEYS]);
 const HELD_EXTRA_KEYS = new Set([KEY_INFO]);
 
 const UP_KEYS = ['ArrowUp', 'KeyW'];
@@ -55,6 +56,7 @@ export function createInputSource(target: Window = window): InputSource {
     else if (e.code === KEY_UPGRADE) queue.push({ type: 'armUpgrade' });
     else if (e.code === KEY_SELL) queue.push({ type: 'armSell' });
     else if (e.code === KEY_CANCEL) queue.push({ type: 'cancel' });
+    else if (e.code === KEY_REROLL) queue.push({ type: 'rerollPotential', memberId: -1 });
     else {
       const index = DIGIT_KEYS.indexOf(e.code) + 1;
       queue.push({ type: 'pick', index });

@@ -97,7 +97,7 @@ const OVER_GRACE_MS = 4000;
 
 const EMPTY_WORLD: MerandiWorld = {
   wave: 1,
-  waveTotal: 50,
+  waveTotal: 60,
   waveMsLeft: 0,
   waveIsBoss: false,
   aliveMonsters: 0,
@@ -228,9 +228,27 @@ class MerandiMatch implements GameMatch {
     this.camera = clampCamera(x, y);
   }
 
+  /**
+   * input.ts has no notion of "which unit is selected" (that's purely client-side, see this.selection),
+   * so it always queues rerollPotential with a memberId placeholder of -1 — this fills in the real id
+   * from whatever's currently selected, or drops the command entirely if nothing (or a monster, not a
+   * unit) is selected, before it ever reaches the engine or goes out over the wire.
+   */
+  private resolveRerollCommands(commands: MerandiCommand[]): MerandiCommand[] {
+    const resolved: MerandiCommand[] = [];
+    for (const cmd of commands) {
+      if (cmd.type !== 'rerollPotential') {
+        resolved.push(cmd);
+        continue;
+      }
+      if (this.selection?.kind === 'unit') resolved.push({ type: 'rerollPotential', memberId: this.selection.memberId });
+    }
+    return resolved;
+  }
+
   step(input: unknown): void {
     this.lastSteppedAt = Date.now();
-    const commands = (input as MerandiInput | null)?.commands ?? [];
+    const commands = this.resolveRerollCommands((input as MerandiInput | null)?.commands ?? []);
     if (this.engine) {
       this.engine.setInput(this.myId, { commands });
       this.engine.step(1000 / 60);
@@ -317,7 +335,7 @@ class MerandiMatch implements GameMatch {
 export const merandiModule: GameModule = {
   id: 'merandi',
   label: '메랜디',
-  hint: 'Z 뽑기 · X 업그레이드(1~4 스탯: STR/INT/DEX/LUK) · C 판매(1~5 계열 → 1~8 등급 이하) · V 등급표 · Esc 취소',
+  hint: 'Z 뽑기 · X 업그레이드(1~4 스탯: STR/INT/DEX/LUK) · C 판매(1~5 계열 → 1~8 등급 이하) · R 잠재능력 재설정(호버 중인 유닛) · V 등급표 · Esc 취소',
   matching: 'room',
   roomCapacity: 4,
   createMatch: (isHost, myId, myName) => new MerandiMatch(isHost, myId, myName),
