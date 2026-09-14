@@ -224,6 +224,7 @@ export class CellEngine {
         this.decay(cell);
       }
       this.stepMerge(p, now);
+      this.stepSeparation(p);
     }
     this.stepEating();
     this.stepFood();
@@ -341,7 +342,7 @@ export class CellEngine {
         for (let j = i + 1; j < p.cells.length; j++) {
           const a = p.cells[i];
           const b = p.cells[j];
-          const touching = Math.hypot(a.x - b.x, a.y - b.y) <= (radiusFor(a.mass) + radiusFor(b.mass)) / 2;
+          const touching = Math.hypot(a.x - b.x, a.y - b.y) <= radiusFor(a.mass) + radiusFor(b.mass);
           if (!touching) {
             // Cleared merge range at least once — from here on this pair owes the full cooldown to rejoin.
             a.hasSeparated = true;
@@ -364,6 +365,46 @@ export class CellEngine {
           break merge;
         }
       }
+    }
+  }
+
+  /**
+   * Pushes any of a player's own cells that still overlap apart, edge to edge, after `stepMerge` has already
+   * folded together whatever pairs are actually eligible to merge this tick. Without this, a pair sitting out
+   * the rest of the merge cooldown (or a split still flying apart) just sits stacked on top of each other.
+   * Heavier cells give way less than lighter ones.
+   */
+  private stepSeparation(p: EnginePlayer): void {
+    for (let i = 0; i < p.cells.length; i++) {
+      for (let j = i + 1; j < p.cells.length; j++) {
+        const a = p.cells[i];
+        const b = p.cells[j];
+        const minDist = radiusFor(a.mass) + radiusFor(b.mass);
+        let dx = b.x - a.x;
+        let dy = b.y - a.y;
+        let dist = Math.hypot(dx, dy);
+        if (dist >= minDist) continue;
+        if (dist < 0.001) {
+          // Perfectly coincident (e.g. the instant a split spawns) — nudge apart along an arbitrary axis.
+          dx = 1;
+          dy = 0;
+          dist = 1;
+        }
+        const overlap = minDist - dist;
+        const nx = dx / dist;
+        const ny = dy / dist;
+        const aShare = b.mass / (a.mass + b.mass);
+        const bShare = a.mass / (a.mass + b.mass);
+        a.x -= nx * overlap * aShare;
+        a.y -= ny * overlap * aShare;
+        b.x += nx * overlap * bShare;
+        b.y += ny * overlap * bShare;
+      }
+    }
+    for (const cell of p.cells) {
+      const r = radiusFor(cell.mass);
+      cell.x = Math.max(r, Math.min(ARENA_WIDTH - r, cell.x));
+      cell.y = Math.max(r, Math.min(ARENA_HEIGHT - r, cell.y));
     }
   }
 
