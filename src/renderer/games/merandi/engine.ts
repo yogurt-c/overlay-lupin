@@ -50,6 +50,11 @@ import {
   EVENT_STARTING_GOLD_BONUS,
   POTENTIAL_GRADE_NAMES,
   POTENTIAL_REROLL_COST,
+  STARFORCE_MAX,
+  STARFORCE_SUCCESS_RATE,
+  STARFORCE_RESET_RISK_START,
+  STARFORCE_RESET_CHANCE,
+  starforceCost,
   rollJobName,
   settleFactor,
   specialEffectTier,
@@ -219,6 +224,8 @@ export class MerandiEngine {
         zone.lastMessage = '';
         zone.lastRerollMemberId = undefined;
         zone.lastRerollPotential = undefined;
+        zone.lastStarforceMemberId = undefined;
+        zone.lastStarforceLevel = undefined;
       } else {
         this.messageMsLeft.set(label, remaining);
       }
@@ -237,7 +244,7 @@ export class MerandiEngine {
       if (z.id === '') {
         z.id = id;
         z.name = name;
-        if (isApologyEventActive()) this.setMessage(z, `버그 사과 이벤트! 시작 골드 +${EVENT_STARTING_GOLD_BONUS}G`);
+        if (isApologyEventActive()) this.setMessage(z, `사과 이벤트: 시작골드 +${EVENT_STARTING_GOLD_BONUS}G`);
         return;
       }
     }
@@ -288,20 +295,38 @@ export class MerandiEngine {
     this.spawnQueue = tickets;
   }
 
-  /** One spawn ticket now means "every active corner gets one of these," not "roll a random corner" — see startWave's ticket count, which no longer multiplies by player count since this loop does that instead. Density per corner is deterministic, not an average that a bad run of dice could dodge. */
+  /**
+   * One spawn ticket means "every active corner gets one of these," not "roll a random corner" — see
+   * startWave's ticket count, which no longer multiplies by player count since this loop does that
+   * instead. Density per corner is deterministic, not an average that a bad run of dice could dodge.
+   *
+   * A boss is the one exception: it's a single shared raid target for the whole room, not a per-corner
+   * spawn — spawning one boss per active corner (the old behavior) made the boss HP bar (which only ever
+   * shows the first `kind === 'boss'` monster it finds, see draw.ts's drawBossHpBar) flicker back to full
+   * the moment one corner's copy died while others were still alive, reading as "the boss respawned."
+   * Its HP is scaled by activePlayerCount() so the total damage a full room needs to land stays the same
+   * as when N corners each fought their own full-HP copy — one shared boss shouldn't get proportionally
+   * easier just because more players are hitting it. It starts at t=0 and loops the shared perimeter
+   * (same speed as ever) so every corner gets it in range periodically as it passes by.
+   */
   private spawnMonster(kind: MonsterKind): void {
     const activeLabels = ZONE_LABELS.filter((l) => this.zones.get(l)!.id !== '');
     if (!activeLabels.length) return; // no one to defend against yet — hold off spawning
     const spec = MONSTER_KINDS[kind];
-    const hp = Math.round(
+    const baseHp = Math.round(
       BASE_MONSTER_HP * spec.hpMult * Math.pow(HP_GROWTH_PER_WAVE, hpGrowthExponent(this.wave)) * settleFactor(this.wave)
     );
+    if (kind === 'boss') {
+      const hp = baseHp * this.activePlayerCount();
+      this.monsters.push({ id: this.nextMonsterId++, t: 0, hp, maxHp: hp, kind, speed: spec.speedMult / LOOP_MS });
+      return;
+    }
     for (const label of activeLabels) {
       this.monsters.push({
         id: this.nextMonsterId++,
         t: ZONE_LABELS.indexOf(label) / 4,
-        hp,
-        maxHp: hp,
+        hp: baseHp,
+        maxHp: baseHp,
         kind,
         speed: spec.speedMult / LOOP_MS
       });
@@ -597,7 +622,7 @@ export class MerandiEngine {
   private placeDraw(zone: Zone, grade: number, arche: Archetype, job: string): boolean {
     const spec = GRADES[grade];
     const range = BASE_RANGE_PX * spec.rangeMult;
-    const member: UnitMember = { id: this.nextMemberId++, grade, arche, job, cooldownMs: 0, potential: rollPotential() };
+    const member: UnitMember = { id: this.nextMemberId++, grade, arche, job, cooldownMs: 0, potential: rollPotential({ arche, job }), starforce: 0 };
 
     let best = -1;
     let bestCoverage = -1;
@@ -672,16 +697,18 @@ export class MerandiEngine {
   }
 
   /** Costs the same as a draw (same wave-scaled formula) — finds the member by id anywhere in the zone's slots and re-rolls its potential (small chance to bump grade, always fresh lines) in place. */
-  private doRerollPotential(zone: Zone, memberId: number): void {
-    let target: UnitMember | null = null;
+  /** Finds a member anywhere in a zone's 36 slots by id — shared by doRerollPotential and doStarforce, both of which target "whatever unit is currently hovered" rather than a specific known slot. */
+  private findMember(zone: Zone, memberId: number): UnitMember | null {
     for (const slot of zone.slots) {
       if (!slot) continue;
       const found = slot.members.find((m) => m.id === memberId);
-      if (found) {
-        target = found;
-        break;
-      }
+      if (found) return found;
     }
+    return null;
+  }
+
+  private doRerollPotential(zone: Zone, memberId: number): void {
+    const target = this.findMember(zone, memberId);
     if (!target) {
       this.setMessage(zone, '대상 유닛을 찾을 수 없습니다.');
       return;
@@ -693,7 +720,7 @@ export class MerandiEngine {
     }
     zone.gold -= cost;
     const before = target.potential.grade;
-    target.potential = rerollPotential(target.potential);
+    target.potential = rerollPotential(target.potential, target);
     // Rides the quick-stream (see wire.ts) so a member sees the new potential immediately, not only once
     // the next full heavy-stream reassembly happens to catch up — cleared alongside lastMessage below.
     zone.lastRerollMemberId = target.id;
@@ -703,6 +730,43 @@ export class MerandiEngine {
     } else {
       this.setMessage(zone, '잠재능력을 재설정했습니다.');
     }
+  }
+
+  /**
+   * One starforce attempt on the currently hovered unit — see data.ts's starforceCost/
+   * STARFORCE_SUCCESS_RATE/STARFORCE_RESET_CHANCE for the actual numbers. A failed attempt at 10★+ has a
+   * further (much smaller) chance of resetting all the way back to 0★; below that, failure just does
+   * nothing besides spending the gold.
+   */
+  private doStarforce(zone: Zone, memberId: number): void {
+    const target = this.findMember(zone, memberId);
+    if (!target) {
+      this.setMessage(zone, '대상 유닛을 찾을 수 없습니다.');
+      return;
+    }
+    if (target.starforce >= STARFORCE_MAX) {
+      this.setMessage(zone, '이미 최대 강화입니다.');
+      return;
+    }
+    const cost = starforceCost(target.starforce, GRADES[target.grade].dmgMult);
+    if (zone.gold < cost) {
+      this.setMessage(zone, '골드가 부족합니다.');
+      return;
+    }
+    zone.gold -= cost;
+    const star = target.starforce;
+    if (Math.random() * 100 < STARFORCE_SUCCESS_RATE[star]) {
+      target.starforce = star + 1;
+      this.setMessage(zone, `★${target.starforce} 달성!`);
+    } else if (star >= STARFORCE_RESET_RISK_START && Math.random() * 100 < STARFORCE_RESET_CHANCE[star - STARFORCE_RESET_RISK_START]) {
+      target.starforce = 0;
+      this.setMessage(zone, '강화 실패... 초기화되었습니다.');
+    } else {
+      this.setMessage(zone, '강화 실패...');
+    }
+    // Rides the quick-stream (see wire.ts) so a member sees the new star count immediately, same reasoning as lastRerollMemberId/lastRerollPotential above.
+    zone.lastStarforceMemberId = target.id;
+    zone.lastStarforceLevel = target.starforce;
   }
 
   private doSellCombo(zone: Zone, arche: Archetype, maxGrade: number): void {
@@ -761,6 +825,8 @@ export class MerandiEngine {
           }
         } else if (cmd.type === 'rerollPotential') {
           this.doRerollPotential(zone, cmd.memberId);
+        } else if (cmd.type === 'starforce') {
+          this.doStarforce(zone, cmd.memberId);
         }
       }
     }

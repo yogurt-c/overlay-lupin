@@ -1,9 +1,7 @@
 import { beginSketchFrame, roughSegment } from '../../lib/sketch.js';
 import {
   ARCHETYPES,
-  ARCHETYPE_MAIN_STAT,
   ARCHETYPE_NAME,
-  ARCHETYPE_SUB_STAT,
   CELEBRATION_MIN_GRADE,
   GRADES,
   MAGE_SPLASH_RADIUS,
@@ -13,7 +11,10 @@ import {
   POTENTIAL_GRADE_NAMES,
   POTENTIAL_OPTION_NAME,
   SLOT_COUNT,
-  XENON_NAME,
+  STARFORCE_MAX,
+  STARFORCE_RESET_CHANCE,
+  STARFORCE_RESET_RISK_START,
+  STARFORCE_SUCCESS_RATE,
   computeMemberDamage,
   specialEffectTier
 } from './data.js';
@@ -399,21 +400,24 @@ function drawInspectPanel(ctx: CanvasRenderingContext2D, viewport: Viewport, wor
   if (!zone) return;
   const member = zone.slots.flatMap((s) => s?.members ?? []).find((m) => m.id === selection.memberId);
   if (!member) return;
-  // The heavy stream (units/monsters) can lag well behind a just-applied reroll — zone.lastRerollPotential
-  // rides the fast quick stream instead (see wire.ts/engine.ts's doRerollPotential) and wins here whenever
-  // it's for this exact unit, so the panel shows the real result immediately rather than the stale one.
+  // The heavy stream (units/monsters) can lag well behind a just-applied reroll/강화 — the
+  // lastReroll*/lastStarforce* quick-stream overrides (see wire.ts/engine.ts) win here whenever they're
+  // for this exact unit, so the panel shows the real result immediately rather than the stale one.
   const potential = zone.lastRerollMemberId === member.id && zone.lastRerollPotential ? zone.lastRerollPotential : member.potential;
-  const dmg = computeMemberDamage(zone.upLevels, { ...member, potential });
-  const statLine =
-    member.job === XENON_NAME
-      ? '주스탯 STR+DEX+LUK 평균'
-      : `주스탯 ${MAIN_STAT_NAME[ARCHETYPE_MAIN_STAT[member.arche]]} · 부스탯 ${MAIN_STAT_NAME[ARCHETYPE_SUB_STAT[member.arche]]}`;
+  const starforce = zone.lastStarforceMemberId === member.id && zone.lastStarforceLevel != null ? zone.lastStarforceLevel : member.starforce;
+  const dmg = computeMemberDamage(zone.upLevels, { ...member, potential, starforce });
+  const starforceLine =
+    starforce >= STARFORCE_MAX
+      ? `★${starforce}/${STARFORCE_MAX} (최대 강화)`
+      : starforce >= STARFORCE_RESET_RISK_START
+        ? `F 강화 (성공 ${STARFORCE_SUCCESS_RATE[starforce]}%, 초기화 ${STARFORCE_RESET_CHANCE[starforce - STARFORCE_RESET_RISK_START]}%)`
+        : `F 강화 (성공 ${STARFORCE_SUCCESS_RATE[starforce]}%)`;
   drawBottomPanel(ctx, viewport, member.job, [
-    `${ARCHETYPE_NAME[member.arche]} · 레어도 ${GRADES[member.grade].name}`,
-    statLine,
+    `${ARCHETYPE_NAME[member.arche]} · ${GRADES[member.grade].name} · ★${starforce}/${STARFORCE_MAX}`,
     `공격력 ${dmg.toFixed(1)}`,
-    `잠재능력: ${POTENTIAL_GRADE_NAMES[potential.grade]} (R 재설정)`,
-    ...potential.lines.map(formatPotentialLine)
+    `잠재: ${POTENTIAL_GRADE_NAMES[potential.grade]} (R 재설정)`,
+    potential.lines.map(formatPotentialLine).join(' · '),
+    starforceLine
   ]);
 }
 

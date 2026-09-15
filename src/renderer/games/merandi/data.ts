@@ -30,6 +30,79 @@ export const GRADES: GradeSpec[] = [
 /** 레전더리(5) 이상 — 후광·포일 스윕(draw.ts)과 맵 전체 축하 연출(engine.ts doDraw, draw.ts drawCelebrations) 둘 다 이 문턱을 공유한다. */
 export const CELEBRATION_MIN_GRADE = 5;
 
+/**
+ * MapleStory-style starforce — a THIRD, fully independent power axis on top of grade (dmgMult) and
+ * potential. Every unit starts at 0★; engine.ts's doStarforce spends gold on one attempt at a time,
+ * advancing toward STARFORCE_MAX. See starforceDmgMult for how it actually affects damage.
+ */
+export const STARFORCE_MAX = 15;
+/** The two stars at which damage smoothly reaches "one GRADES tier higher" (7★) and "two tiers higher" (14★) — see starforceDmgMult. */
+export const STARFORCE_MILESTONE_1 = 7;
+export const STARFORCE_MILESTONE_2 = 14;
+
+/**
+ * Success rate for the attempt FROM this star TO star+1, indexed 0..14. Three hand-picked segments,
+ * each roughly "1/3 the previous segment's level" per the design discussion: 0★-6★ (into the 1★-7★
+ * range) is the easy on-ramp, 7★-13★ drops to about a third of that, and the final 14★->15★ attempt
+ * (index 14) is deliberately the hardest — "도전의 영역."
+ */
+export const STARFORCE_SUCCESS_RATE: number[] = [
+  60, 57, 54, 51, 48, 45, 42, // 0★->1★ .. 6★->7★
+  10, 9, 9, 8, 8, 7, 7, // 7★->8★ .. 13★->14★
+  3 // 14★->15★
+];
+/** From this star onward, a FAILED attempt additionally risks resetting all the way back to 0★ — see STARFORCE_RESET_CHANCE and doStarforce. Below this star, a failure simply does nothing. */
+export const STARFORCE_RESET_RISK_START = 10;
+/** Indexed by (star - STARFORCE_RESET_RISK_START) — chance, GIVEN the attempt already failed, that it resets to 0★ instead of just doing nothing. Deliberately gentle (caps at 5% even at the very last attempt) so the real difficulty lives in the low success rate, not in compounding punishment on top of it. */
+export const STARFORCE_RESET_CHANCE: number[] = [1, 2, 3, 4, 5];
+
+const STARFORCE_COST_BASE = 20;
+const STARFORCE_COST_GROWTH = 1.35;
+/** Grade cost multiplier is dmgMult^this — 0.6 rather than a plain sqrt (0.5) so the increase stays barely noticeable for common grades but 초월 (dmgMult 20) ends up meaningfully pricier, not just "somewhat" pricier. */
+const STARFORCE_GRADE_COST_EXPONENT = 0.6;
+/** Cost of the single attempt FROM `star` TO star+1, for a unit of grade dmgMult `gradeDmgMult`. */
+export function starforceCost(star: number, gradeDmgMult: number): number {
+  return Math.round(STARFORCE_COST_BASE * Math.pow(STARFORCE_COST_GROWTH, star) * Math.pow(gradeDmgMult, STARFORCE_GRADE_COST_EXPONENT));
+}
+
+/**
+ * GRADES[gradeIndex].dmgMult for any real index, or an extrapolated value past the table's end (used
+ * only by starforceDmgMult below, for 신화/초월 units whose "one/two tiers higher" milestone target
+ * would otherwise fall off the end of GRADES) — continues the table's own last real step ratio
+ * (초월/신화's dmgMult ratio) rather than inventing an unrelated growth rate.
+ */
+function extrapolatedGradeDmgMult(index: number): number {
+  const maxIdx = GRADES.length - 1;
+  if (index <= maxIdx) return GRADES[index].dmgMult;
+  const lastStepRatio = GRADES[maxIdx].dmgMult / GRADES[maxIdx - 1].dmgMult;
+  return GRADES[maxIdx].dmgMult * Math.pow(lastStepRatio, index - maxIdx);
+}
+
+/**
+ * The unit's effective dmgMult at a given star count — NOT the flat GRADES[gradeIndex].dmgMult once
+ * starforce > 0. Smoothly (linearly) interpolates from the unit's own grade at 0★, through "one tier
+ * higher" at STARFORCE_MILESTONE_1 (7★), to "two tiers higher" at STARFORCE_MILESTONE_2 (14★), continuing
+ * the same slope one star further to 15★ — so there's no sudden jump right at a milestone, every star
+ * contributes a little, but the milestones land on an exact, meaningful checkpoint.
+ *
+ * Uses extrapolatedGradeDmgMult (not a raw GRADES lookup) for g1/g2 — clamping both to GRADES[maxIdx]
+ * would make every star from 7★ on a complete no-op for 신화 units and ALL 15 stars a no-op for 초월
+ * units (there's no real "one/two tiers higher" table entry for them), even though starforceCost still
+ * charges them the most of any grade. Extrapolating past the table keeps every grade's star count
+ * meaningfully increasing damage, at the same growth rate the table's own top step already implies.
+ */
+export function starforceDmgMult(gradeIndex: number, star: number): number {
+  const g0 = extrapolatedGradeDmgMult(gradeIndex);
+  const g1 = extrapolatedGradeDmgMult(gradeIndex + 1);
+  const g2 = extrapolatedGradeDmgMult(gradeIndex + 2);
+  if (star <= STARFORCE_MILESTONE_1) {
+    return g0 + (g1 - g0) * (star / STARFORCE_MILESTONE_1);
+  }
+  const span = STARFORCE_MILESTONE_2 - STARFORCE_MILESTONE_1;
+  const t = (star - STARFORCE_MILESTONE_1) / span; // > 1 for star === STARFORCE_MAX (15), continuing the same slope
+  return g1 + (g2 - g1) * t;
+}
+
 export const ARCHETYPES: Archetype[] = ['warrior', 'mage', 'archer', 'thief', 'pirate'];
 
 export const ARCHETYPE_NAME: Record<Archetype, string> = {
@@ -318,13 +391,24 @@ function potentialRelevantStats(member: Pick<UnitMember, 'arche' | 'job'>): Set<
 
 const MAIN_STAT_SET = new Set<string>(MAIN_STATS);
 
+/**
+ * The growth rate statConvert's toStat contributes at — mirrors exactly what a direct upgrade in that
+ * stat would be worth for this specific archetype (full LEVEL_GROWTH if it's the main stat, discounted
+ * SUB_GROWTH if it's the sub stat), never some other archetype's rate. rollPotentialLine only ever picks
+ * a toStat from potentialRelevantStats(member), so one of these two branches always matches.
+ */
+function statConvertRate(member: Pick<UnitMember, 'arche' | 'job'>, toStat: MainStat): number {
+  if (member.job === XENON_NAME) return LEVEL_GROWTH[toStat];
+  return toStat === ARCHETYPE_MAIN_STAT[member.arche] ? LEVEL_GROWTH[toStat] : SUB_GROWTH[toStat];
+}
+
 /** Potential's contribution to the damage multiplier — 'range'/'crit'/'killGold'/'sellRefund'/'jackpot' lines are applied at their own call sites in engine.ts, not here. */
 function potentialDamageBonus(upLevels: UpgradeLevels, member: Pick<UnitMember, 'arche' | 'job' | 'potential'>): number {
   const relevant = potentialRelevantStats(member);
   let bonus = 0;
   for (const line of member.potential.lines) {
     if (line.type === 'statConvert' && line.fromStat && line.toStat) {
-      bonus += Math.floor(upLevels[line.fromStat] / line.value) * LEVEL_GROWTH[line.toStat];
+      bonus += Math.floor(upLevels[line.fromStat] / line.value) * statConvertRate(member, line.toStat);
     } else if (MAIN_STAT_SET.has(line.type) && relevant.has(line.type as MainStat)) {
       bonus += line.value / 100;
     }
@@ -346,8 +430,8 @@ export function computeMemberMultiplier(upLevels: UpgradeLevels, member: Pick<Un
   return base + potentialDamageBonus(upLevels, member);
 }
 
-export function computeMemberDamage(upLevels: UpgradeLevels, member: Pick<UnitMember, 'arche' | 'job' | 'grade' | 'potential'>): number {
-  return BASE_DMG * GRADES[member.grade].dmgMult * computeMemberMultiplier(upLevels, member);
+export function computeMemberDamage(upLevels: UpgradeLevels, member: Pick<UnitMember, 'arche' | 'job' | 'grade' | 'potential' | 'starforce'>): number {
+  return BASE_DMG * starforceDmgMult(member.grade, member.starforce) * computeMemberMultiplier(upLevels, member);
 }
 
 /**
@@ -399,12 +483,21 @@ export const POTENTIAL_OPTION_VALUE: Record<PotentialOptionType, [number, number
   statConvert: [10, 8, 6, 4]
 };
 
-function rollPotentialLine(tier: number): PotentialLine {
+/**
+ * toStat is always constrained to potentialRelevantStats(member) — a statConvert line must only ever
+ * feed the unit's OWN main or sub stat, never an unrelated one (a warrior converting into free INT
+ * damage was a real bug: INT's growth rate is deliberately inflated to compensate for having no sub-stat
+ * coverage, and that compensation makes no sense once "borrowed" by an archetype that never sees it
+ * normally). fromStat can still be any of the 4 stats except toStat, representing spillover from
+ * whatever the zone happens to have invested in.
+ */
+function rollPotentialLine(tier: number, member: Pick<UnitMember, 'arche' | 'job'>): PotentialLine {
   const type = POTENTIAL_OPTION_TYPES[Math.floor(Math.random() * POTENTIAL_OPTION_TYPES.length)];
   if (type === 'statConvert') {
-    const fromStat = MAIN_STATS[Math.floor(Math.random() * MAIN_STATS.length)];
-    const rest = MAIN_STATS.filter((s) => s !== fromStat);
-    const toStat = rest[Math.floor(Math.random() * rest.length)];
+    const relevant = [...potentialRelevantStats(member)];
+    const toStat = relevant[Math.floor(Math.random() * relevant.length)];
+    const fromCandidates = MAIN_STATS.filter((s) => s !== toStat);
+    const fromStat = fromCandidates[Math.floor(Math.random() * fromCandidates.length)];
     return { type, value: POTENTIAL_OPTION_VALUE.statConvert[tier], fromStat, toStat };
   }
   return { type, value: POTENTIAL_OPTION_VALUE[type][tier] };
@@ -416,23 +509,23 @@ function rollPotentialLine(tier: number): PotentialLine {
  * Each line independently rolls its own option type — duplicates across the 3 lines are allowed and
  * simply add up (e.g. three STR lines stack).
  */
-export function rollPotentialLines(grade: number): PotentialLine[] {
+export function rollPotentialLines(grade: number, member: Pick<UnitMember, 'arche' | 'job'>): PotentialLine[] {
   const lines: PotentialLine[] = [];
   for (let i = 0; i < 3; i++) {
     const tier = i === 0 || grade === 0 ? grade : Math.random() < POTENTIAL_LINE_ESCAPE_CHANCE ? grade : grade - 1;
-    lines.push(rollPotentialLine(tier));
+    lines.push(rollPotentialLine(tier, member));
   }
   return lines;
 }
 
-export function rollPotential(): Potential {
-  return { grade: 0, lines: rollPotentialLines(0) };
+export function rollPotential(member: Pick<UnitMember, 'arche' | 'job'>): Potential {
+  return { grade: 0, lines: rollPotentialLines(0, member) };
 }
 
 /** Reroll: a shrinking-per-tier chance to bump grade up one step (capped at 레전더리), then always re-rolls all 3 lines fresh at whatever grade results. */
-export function rerollPotential(current: Potential): Potential {
+export function rerollPotential(current: Potential, member: Pick<UnitMember, 'arche' | 'job'>): Potential {
   const grade = current.grade < POTENTIAL_UPGRADE_CHANCE.length && Math.random() < POTENTIAL_UPGRADE_CHANCE[current.grade] ? current.grade + 1 : current.grade;
-  return { grade, lines: rollPotentialLines(grade) };
+  return { grade, lines: rollPotentialLines(grade, member) };
 }
 
 export interface MonsterSpec {
@@ -491,10 +584,10 @@ const SPAWN_CURVE_WAVES = 50;
 /**
  * Per-corner monster baseline — engine.ts's spawnMonster() spawns one of every ticket at EACH active
  * corner (not a random pick among them), so density per corner is always exactly this, regardless of
- * player count. 1p wave1 = 40, growing to 260 by wave 50 (raised from 210 — spawn counts felt too thin
- * after the deterministic-per-corner fix removed the variance that used to occasionally pad a corner out).
+ * player count. 1p wave1 = 40, growing to 350 by wave 50 (raised from 260 to fund 스타포스's much
+ * steeper gold costs — more monsters means more kills, which means more gold, alongside more challenge).
  */
-const SPAWN_GROWTH_PER_WAVE = (260 - 40) / (SPAWN_CURVE_WAVES - 1);
+const SPAWN_GROWTH_PER_WAVE = (350 - 40) / (SPAWN_CURVE_WAVES - 1);
 /**
  * From this wave on, spawn-count growth runs at SPAWN_TAPER_FACTOR of its normal rate instead of
  * continuing the full linear climb to 210. Reason: HP_GROWTH_PER_WAVE is already exponential, so late
