@@ -30,6 +30,12 @@ import type { CellInput, CellWorld, FoodDot, VirusDot } from './types.js';
 const MOVE_ACCEL = 0.6;
 const DRAG = 0.86;
 const BASE_MAX_SPEED = 2.6;
+/**
+ * Gentle homing accel applied to a player's non-main cells, once their split/pop launch has settled, closing
+ * the gap back to the player's biggest cell. The pieces are already carried along with the main blob (see
+ * `stepPlayerMovement`), so this only has to reel in the distance the launch opened up.
+ */
+const REJOIN_PULL_ACCEL = 0.3;
 /** Applied only to mass above `MIN_CELL_MASS`, so no blob ever idles its way down to nothing. */
 const MASS_DECAY = 0.9998;
 
@@ -67,7 +73,21 @@ function randomSpot(): { x: number; y: number } {
 }
 
 function newCell(x: number, y: number, mass: number): EngineCell {
-  return { id: `c${Math.random().toString(36).slice(2, 9)}`, x, y, vx: 0, vy: 0, mass, mergeAt: 0, launchTicksLeft: 0 };
+  return {
+    id: `c${Math.random().toString(36).slice(2, 9)}`,
+    x,
+    y,
+    vx: 0,
+    vy: 0,
+    mass,
+    mergeAt: 0,
+    launchTicksLeft: 0
+  };
+}
+
+/** A player's main blob: the biggest one. It's the only cell that steers, and the one the rest trail behind. */
+function mainCellOf(p: EnginePlayer): EngineCell {
+  return p.cells.reduce((biggest, c) => (c.mass > biggest.mass ? c : biggest), p.cells[0]);
 }
 
 /** The player's current input direction, or — failing that — a cell's own heading, for aiming a split/pop launch. */
@@ -194,11 +214,9 @@ export class CellEngine {
       }
       if (p.isBot) p.input = this.botInputFor(p);
       else this.handleSplit(p, now);
-      for (const cell of p.cells) {
-        this.stepCellMovement(p.input, cell);
-        this.decay(cell);
-      }
+      this.stepPlayerMovement(p);
       this.stepMerge(p, now);
+      this.stepSeparation(p);
     }
     this.stepEating();
     this.stepFood();
@@ -241,6 +259,57 @@ export class CellEngine {
     p.cells.push(...spawned);
   }
 
+  /**
+   * Moves one player's blobs for the tick. Only the main blob steers: every settled piece is carried along by
+   * exactly the main blob's own displacement and then nudged back toward it, so a split reads as one body with
+   * bits stuck to it rather than several cells marching in parallel — and no piece can ever be left behind by
+   * the main blob's speed. A piece still riding its launch momentum owns itself until that runs out.
+   */
+  private stepPlayerMovement(p: EnginePlayer): void {
+    const main = mainCellOf(p);
+    const fromX = main.x;
+    const fromY = main.y;
+    this.stepCellMovement(p.input, main);
+    this.decay(main);
+    const carryX = main.x - fromX;
+    const carryY = main.y - fromY;
+
+    for (const cell of p.cells) {
+      if (cell === main) continue;
+      if (cell.launchTicksLeft <= 0) {
+        cell.x += carryX;
+        cell.y += carryY;
+        this.pullTowardMain(cell, main);
+      }
+      this.stepCellMovement(NO_INPUT, cell);
+      this.decay(cell);
+    }
+  }
+
+  /**
+   * A gentle nudge toward the main blob, closing whatever gap a split's launch opened up. Once the piece is
+   * home it stops pulling and drops whatever inward speed it arrived with, so it rests against the main blob
+   * instead of grinding into it against `stepSeparation` every tick.
+   */
+  private pullTowardMain(cell: EngineCell, main: EngineCell): void {
+    const dx = main.x - cell.x;
+    const dy = main.y - cell.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 1) return;
+    const nx = dx / dist;
+    const ny = dy / dist;
+
+    if (dist > radiusFor(cell.mass) + radiusFor(main.mass)) {
+      cell.vx += nx * REJOIN_PULL_ACCEL;
+      cell.vy += ny * REJOIN_PULL_ACCEL;
+      return;
+    }
+    const inward = cell.vx * nx + cell.vy * ny;
+    if (inward <= 0) return;
+    cell.vx -= nx * inward;
+    cell.vy -= ny * inward;
+  }
+
   private stepCellMovement(input: CellInput, cell: EngineCell): void {
     const ax = (input.left ? -1 : 0) + (input.right ? 1 : 0);
     const ay = (input.up ? -1 : 0) + (input.down ? 1 : 0);
@@ -279,7 +348,13 @@ export class CellEngine {
     cell.mass = MIN_CELL_MASS + (cell.mass - MIN_CELL_MASS) * MASS_DECAY;
   }
 
-  /** Merges a player's own cells back together once their post-split cooldown has passed and they're touching. */
+  /**
+   * Merges a player's own cells back together once they're touching, either because the post-split cooldown
+   * has passed, or — regardless of the cooldown — because a pair never actually got away from each other in
+   * the first place (still touching once both have cleared their launch window). The latter covers a split
+   * that had nowhere to fly to (a wall, a corner) and would otherwise just sit stacked on its sibling,
+   * looking frozen, for the rest of `MERGE_COOLDOWN_MS`.
+   */
   private stepMerge(p: EnginePlayer, now: number): void {
     let mergedAny = true;
     while (mergedAny) {
@@ -289,7 +364,8 @@ export class CellEngine {
           const a = p.cells[i];
           const b = p.cells[j];
           if (now < a.mergeAt || now < b.mergeAt) continue;
-          if (Math.hypot(a.x - b.x, a.y - b.y) > (radiusFor(a.mass) + radiusFor(b.mass)) / 2) continue;
+          if (Math.hypot(a.x - b.x, a.y - b.y) > radiusFor(a.mass) + radiusFor(b.mass)) continue;
+
           const totalMass = a.mass + b.mass;
           a.x = (a.x * a.mass + b.x * b.mass) / totalMass;
           a.y = (a.y * a.mass + b.y * b.mass) / totalMass;
@@ -301,6 +377,49 @@ export class CellEngine {
           break merge;
         }
       }
+    }
+  }
+
+  /**
+   * Pushes any of a player's own cells that still overlap apart, edge to edge, after `stepMerge` has already
+   * folded together whatever pairs are actually eligible to merge this tick. Without this, a pair sitting out
+   * the rest of the merge cooldown (or a split still flying apart) just sits stacked on top of each other.
+   * The main blob never gives way; between two pieces, the heavier one gives way less.
+   */
+  private stepSeparation(p: EnginePlayer): void {
+    const main = mainCellOf(p);
+    for (let i = 0; i < p.cells.length; i++) {
+      for (let j = i + 1; j < p.cells.length; j++) {
+        const a = p.cells[i];
+        const b = p.cells[j];
+        const minDist = radiusFor(a.mass) + radiusFor(b.mass);
+        let dx = b.x - a.x;
+        let dy = b.y - a.y;
+        let dist = Math.hypot(dx, dy);
+        if (dist >= minDist) continue;
+        if (dist < 0.001) {
+          // Perfectly coincident (e.g. the instant a split spawns) — nudge apart along an arbitrary axis.
+          dx = 1;
+          dy = 0;
+          dist = 1;
+        }
+        const overlap = minDist - dist;
+        const nx = dx / dist;
+        const ny = dy / dist;
+        // The main blob is an anchor: a piece pressed against it slides around it instead of shoving it, or
+        // the player's steering would get nudged off course every tick by their own tail.
+        const aShare = b === main ? 1 : a === main ? 0 : b.mass / (a.mass + b.mass);
+        const bShare = 1 - aShare;
+        a.x -= nx * overlap * aShare;
+        a.y -= ny * overlap * aShare;
+        b.x += nx * overlap * bShare;
+        b.y += ny * overlap * bShare;
+      }
+    }
+    for (const cell of p.cells) {
+      const r = radiusFor(cell.mass);
+      cell.x = Math.max(r, Math.min(ARENA_WIDTH - r, cell.x));
+      cell.y = Math.max(r, Math.min(ARENA_HEIGHT - r, cell.y));
     }
   }
 
