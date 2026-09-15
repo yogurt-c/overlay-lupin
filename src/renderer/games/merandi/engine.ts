@@ -46,6 +46,8 @@ import {
   rollGradeWithPity,
   rollPotential,
   rerollPotential,
+  isApologyEventActive,
+  EVENT_STARTING_GOLD_BONUS,
   POTENTIAL_GRADE_NAMES,
   POTENTIAL_REROLL_COST,
   rollJobName,
@@ -132,7 +134,7 @@ function freshZone(label: ZoneLabel): Zone {
     id: '',
     label,
     name: '',
-    gold: DRAW_COST_BASE * 5, // enough for 5 draws at the base cost up front
+    gold: DRAW_COST_BASE * 5 + (isApologyEventActive() ? EVENT_STARTING_GOLD_BONUS : 0), // enough for 5 draws at the base cost up front, plus the apology event bonus while it's running
     kills: 0,
     upLevels: freshUpLevels(),
     slots: new Array<UnitStack | null>(SLOT_COUNT).fill(null),
@@ -213,7 +215,10 @@ export class MerandiEngine {
       const remaining = left - dtMs;
       if (remaining <= 0) {
         this.messageMsLeft.delete(label);
-        this.zones.get(label)!.lastMessage = '';
+        const zone = this.zones.get(label)!;
+        zone.lastMessage = '';
+        zone.lastRerollMemberId = undefined;
+        zone.lastRerollPotential = undefined;
       } else {
         this.messageMsLeft.set(label, remaining);
       }
@@ -232,6 +237,7 @@ export class MerandiEngine {
       if (z.id === '') {
         z.id = id;
         z.name = name;
+        if (isApologyEventActive()) this.setMessage(z, `버그 사과 이벤트! 시작 골드 +${EVENT_STARTING_GOLD_BONUS}G`);
         return;
       }
     }
@@ -688,6 +694,10 @@ export class MerandiEngine {
     zone.gold -= cost;
     const before = target.potential.grade;
     target.potential = rerollPotential(target.potential);
+    // Rides the quick-stream (see wire.ts) so a member sees the new potential immediately, not only once
+    // the next full heavy-stream reassembly happens to catch up — cleared alongside lastMessage below.
+    zone.lastRerollMemberId = target.id;
+    zone.lastRerollPotential = target.potential;
     if (target.potential.grade > before) {
       this.setMessage(zone, `잠재능력 승급! ${POTENTIAL_GRADE_NAMES[target.potential.grade]}`);
     } else {
