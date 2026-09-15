@@ -1,4 +1,4 @@
-import { jitter, roughSegment, seedFrom, wobble } from '../../lib/sketch.js';
+import { jitter, roughSegment } from '../../lib/sketch.js';
 import { ARENA_HEIGHT, ARENA_WIDTH, radiusFor } from './arena.js';
 import type { Squash, Swallow } from './effects.js';
 
@@ -77,11 +77,16 @@ export function drawVirus(ctx: CanvasRenderingContext2D, x: number, y: number, r
   ctx.restore();
 }
 
-/** Traces one blob's rim: a circle, plus its idle wobble, plus however hard it's currently squashed. */
+/**
+ * Traces one blob's rim: a plain circle, plus however hard it's currently squashed. Deliberately no idle
+ * jitter here — with a shared jitter generator that only re-rolls a few times a second (see `sketch.ts`), and
+ * a cast of blobs whose count keeps changing (splits, merges, bots), each cell's slice of that shared random
+ * stream shifts around from one re-roll to the next, reading as an idle shimmer rather than a steady shape.
+ * A plain circle stays visually still except when something (a squash) actually happens to it.
+ */
 function traceBlob(
   ctx: CanvasRenderingContext2D,
   radius: number,
-  seed: number,
   squash: Squash | undefined
 ): void {
   ctx.beginPath();
@@ -90,7 +95,7 @@ function traceBlob(
     const angle = (i / steps) * Math.PI * 2;
     const dx = Math.cos(angle);
     const dy = Math.sin(angle);
-    let rr = radius + wobble(seed, angle) * radius * 0.09 + jitter(radius * 0.035);
+    let rr = radius;
     if (squash) {
       // Flatten along whatever it ran into and bulge out the sides, so the volume reads as pushed around
       // rather than shrunk.
@@ -103,26 +108,20 @@ function traceBlob(
   ctx.closePath();
 }
 
-/**
- * A cell: a squishy, slowly wobbling blot — real cell-growing games read as alive because the membrane never
- * sits still, so on top of the hand-drawn ink jitter every vertex also rides a smooth traveling wave (`wobble`)
- * that keeps evolving between redraws, and a `squash` from `updateCellEffects` dents it against whatever it
- * just hit. `id` seeds that wave so two overlapping cells don't pulse in lockstep; `name` is whose cell this
- * is — not who's a bot.
- */
+/** A cell: a plain, still circle. `name` is whose cell this is — not who's a bot. */
 export function drawCell(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
   radius: number,
   color: string,
-  opts: { name?: string; id?: string; squash?: Squash } = {}
+  opts: { name?: string } = {}
 ): void {
-  const { name, id, squash } = opts;
+  const { name } = opts;
   ctx.save();
   ctx.translate(x, y);
 
-  traceBlob(ctx, radius, seedFrom(id ?? name ?? ''), squash);
+  traceBlob(ctx, radius, undefined);
   ctx.globalAlpha = 0.82;
   ctx.fillStyle = color;
   ctx.fill();
@@ -161,7 +160,7 @@ export function drawSwallow(ctx: CanvasRenderingContext2D, s: Swallow): void {
   // `traceBlob` bulges where it would otherwise flatten.
   const squash: Squash | undefined =
     dist < 0.001 ? undefined : { nx: dx / dist, ny: dy / dist, amount: -0.35 * (1 - t) };
-  traceBlob(ctx, radiusFor(s.mass) * (1 - t * 0.85), seedFrom('swallow'), squash);
+  traceBlob(ctx, radiusFor(s.mass) * (1 - t * 0.85), squash);
   ctx.globalAlpha = 0.82 * (1 - t);
   ctx.fillStyle = s.color;
   ctx.fill();

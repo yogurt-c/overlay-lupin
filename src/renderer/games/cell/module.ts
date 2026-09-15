@@ -36,7 +36,7 @@ class CellMatch implements GameMatch {
   ) {
     this.engine = isHost ? new CellEngine() : null;
     this.engine?.ensurePlayer(myId, myName);
-    // Squash/swallow state is module-level, so a previous match's leftovers would otherwise pop up in this one.
+    // Swallow state is module-level, so a previous match's leftovers would otherwise pop up in this one.
     resetCellEffects();
   }
 
