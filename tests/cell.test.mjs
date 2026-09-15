@@ -3,6 +3,7 @@
  * renderer output (`npm test` builds first). Same style as simulation.test.mjs.
  */
 import { CellEngine } from '../dist/renderer/games/cell/engine.js';
+import { resetCellEffects, updateCellEffects } from '../dist/renderer/games/cell/effects.js';
 import {
   ARENA_HEIGHT,
   ARENA_WIDTH,
@@ -102,6 +103,7 @@ function soleCell(engine, id) {
   e.step();
   e.players.get('small').respawnAt = Date.now() - 1; // force the delay to have already elapsed
   e.food.length = 0; // a random respawn spot can land on a pellet and eat it in the same tick
+  e.removePlayer('big'); // ...or land inside the big blob and get eaten again before the assertion below
   e.step();
   const snap = e.snapshot();
   const s = snap.players.find((p) => p.id === 'small');
@@ -158,6 +160,7 @@ function soleCell(engine, id) {
 {
   const e = new CellEngine();
   e.ensurePlayer('a', 'A');
+  e.food.length = 0; // a pellet landing under the blob would get eaten in the same tick and skew the total
   const a = soleCell(e, 'a');
   a.mass = SPLIT_MIN_MASS;
   Object.assign(a, { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT / 2 });
@@ -263,6 +266,23 @@ function soleCell(engine, id) {
   ];
   e.step();
   check('쿨다운이 끝나기 전엔 겹쳐도 합쳐지지 않는다', e.players.get('a').cells.length === 2, `cells=${e.players.get('a').cells.length}`);
+}
+
+// 16b. While a pair waits out that cooldown they're pushed apart instead of left stacked on each other.
+{
+  const e = new CellEngine();
+  e.ensurePlayer('a', 'A');
+  e.food.length = 0; // a pellet eaten after the separation step would grow the radius back into an overlap
+  const p = e.players.get('a');
+  p.cells = [
+    { id: 'x', x: 900, y: 600, vx: 0, vy: 0, mass: 20, mergeAt: Date.now() + MERGE_COOLDOWN_MS, launchTicksLeft: 0 },
+    { id: 'y', x: 901, y: 600, vx: 0, vy: 0, mass: 20, mergeAt: Date.now() + MERGE_COOLDOWN_MS, launchTicksLeft: 0 }
+  ];
+  e.step();
+  const [a, b] = e.players.get('a').cells;
+  const gap = Math.hypot(a.x - b.x, a.y - b.y);
+  const contact = radiusFor(a.mass) + radiusFor(b.mass);
+  check('합쳐지길 기다리는 동안에도 세포끼리 겹치지 않는다', gap >= contact - 0.01, `gap=${gap.toFixed(2)} contact=${contact.toFixed(2)}`);
 }
 
 // 17. A cell big enough to pop bursts into several pieces on touching a virus.
@@ -375,11 +395,96 @@ function soleCell(engine, id) {
   e.syncBotPopulation();
   const bot = Array.from(e.players.values()).find((p) => p.isBot);
   const botCell = bot.cells[0];
+  // Bots spawn anywhere, so pin this one down first — off a spawn near the right edge the pellet below would
+  // land outside the arena, where the bot can't reach it and has no reason to head right at all.
+  Object.assign(botCell, { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT / 2 });
   e.food.length = 0;
   e.food.push({ x: botCell.x + 200, y: botCell.y });
   const startX = botCell.x;
   for (let i = 0; i < 30; i++) e.step();
   check('봇은 가장 가까운 먹이 쪽으로 움직인다', botCell.x > startX, `${startX} -> ${botCell.x}`);
+}
+
+// 26. A blob driven into a wall squashes against it. The engine says nothing about impacts — the renderer
+// reads them back out of consecutive snapshots, so these run against that diff.
+{
+  resetCellEffects();
+  const e = new CellEngine();
+  e.ensurePlayer('a', 'A');
+  Object.assign(soleCell(e, 'a'), { x: ARENA_WIDTH - 60, y: ARENA_HEIGHT / 2 });
+  e.setInput('a', { ...NO_INPUT, right: true });
+  let hardest = 0;
+  for (let i = 0; i < 60; i++) {
+    e.step();
+    const { squashOf } = updateCellEffects(e.snapshot(), () => '#000');
+    hardest = Math.max(hardest, squashOf(soleCell(e, 'a').id)?.amount ?? 0);
+  }
+  check('벽에 부딪히면 세포가 눌린다', hardest > 0, `amount=${hardest.toFixed(2)}`);
+}
+
+// 27. A split piece coming back into contact with the main blob squashes against it too.
+{
+  resetCellEffects();
+  const e = new CellEngine();
+  e.food.length = 0;
+  e.ensurePlayer('a', 'A');
+  const p = e.players.get('a');
+  p.cells[0].mass = 120;
+  Object.assign(p.cells[0], { x: 900, y: 600 });
+  e.setInput('a', { ...NO_INPUT, right: true, split: true });
+  e.step();
+  updateCellEffects(e.snapshot(), () => '#000');
+  e.setInput('a', NO_INPUT);
+  let hardest = 0;
+  for (let i = 0; i < 200; i++) {
+    e.step();
+    const { squashOf } = updateCellEffects(e.snapshot(), () => '#000');
+    for (const c of p.cells) hardest = Math.max(hardest, squashOf(c.id)?.amount ?? 0);
+  }
+  check('세포끼리 부딪혀도 눌린다', hardest > 0, `amount=${hardest.toFixed(2)}`);
+}
+
+// 28. Merging hands the renderer a swallow to animate, aimed at the blob that took the mass on.
+{
+  resetCellEffects();
+  const e = new CellEngine();
+  e.food.length = 0;
+  e.ensurePlayer('a', 'A');
+  const p = e.players.get('a');
+  p.cells = [
+    { id: 'x', x: 900, y: 600, vx: 0, vy: 0, mass: 60, mergeAt: 0, launchTicksLeft: 0 },
+    { id: 'y', x: 930, y: 600, vx: 0, vy: 0, mass: 20, mergeAt: 0, launchTicksLeft: 0 }
+  ];
+  updateCellEffects(e.snapshot(), () => '#000');
+  e.step();
+  const { swallows } = updateCellEffects(e.snapshot(), () => '#000');
+  check('합쳐질 때 흡수되는 연출이 만들어진다', swallows.length === 1, `swallows=${swallows.length}`);
+  check(
+    '흡수 연출이 사라진 세포 자리에서 합친 세포 쪽으로 향한다',
+    // The snapshot rounds coordinates to a tenth, so the target can only match the engine's own x that closely.
+    swallows.length === 1 && swallows[0].x === 930 && Math.abs(swallows[0].toX - p.cells[0].x) < 0.1,
+    `${JSON.stringify(swallows[0])}`
+  );
+}
+
+// 29. A blob eaten by somebody else is not a merge, so it gets no swallow.
+{
+  resetCellEffects();
+  const e = new CellEngine();
+  e.food.length = 0;
+  e.ensurePlayer('a', 'A');
+  e.ensurePlayer('b', 'B');
+  const a = e.players.get('a');
+  const b = e.players.get('b');
+  a.cells = [
+    { id: 'a1', x: 900, y: 600, vx: 0, vy: 0, mass: 200, mergeAt: 0, launchTicksLeft: 0 },
+    { id: 'a2', x: 400, y: 300, vx: 0, vy: 0, mass: 200, mergeAt: 0, launchTicksLeft: 0 }
+  ];
+  b.cells = [{ id: 'b1', x: 900, y: 600, vx: 0, vy: 0, mass: 20, mergeAt: 0, launchTicksLeft: 0 }];
+  updateCellEffects(e.snapshot(), () => '#000');
+  e.step();
+  const { swallows } = updateCellEffects(e.snapshot(), () => '#000');
+  check('남에게 먹힌 세포는 흡수 연출을 만들지 않는다', swallows.length === 0, `swallows=${swallows.length}`);
 }
 
 console.log(failures === 0 ? '전부 통과' : `${failures}개 실패`);

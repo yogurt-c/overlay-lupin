@@ -1,5 +1,6 @@
 import { beginSketchFrame } from '../../lib/sketch.js';
-import { drawArenaBounds, drawArenaDots, drawCell, drawFoodDot, drawVirus } from './draw.js';
+import { drawArenaBounds, drawArenaDots, drawCell, drawFoodDot, drawSwallow, drawVirus } from './draw.js';
+import { updateCellEffects } from './effects.js';
 import { ARENA_HEIGHT, ARENA_WIDTH, VIEW_SIZE, VIRUS_RADIUS, radiusFor } from './arena.js';
 import type { Viewport } from '../types.js';
 import type { CellWorld } from './types.js';
@@ -77,12 +78,18 @@ export function renderCellScene(
 
   for (const virus of world.viruses) drawVirus(ctx, virus.x, virus.y, VIRUS_RADIUS);
 
+  const { squashOf, swallows } = updateCellEffects(world, (playerId) => colorFor(playerId, myId));
+  // Under the blobs, so a cell being absorbed reads as sliding in behind the one taking it in.
+  for (const s of swallows) drawSwallow(ctx, s);
+
   // Flatten every alive player's blobs into one list, smallest-first, so a big cell never hides one it's about to pass.
   const blobs = world.players
     .filter((p) => p.alive)
     .flatMap((p) => p.cells.map((c) => ({ ...c, color: colorFor(p.id, myId), name: p.name })))
     .sort((a, b) => a.mass - b.mass);
-  for (const b of blobs) drawCell(ctx, b.x, b.y, radiusFor(b.mass), b.color, b.name);
+  for (const b of blobs) {
+    drawCell(ctx, b.x, b.y, radiusFor(b.mass), b.color, { name: b.name, id: b.id, squash: squashOf(b.id) });
+  }
 
   ctx.restore();
 }

@@ -1,5 +1,6 @@
-import { jitter, roughSegment } from '../../lib/sketch.js';
-import { ARENA_HEIGHT, ARENA_WIDTH } from './arena.js';
+import { jitter, roughSegment, seedFrom, wobble } from '../../lib/sketch.js';
+import { ARENA_HEIGHT, ARENA_WIDTH, radiusFor } from './arena.js';
+import type { Squash, Swallow } from './effects.js';
 
 const HALO = 'rgba(255,255,255,0.85)';
 const NAME_COLOR = 'rgba(255,255,255,0.92)';
@@ -76,29 +77,52 @@ export function drawVirus(ctx: CanvasRenderingContext2D, x: number, y: number, r
   ctx.restore();
 }
 
-/** A cell: a wobbly ink blot, same hand-drawn technique as the soccer ball. `name` is whose cell this is — not who's a bot. */
+/** Traces one blob's rim: a circle, plus its idle wobble, plus however hard it's currently squashed. */
+function traceBlob(
+  ctx: CanvasRenderingContext2D,
+  radius: number,
+  seed: number,
+  squash: Squash | undefined
+): void {
+  ctx.beginPath();
+  const steps = 14;
+  for (let i = 0; i <= steps; i++) {
+    const angle = (i / steps) * Math.PI * 2;
+    const dx = Math.cos(angle);
+    const dy = Math.sin(angle);
+    let rr = radius + wobble(seed, angle) * radius * 0.09 + jitter(radius * 0.035);
+    if (squash) {
+      // Flatten along whatever it ran into and bulge out the sides, so the volume reads as pushed around
+      // rather than shrunk.
+      const along = dx * squash.nx + dy * squash.ny;
+      rr *= 1 - squash.amount * (0.55 * along * along - 0.3 * (1 - along * along));
+    }
+    if (i === 0) ctx.moveTo(dx * rr, dy * rr);
+    else ctx.lineTo(dx * rr, dy * rr);
+  }
+  ctx.closePath();
+}
+
+/**
+ * A cell: a squishy, slowly wobbling blot — real cell-growing games read as alive because the membrane never
+ * sits still, so on top of the hand-drawn ink jitter every vertex also rides a smooth traveling wave (`wobble`)
+ * that keeps evolving between redraws, and a `squash` from `updateCellEffects` dents it against whatever it
+ * just hit. `id` seeds that wave so two overlapping cells don't pulse in lockstep; `name` is whose cell this
+ * is — not who's a bot.
+ */
 export function drawCell(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
   radius: number,
   color: string,
-  name?: string
+  opts: { name?: string; id?: string; squash?: Squash } = {}
 ): void {
+  const { name, id, squash } = opts;
   ctx.save();
   ctx.translate(x, y);
 
-  ctx.beginPath();
-  const steps = 14;
-  for (let i = 0; i <= steps; i++) {
-    const angle = (i / steps) * Math.PI * 2;
-    const rr = radius + jitter(radius * 0.1);
-    const px = Math.cos(angle) * rr;
-    const py = Math.sin(angle) * rr;
-    if (i === 0) ctx.moveTo(px, py);
-    else ctx.lineTo(px, py);
-  }
-  ctx.closePath();
+  traceBlob(ctx, radius, seedFrom(id ?? name ?? ''), squash);
   ctx.globalAlpha = 0.82;
   ctx.fillStyle = color;
   ctx.fill();
@@ -115,5 +139,31 @@ export function drawCell(
     ctx.fillText(truncateName(name), 0, 0);
   }
 
+  ctx.restore();
+}
+
+/**
+ * A blob part-way through being swallowed by another: it slides into the one absorbing it while stretching
+ * along the way in and shrinking out of sight, so a merge reads as being sucked in rather than blinking out.
+ */
+export function drawSwallow(ctx: CanvasRenderingContext2D, s: Swallow): void {
+  // Ease out, so most of the travel happens early and the tail end lingers as it disappears.
+  const t = 1 - (1 - s.progress) * (1 - s.progress);
+  const x = s.x + (s.toX - s.x) * t;
+  const y = s.y + (s.toY - s.y) * t;
+  const dx = s.toX - s.x;
+  const dy = s.toY - s.y;
+  const dist = Math.hypot(dx, dy);
+
+  ctx.save();
+  ctx.translate(x, y);
+  // Stretched along the direction it's being pulled in — the same axis as a squash, but negative amount, so
+  // `traceBlob` bulges where it would otherwise flatten.
+  const squash: Squash | undefined =
+    dist < 0.001 ? undefined : { nx: dx / dist, ny: dy / dist, amount: -0.35 * (1 - t) };
+  traceBlob(ctx, radiusFor(s.mass) * (1 - t * 0.85), seedFrom('swallow'), squash);
+  ctx.globalAlpha = 0.82 * (1 - t);
+  ctx.fillStyle = s.color;
+  ctx.fill();
   ctx.restore();
 }
