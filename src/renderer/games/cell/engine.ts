@@ -8,12 +8,10 @@ import {
   FOOD_COUNT,
   FOOD_MASS,
   MAX_CELLS_PER_PLAYER,
-  MERGE_COOLDOWN_MS,
   MIN_CELL_MASS,
   RESPAWN_MS,
   SPLIT_LAUNCH_DRAG,
   SPLIT_LAUNCH_SPEED,
-  SPLIT_LAUNCH_TICKS,
   SPLIT_MIN_MASS,
   START_MASS,
   TARGET_POPULATION,
@@ -22,22 +20,54 @@ import {
   VIRUS_POP_MASS,
   VIRUS_POP_PIECES,
   VIRUS_RADIUS,
+  mergeCooldownFor,
   radiusFor
 } from './arena.js';
 import { computeBotInput, randomBotName } from './bot.js';
 import type { CellInput, CellWorld, FoodDot, VirusDot } from './types.js';
 
-const MOVE_ACCEL = 0.6;
+/** Fraction of the gap to the target velocity closed each tick when steering, at `START_MASS`. Divided by
+ * `inertiaFor` for anything heavier, so a big blob doesn't snap to its (already lower) top speed just as fast
+ * as a starting-size one reaches its own — the ramp itself has to drag, not just the ceiling it ramps toward. */
+const MOVE_EASE = 0.22;
+/** Idle friction at `START_MASS`, applied once `MOVE_EASE` has nothing to steer toward. */
 const DRAG = 0.86;
 const BASE_MAX_SPEED = 2.6;
+/** A hair of margin on top of a piece's own speed cap before it counts as "settled" rather than still
+ * launching — see `isLaunching` — so the switch doesn't flicker right at the threshold. */
+const LAUNCH_SPEED_MARGIN = 0.15;
 /**
  * Gentle homing accel applied to a player's non-main cells, once their split/pop launch has settled, closing
  * the gap back to the player's biggest cell. The pieces are already carried along with the main blob (see
  * `stepPlayerMovement`), so this only has to reel in the distance the launch opened up.
  */
 const REJOIN_PULL_ACCEL = 0.3;
+/** See `pullTowardMain` — absorbs a tick's worth of mass-decay shrinking the combined radius, so a piece
+ * already resting against the main blob doesn't get re-pulled and re-separated forever. */
+const REST_CONTACT_SLACK = 0.75;
 /** Applied only to mass above `MIN_CELL_MASS`, so no blob ever idles its way down to nothing. */
 const MASS_DECAY = 0.9998;
+
+/** How much mass resists a change in velocity — a real cell-growing game's bigger blobs read as pushing
+ * through something thicker: slower to speed up, slower to shed speed, on top of the lower top speed below,
+ * rather than just a slow-motion copy of a starting-size cell's snappiness. */
+function inertiaFor(mass: number): number {
+  return Math.sqrt(mass / START_MASS);
+}
+
+/** A blob's own speed ceiling — bigger mass tops out slower, same shape as `radiusFor`'s area-based growth. */
+function maxSpeedFor(mass: number): number {
+  return BASE_MAX_SPEED * Math.sqrt(START_MASS / mass);
+}
+
+/**
+ * True while a piece is still coasting on leftover split/virus-pop momentum, faster than its own mass would
+ * ever let it steer to on its own. Continuous and speed-based rather than a fixed tick count, so the settle
+ * reads as momentum fading out instead of a timer cutting it off; see `SPLIT_LAUNCH_DRAG`.
+ */
+function isLaunching(cell: EngineCell): boolean {
+  return Math.hypot(cell.vx, cell.vy) > maxSpeedFor(cell.mass) + LAUNCH_SPEED_MARGIN;
+}
 
 interface EngineCell {
   id: string;
@@ -48,8 +78,6 @@ interface EngineCell {
   mass: number;
   /** Earliest time this blob is allowed to remerge with a sibling from the same player. */
   mergeAt: number;
-  /** Ticks of post-split/pop momentum remaining — see `stepCellMovement`. */
-  launchTicksLeft: number;
 }
 
 interface EnginePlayer {
@@ -80,8 +108,7 @@ function newCell(x: number, y: number, mass: number): EngineCell {
     vx: 0,
     vy: 0,
     mass,
-    mergeAt: 0,
-    launchTicksLeft: 0
+    mergeAt: 0
   };
 }
 
@@ -247,12 +274,11 @@ export class CellEngine {
       const dir = facingDirection(p.input, cell);
       const half = cell.mass / 2;
       cell.mass = half;
-      cell.mergeAt = now + MERGE_COOLDOWN_MS;
+      cell.mergeAt = now + mergeCooldownFor(half);
       const twin = newCell(cell.x, cell.y, half);
       twin.vx = dir.x * SPLIT_LAUNCH_SPEED;
       twin.vy = dir.y * SPLIT_LAUNCH_SPEED;
-      twin.mergeAt = now + MERGE_COOLDOWN_MS;
-      twin.launchTicksLeft = SPLIT_LAUNCH_TICKS;
+      twin.mergeAt = now + mergeCooldownFor(half);
       spawned.push(twin);
       slots--;
     }
@@ -276,7 +302,7 @@ export class CellEngine {
 
     for (const cell of p.cells) {
       if (cell === main) continue;
-      if (cell.launchTicksLeft <= 0) {
+      if (!isLaunching(cell)) {
         cell.x += carryX;
         cell.y += carryY;
         this.pullTowardMain(cell, main);
@@ -290,6 +316,12 @@ export class CellEngine {
    * A gentle nudge toward the main blob, closing whatever gap a split's launch opened up. Once the piece is
    * home it stops pulling and drops whatever inward speed it arrived with, so it rests against the main blob
    * instead of grinding into it against `stepSeparation` every tick.
+   *
+   * The "home" check carries a bit of slack past the two blobs' exact combined radius. Without it, passive
+   * mass decay (both blobs shrink a little every tick — see `decay`) makes a piece that's already resting
+   * exactly on that boundary read as freshly "apart" again the very next tick, since the boundary itself just
+   * shrank out from under it — pulling it back in only for `stepSeparation` to shove it back out, forever,
+   * never actually settling.
    */
   private pullTowardMain(cell: EngineCell, main: EngineCell): void {
     const dx = main.x - cell.x;
@@ -299,7 +331,7 @@ export class CellEngine {
     const nx = dx / dist;
     const ny = dy / dist;
 
-    if (dist > radiusFor(cell.mass) + radiusFor(main.mass)) {
+    if (dist > radiusFor(cell.mass) + radiusFor(main.mass) + REST_CONTACT_SLACK) {
       cell.vx += nx * REJOIN_PULL_ACCEL;
       cell.vy += ny * REJOIN_PULL_ACCEL;
       return;
@@ -313,29 +345,27 @@ export class CellEngine {
   private stepCellMovement(input: CellInput, cell: EngineCell): void {
     const ax = (input.left ? -1 : 0) + (input.right ? 1 : 0);
     const ay = (input.up ? -1 : 0) + (input.down ? 1 : 0);
-    const launching = cell.launchTicksLeft > 0;
+    const maxSpeed = maxSpeedFor(cell.mass);
 
-    if (ax !== 0 || ay !== 0) {
-      const len = Math.hypot(ax, ay);
-      cell.vx += (ax / len) * MOVE_ACCEL;
-      cell.vy += (ay / len) * MOVE_ACCEL;
-    } else if (!launching) {
-      cell.vx *= DRAG;
-      cell.vy *= DRAG;
-    }
-    if (launching) {
+    if (isLaunching(cell)) {
+      // Still faster than this mass could ever steer to — coast it off with weak drag instead of snapping
+      // straight into the ease-toward-target physics below; see `isLaunching`.
       cell.vx *= SPLIT_LAUNCH_DRAG;
       cell.vy *= SPLIT_LAUNCH_DRAG;
-      cell.launchTicksLeft--;
-    }
-
-    const maxSpeed = BASE_MAX_SPEED * Math.sqrt(START_MASS / cell.mass);
-    // While launching, momentum is allowed past the usual mass-based cap — that's the whole point of firing forward.
-    const speedCap = launching ? Math.max(maxSpeed, SPLIT_LAUNCH_SPEED) : maxSpeed;
-    const speed = Math.hypot(cell.vx, cell.vy);
-    if (speed > speedCap) {
-      cell.vx = (cell.vx / speed) * speedCap;
-      cell.vy = (cell.vy / speed) * speedCap;
+    } else if (ax !== 0 || ay !== 0) {
+      const len = Math.hypot(ax, ay);
+      const ease = MOVE_EASE / inertiaFor(cell.mass);
+      cell.vx += ((ax / len) * maxSpeed - cell.vx) * ease;
+      cell.vy += ((ay / len) * maxSpeed - cell.vy) * ease;
+      // Guards float overshoot from the ease step above — the target itself is already capped at maxSpeed.
+      const speed = Math.hypot(cell.vx, cell.vy);
+      if (speed > maxSpeed) {
+        cell.vx = (cell.vx / speed) * maxSpeed;
+        cell.vy = (cell.vy / speed) * maxSpeed;
+      }
+    } else {
+      cell.vx *= DRAG;
+      cell.vy *= DRAG;
     }
 
     const r = radiusFor(cell.mass);
@@ -353,7 +383,7 @@ export class CellEngine {
    * has passed, or — regardless of the cooldown — because a pair never actually got away from each other in
    * the first place (still touching once both have cleared their launch window). The latter covers a split
    * that had nowhere to fly to (a wall, a corner) and would otherwise just sit stacked on its sibling,
-   * looking frozen, for the rest of `MERGE_COOLDOWN_MS`.
+   * looking frozen, for the rest of its `mergeCooldownFor` wait.
    */
   private stepMerge(p: EnginePlayer, now: number): void {
     let mergedAny = true;
@@ -501,8 +531,7 @@ export class CellEngine {
       const piece = newCell(cell.x, cell.y, pieceMass);
       piece.vx = Math.cos(angle) * VIRUS_LAUNCH_SPEED;
       piece.vy = Math.sin(angle) * VIRUS_LAUNCH_SPEED;
-      piece.mergeAt = now + MERGE_COOLDOWN_MS;
-      piece.launchTicksLeft = SPLIT_LAUNCH_TICKS;
+      piece.mergeAt = now + mergeCooldownFor(pieceMass);
       player.cells.push(piece);
     }
   }
