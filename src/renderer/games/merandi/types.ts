@@ -41,6 +41,12 @@ export interface UnitMember {
   job: string; // flavor-only display name
   cooldownMs: number;
   potential: Potential;
+  /**
+   * MapleStory-style starforce, 0-15 — a THIRD, independent power axis on top of grade and potential.
+   * See data.ts's starforceDmgMult (0/7/14-star grade-interpolated damage), starforceSuccessRate, and
+   * starforceResetChance (10☆+ failures can reset this back to 0) and engine.ts's doStarforce.
+   */
+  starforce: number;
 }
 
 /** One occupied slot in a zone's 6x6 grid — up to 3 members, any mix of grade/archetype (a slot is just a shared tile, not a "must match" stack). */
@@ -78,6 +84,9 @@ export interface Zone {
    */
   lastRerollMemberId?: number;
   lastRerollPotential?: Potential;
+  /** Same fast-feedback trick as lastRerollMemberId/lastRerollPotential, but for doStarforce() results — see engine.ts. */
+  lastStarforceMemberId?: number;
+  lastStarforceLevel?: number;
 }
 
 export interface Monster {
@@ -160,7 +169,8 @@ export type MerandiCommand =
   | { type: 'armSell' }
   | { type: 'cancel' }
   | { type: 'pick'; index: number } // upgrade: 1..4 (stat) · sell: 1..5 (archetype) then 1..8 (grade)
-  | { type: 'rerollPotential'; memberId: number }; // memberId is -1 as queued by input.ts — module.ts's step() fills in the real id from the current selection (or drops the command if nothing's selected) before it ever reaches the network
+  | { type: 'rerollPotential'; memberId: number } // memberId is -1 as queued by input.ts — module.ts's step() fills in the real id from the current selection (or drops the command if nothing's selected) before it ever reaches the network
+  | { type: 'starforce'; memberId: number }; // same -1-placeholder-resolved-by-selection pattern as rerollPotential
 
 export interface MerandiInput {
   commands: MerandiCommand[];

@@ -115,6 +115,13 @@ function buildQuickAtoms(world: MerandiWorld): unknown[] {
     } else {
       zoneAtom.push(-1);
     }
+    // Same trick for the just-starforced unit's new star count (see doStarforce) — comes right after the
+    // reroll block above, whatever length that turned out to be.
+    if (z.lastStarforceMemberId != null && z.lastStarforceLevel != null) {
+      zoneAtom.push(z.lastStarforceMemberId, z.lastStarforceLevel);
+    } else {
+      zoneAtom.push(-1);
+    }
     atoms.push(zoneAtom);
   });
   for (const c of world.celebrations) {
@@ -130,7 +137,7 @@ function buildHeavyAtoms(world: MerandiWorld): unknown[] {
       if (!slot || !slot.members.length) return;
       const flat: unknown[] = ['S', zi, si];
       for (const m of slot.members) {
-        flat.push(m.id, m.grade, ARCHETYPES.indexOf(m.arche), jobNameToId(m.job), Math.round(m.cooldownMs), ...encodePotential(m.potential));
+        flat.push(m.id, m.grade, ARCHETYPES.indexOf(m.arche), jobNameToId(m.job), Math.round(m.cooldownMs), m.starforce, ...encodePotential(m.potential));
       }
       atoms.push(flat);
     });
@@ -247,9 +254,18 @@ function decodeQuickAtoms(atoms: unknown[]): QuickState {
         pendingArche: pendingArcheIdx >= 0 ? ARCHETYPES[pendingArcheIdx] : null,
         lastMessage
       };
+      // The reroll block is either 1 element (-1, absent) or 14 (memberId + 13 potential fields) — the
+      // starforce block that follows starts right after however long that turned out to be.
+      let starforceStart = 14;
       if (rerollMemberId != null && rerollMemberId >= 0) {
         zone.lastRerollMemberId = rerollMemberId;
         zone.lastRerollPotential = decodePotential(raw.slice(14));
+        starforceStart = 27;
+      }
+      const starforceMemberId = raw[starforceStart];
+      if (starforceMemberId != null && starforceMemberId >= 0) {
+        zone.lastStarforceMemberId = starforceMemberId;
+        zone.lastStarforceLevel = raw[starforceStart + 1];
       }
       zonesByIdx.set(zi, zone);
     } else if (raw[0] === 'C') {
@@ -299,7 +315,7 @@ function decodeHeavyAtoms(atoms: unknown[]): HeavyState {
     if (tag === 'S') {
       const [, zi, si, ...rest] = raw;
       const members: UnitMember[] = [];
-      const STRIDE = 18; // 5 base fields + 13 potential fields (grade + 3 lines * (typeIdx, value, fromIdx, toIdx))
+      const STRIDE = 19; // 5 base fields + 1 starforce + 13 potential fields (grade + 3 lines * (typeIdx, value, fromIdx, toIdx))
       for (let k = 0; k + STRIDE - 1 < rest.length; k += STRIDE) {
         members.push({
           id: rest[k],
@@ -307,7 +323,8 @@ function decodeHeavyAtoms(atoms: unknown[]): HeavyState {
           arche: ARCHETYPES[rest[k + 2]],
           job: jobIdToName(rest[k + 3]),
           cooldownMs: rest[k + 4],
-          potential: decodePotential(rest.slice(k + 5, k + STRIDE))
+          starforce: rest[k + 5],
+          potential: decodePotential(rest.slice(k + 6, k + STRIDE))
         });
       }
       let slots = slotsByZoneIndex.get(zi);
