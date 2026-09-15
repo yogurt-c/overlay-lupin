@@ -69,6 +69,15 @@ export interface Zone {
   armed: 'upgrade' | 'sell' | null;
   pendingArche: Archetype | null;
   lastMessage: string;
+  /**
+   * The most recent doRerollPotential() result, riding the same TTL as lastMessage (cleared together in
+   * stepMessages) — carried on the fast quick-stream so a member sees their own reroll's new potential
+   * right away instead of waiting for the next full heavy-stream (unit data) reassembly, which can lag
+   * seconds behind at high entity counts. draw.ts's inspect panel prefers this over the live
+   * member.potential whenever the ids match and this is still fresh.
+   */
+  lastRerollMemberId?: number;
+  lastRerollPotential?: Potential;
 }
 
 export interface Monster {

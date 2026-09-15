@@ -399,7 +399,11 @@ function drawInspectPanel(ctx: CanvasRenderingContext2D, viewport: Viewport, wor
   if (!zone) return;
   const member = zone.slots.flatMap((s) => s?.members ?? []).find((m) => m.id === selection.memberId);
   if (!member) return;
-  const dmg = computeMemberDamage(zone.upLevels, member);
+  // The heavy stream (units/monsters) can lag well behind a just-applied reroll — zone.lastRerollPotential
+  // rides the fast quick stream instead (see wire.ts/engine.ts's doRerollPotential) and wins here whenever
+  // it's for this exact unit, so the panel shows the real result immediately rather than the stale one.
+  const potential = zone.lastRerollMemberId === member.id && zone.lastRerollPotential ? zone.lastRerollPotential : member.potential;
+  const dmg = computeMemberDamage(zone.upLevels, { ...member, potential });
   const statLine =
     member.job === XENON_NAME
       ? '주스탯 STR+DEX+LUK 평균'
@@ -408,8 +412,8 @@ function drawInspectPanel(ctx: CanvasRenderingContext2D, viewport: Viewport, wor
     `${ARCHETYPE_NAME[member.arche]} · 레어도 ${GRADES[member.grade].name}`,
     statLine,
     `공격력 ${dmg.toFixed(1)}`,
-    `잠재능력: ${POTENTIAL_GRADE_NAMES[member.potential.grade]} (R 재설정)`,
-    ...member.potential.lines.map(formatPotentialLine)
+    `잠재능력: ${POTENTIAL_GRADE_NAMES[potential.grade]} (R 재설정)`,
+    ...potential.lines.map(formatPotentialLine)
   ]);
 }
 

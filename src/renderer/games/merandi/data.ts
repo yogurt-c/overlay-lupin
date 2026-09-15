@@ -165,6 +165,19 @@ export const STACK_MAX = 3;
 /** Trims the kill-gold formula (see engine.ts's awardKillGold) so raising monster spawn counts doesn't automatically raise total gold income by the same amount — more monsters shouldn't just mean more money on top of more kills needed. */
 export const KILL_GOLD_SCALE = 0.8;
 
+/**
+ * One-off "sorry for the bugs" event (input-loss for non-host members, frequent disconnects, etc., all
+ * fixed by now) — a temporary starting-gold bump, active only through EVENT_END_DATE_ISO. There's no
+ * persistent per-player save data in this game (everything resets every match), so a real compensation
+ * mailbox isn't possible; this is the closest equivalent. Safe to delete this block (and its one call
+ * site in freshZone) once the date passes, or just let isApologyEventActive() go false on its own.
+ */
+const EVENT_END_DATE_ISO = '2026-09-22';
+export const EVENT_STARTING_GOLD_BONUS = 100;
+export function isApologyEventActive(): boolean {
+  return new Date() < new Date(EVENT_END_DATE_ISO);
+}
+
 export const DRAW_COST_BASE = 30;
 /** Keeps pace with the kill-reward curve (also +something per 10 waves) so the "kills needed per draw" ratio doesn't just get easier forever as waves escalate. */
 export function drawCost(wave: number): number {

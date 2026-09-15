@@ -35,10 +35,38 @@
  */
 import { ARCHETYPES, MAIN_STATS, POTENTIAL_OPTION_TYPES, SLOT_COUNT, jobIdToName, jobNameToId } from './data.js';
 import { ZONE_LABELS } from './field.js';
-import type { Celebration, MerandiWorld, Monster, MonsterKind, PotentialLine, Shot, UnitMember, UnitStack, Zone, ZoneLabel } from './types.js';
+import type { Celebration, MerandiWorld, Monster, MonsterKind, Potential, PotentialLine, Shot, UnitMember, UnitStack, Zone, ZoneLabel } from './types.js';
 
 const MONSTER_KIND_LIST: MonsterKind[] = ['normal', 'speed', 'tank', 'boss'];
 const ARMED_CODE: Record<'upgrade' | 'sell' | 'none', number> = { none: 0, upgrade: 1, sell: 2 };
+
+/** A unit's potential, flattened to 13 numbers (grade + 3 lines x 4 fields) — shared by the 'S' atom (every placed unit) and the 'Z' atom's lastRerollPotential (see wire.ts's header comment). */
+function encodePotential(p: Potential): unknown[] {
+  const out: unknown[] = [p.grade];
+  for (let li = 0; li < 3; li++) {
+    const line = p.lines[li];
+    if (!line) {
+      out.push(-1, 0, -1, -1);
+      continue;
+    }
+    out.push(POTENTIAL_OPTION_TYPES.indexOf(line.type), line.value, line.fromStat ? MAIN_STATS.indexOf(line.fromStat) : -1, line.toStat ? MAIN_STATS.indexOf(line.toStat) : -1);
+  }
+  return out;
+}
+
+function decodePotential(fields: number[]): Potential {
+  const lines: PotentialLine[] = [];
+  for (let li = 0; li < 3; li++) {
+    const base = 1 + li * 4;
+    const typeIdx = fields[base];
+    if (typeIdx < 0) continue;
+    const line: PotentialLine = { type: POTENTIAL_OPTION_TYPES[typeIdx], value: fields[base + 1] };
+    if (fields[base + 2] >= 0) line.fromStat = MAIN_STATS[fields[base + 2]];
+    if (fields[base + 3] >= 0) line.toStat = MAIN_STATS[fields[base + 3]];
+    lines.push(line);
+  }
+  return { grade: fields[0], lines };
+}
 
 /**
  * Leaves headroom under the ~1472-byte Ethernet MTU for the outer `{t:'ROOM_WORLD', roomId, payload}`
@@ -65,7 +93,7 @@ function buildQuickAtoms(world: MerandiWorld): unknown[] {
     ]
   ];
   world.zones.forEach((z, zi) => {
-    atoms.push([
+    const zoneAtom: unknown[] = [
       'Z',
       zi,
       z.id,
@@ -79,7 +107,15 @@ function buildQuickAtoms(world: MerandiWorld): unknown[] {
       z.pendingArche ? ARCHETYPES.indexOf(z.pendingArche) : -1,
       z.lastMessage,
       z.kills
-    ]);
+    ];
+    // Piggybacks the just-rerolled unit's fresh potential on the quick stream (see doRerollPotential) —
+    // absent (-1) once its shared TTL with lastMessage expires, same as any other feedback toast.
+    if (z.lastRerollMemberId != null && z.lastRerollPotential) {
+      zoneAtom.push(z.lastRerollMemberId, ...encodePotential(z.lastRerollPotential));
+    } else {
+      zoneAtom.push(-1);
+    }
+    atoms.push(zoneAtom);
   });
   for (const c of world.celebrations) {
     atoms.push(['C', c.id, ZONE_LABELS.indexOf(c.zoneLabel), c.grade, ARCHETYPES.indexOf(c.arche), Math.round(c.life), Math.round(c.maxLife)]);
@@ -94,15 +130,7 @@ function buildHeavyAtoms(world: MerandiWorld): unknown[] {
       if (!slot || !slot.members.length) return;
       const flat: unknown[] = ['S', zi, si];
       for (const m of slot.members) {
-        flat.push(m.id, m.grade, ARCHETYPES.indexOf(m.arche), jobNameToId(m.job), Math.round(m.cooldownMs), m.potential.grade);
-        for (let li = 0; li < 3; li++) {
-          const line = m.potential.lines[li];
-          if (!line) {
-            flat.push(-1, 0, -1, -1);
-            continue;
-          }
-          flat.push(POTENTIAL_OPTION_TYPES.indexOf(line.type), line.value, line.fromStat ? MAIN_STATS.indexOf(line.fromStat) : -1, line.toStat ? MAIN_STATS.indexOf(line.toStat) : -1);
-        }
+        flat.push(m.id, m.grade, ARCHETYPES.indexOf(m.arche), jobNameToId(m.job), Math.round(m.cooldownMs), ...encodePotential(m.potential));
       }
       atoms.push(flat);
     });
@@ -205,9 +233,9 @@ function decodeQuickAtoms(atoms: unknown[]): QuickState {
     if (raw[0] === 'M') {
       meta = raw;
     } else if (raw[0] === 'Z') {
-      const [, zi, id, name, gold, str, int, dex, luk, armedCode, pendingArcheIdx, lastMessage, kills] = raw;
+      const [, zi, id, name, gold, str, int, dex, luk, armedCode, pendingArcheIdx, lastMessage, kills, rerollMemberId] = raw;
       const label = ZONE_LABELS[zi] ?? ZONE_LABELS[0];
-      zonesByIdx.set(zi, {
+      const zone: Zone = {
         id,
         label,
         name,
@@ -218,7 +246,12 @@ function decodeQuickAtoms(atoms: unknown[]): QuickState {
         armed: armedCode === 1 ? 'upgrade' : armedCode === 2 ? 'sell' : null,
         pendingArche: pendingArcheIdx >= 0 ? ARCHETYPES[pendingArcheIdx] : null,
         lastMessage
-      });
+      };
+      if (rerollMemberId != null && rerollMemberId >= 0) {
+        zone.lastRerollMemberId = rerollMemberId;
+        zone.lastRerollPotential = decodePotential(raw.slice(14));
+      }
+      zonesByIdx.set(zi, zone);
     } else if (raw[0] === 'C') {
       const [, id, zi, grade, archeIdx, life, maxLife] = raw;
       celebrations.push({
@@ -266,25 +299,15 @@ function decodeHeavyAtoms(atoms: unknown[]): HeavyState {
     if (tag === 'S') {
       const [, zi, si, ...rest] = raw;
       const members: UnitMember[] = [];
-      const STRIDE = 18; // 5 base fields + 1 potential grade + 3 lines * (typeIdx, value, fromIdx, toIdx)
+      const STRIDE = 18; // 5 base fields + 13 potential fields (grade + 3 lines * (typeIdx, value, fromIdx, toIdx))
       for (let k = 0; k + STRIDE - 1 < rest.length; k += STRIDE) {
-        const lines: PotentialLine[] = [];
-        for (let li = 0; li < 3; li++) {
-          const base = k + 6 + li * 4;
-          const typeIdx = rest[base];
-          if (typeIdx < 0) continue;
-          const line: PotentialLine = { type: POTENTIAL_OPTION_TYPES[typeIdx], value: rest[base + 1] };
-          if (rest[base + 2] >= 0) line.fromStat = MAIN_STATS[rest[base + 2]];
-          if (rest[base + 3] >= 0) line.toStat = MAIN_STATS[rest[base + 3]];
-          lines.push(line);
-        }
         members.push({
           id: rest[k],
           grade: rest[k + 1],
           arche: ARCHETYPES[rest[k + 2]],
           job: jobIdToName(rest[k + 3]),
           cooldownMs: rest[k + 4],
-          potential: { grade: rest[k + 5], lines }
+          potential: decodePotential(rest.slice(k + 5, k + STRIDE))
         });
       }
       let slots = slotsByZoneIndex.get(zi);
