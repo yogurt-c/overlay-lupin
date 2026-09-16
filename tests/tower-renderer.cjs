@@ -57,6 +57,11 @@ app.whenReady().then(async () => {
   await waitFor(guest, `document.getElementById('score').textContent.includes('상대 차례')`, 'guest snapshot');
   await press(host, 'Space');
   await waitFor(guest, `document.getElementById('score').textContent.includes('내 차례')`, 'guest turn');
+  // An animal-change token travels the same client path and must not stall the aim it pauses.
+  const traded = await guest.webContents.executeJavaScript(`document.getElementById('score').textContent`);
+  await press(guest, 'KeyR');
+  await pause(200);
+  assert.equal(await guest.webContents.executeJavaScript(`document.getElementById('score').textContent`), traded);
   // Deliberate miss: client controls travel through the real preload + IPC + shell callbacks.
   await guest.webContents.executeJavaScript(`window.dispatchEvent(new KeyboardEvent('keydown',{code:'ArrowRight'}))`);
   await pause(1700);

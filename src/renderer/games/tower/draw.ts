@@ -1,11 +1,11 @@
 import { ANIMALS } from './animals.js';
 import { GEOMETRY } from './geometry.js';
 import { beginSketchFrame, roughStroke } from '../../lib/sketch.js';
-import { PLATFORM_WIDTH, PLATFORM_Y } from './types.js';
+import { PLATFORM_WIDTH, PLATFORM_Y, SWAP_TOKENS } from './types.js';
 import type { TowerWorld, Side } from './types.js';
 import type { Viewport } from '../types.js';
 
-const INK = '#14181a', OTHER = '#7a5433', PAPER = '#fffefa', HALO = 'rgba(255,255,255,0.94)';
+const INK = '#14181a', OTHER = '#7a5433', PAPER = '#fffefa', HALO = 'rgba(255,255,255,0.94)', FADED = '#a8ada6';
 const paths = new Map<string, Path2D>();
 function path(d: string): Path2D {
   let p = paths.get(d);
@@ -97,7 +97,11 @@ export function renderTower(ctx: CanvasRenderingContext2D, world: TowerWorld | n
   if (visual.cameraY < -20) text(ctx, `받침대 ↓ ${Math.round(-visual.cameraY)}`, 153, 248, 8);
   text(ctx, '다음', 282, 42, 8);
   drawAnimal(ctx, world.next, 282, 65, 0, INK, 24 / GEOMETRY[world.next].extent);
+  // Tokens read as pips so the count stays legible next to the preview it trades against.
+  const left = world.swaps[side];
+  text(ctx, 'R 변경', 282, 92, 8, left > 0 ? INK : FADED);
+  text(ctx, '●'.repeat(left) + '○'.repeat(SWAP_TOKENS - left), 282, 103, 8, left > 0 ? INK : FADED);
   if (world.phase !== 'over') text(ctx, world.phase === 'fall' ? '균형 잡는 중…' : world.side === side ? ANIMALS[world.kind].label : vsBot ? '봇이 놓는 중' : '상대가 놓는 중', 160, 45, 9);
-  text(ctx, '← → 이동 · ↑ ↓ 회전 · Space 놓기', 153, 270, 8);
+  text(ctx, '← → 이동 · ↑ ↓ 회전 · Space 놓기 · R 변경', 153, 270, 8);
   ctx.restore();
 }

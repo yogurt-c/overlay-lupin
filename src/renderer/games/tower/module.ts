@@ -36,13 +36,16 @@ export class TowerMatch implements GameMatch {
       if (this.aimTurn !== w.turn) {
         this.aimTurn = w.turn; this.aim = { x: w.x, angle: w.angle }; this.pending = null;
       }
-      if (!this.pending?.drop && (input.left || input.right || input.rotate || input.rotateBack || input.drop)) {
+      // Spending a token the world no longer credits would only stall the aim on an ack that changes nothing.
+      const swap = !!input.swap && w.swaps[this.side] > 0;
+      if (!this.pending?.drop && !this.pending?.swap
+        && (input.left || input.right || input.rotate || input.rotateBack || input.drop || swap)) {
         this.aim.x = clampX(this.aim.x + (Number(input.right) - Number(input.left)) * 1.5);
         if (input.rotate || input.rotateBack) {
           const direction = Number(!!input.rotate) - Number(!!input.rotateBack);
           this.aim.angle = wrapAngle(this.aim.angle + direction * Math.PI / 12);
         }
-        const command = { seq: ++this.seq, turn: w.turn, ...this.aim, drop: !!input.drop };
+        const command = { seq: ++this.seq, turn: w.turn, ...this.aim, drop: !!input.drop, swap };
         if (this.engine) this.engine.command(this.side, command);
         else this.pending = command;
       }
@@ -98,7 +101,7 @@ export class TowerMatch implements GameMatch {
 
 export const towerModule: GameModule = {
   id: 'tower', label: '동물탑',
-  hint: '← → 이동 · ↑ ↓ 회전 · Space 놓기 · 번갈아 쌓고 떨어뜨리면 패배 · 혼자하기는 봇 대전',
+  hint: '← → 이동 · ↑ ↓ 회전 · Space 놓기 · R 동물 변경(3회) · 번갈아 쌓고 떨어뜨리면 패배 · 혼자하기는 봇 대전',
   createMatch: isHost => new TowerMatch(isHost),
   createSoloMatch: () => new TowerMatch(true, true),
   createInputSource

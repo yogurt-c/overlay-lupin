@@ -1,9 +1,9 @@
 import type { TowerInput } from './types.js';
 export function createInputSource(target: Window): { read(): TowerInput; clear(): void } {
   const held = new Set<string>();
-  let rotate = false, rotateBack = false, drop = false;
-  const keys = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space', 'KeyA', 'KeyD', 'KeyW', 'KeyS']);
-  const clear = () => { held.clear(); rotate = rotateBack = drop = false; };
+  let rotate = false, rotateBack = false, drop = false, swap = false;
+  const keys = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space', 'KeyA', 'KeyD', 'KeyW', 'KeyS', 'KeyR']);
+  const clear = () => { held.clear(); rotate = rotateBack = drop = swap = false; };
   target.addEventListener('keydown', e => {
     if (!keys.has(e.code)) return;
     e.preventDefault();
@@ -11,6 +11,7 @@ export function createInputSource(target: Window): { read(): TowerInput; clear()
       if (e.code === 'ArrowUp' || e.code === 'KeyW') rotate = true;
       if (e.code === 'ArrowDown' || e.code === 'KeyS') rotateBack = true;
       if (e.code === 'Space') drop = true;
+      if (e.code === 'KeyR') swap = true;
     }
     held.add(e.code);
   });
@@ -19,8 +20,8 @@ export function createInputSource(target: Window): { read(): TowerInput; clear()
   return {
     clear,
     read: () => {
-      const input = { left: held.has('ArrowLeft') || held.has('KeyA'), right: held.has('ArrowRight') || held.has('KeyD'), rotate, rotateBack, drop };
-      rotate = rotateBack = drop = false;
+      const input = { left: held.has('ArrowLeft') || held.has('KeyA'), right: held.has('ArrowRight') || held.has('KeyD'), rotate, rotateBack, drop, swap };
+      rotate = rotateBack = drop = swap = false;
       return input;
     }
   };

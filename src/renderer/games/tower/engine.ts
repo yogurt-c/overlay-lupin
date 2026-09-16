@@ -1,7 +1,7 @@
 import { planck } from '../../lib/tower-physics.js';
 import { ANIMALS } from './animals.js';
 import { bodyBounds, createAnimalBody, GEOMETRY, METRES_PER_PIXEL, SURFACE } from './geometry.js';
-import { DROP_MAX_X, DROP_MIN_X, MAX_ANIMALS, PLATFORM_WIDTH, PLATFORM_Y } from './types.js';
+import { DROP_MAX_X, DROP_MIN_X, MAX_ANIMALS, PLATFORM_WIDTH, PLATFORM_Y, SWAP_TOKENS } from './types.js';
 import type { AimCommand, Side, TowerWorld } from './types.js';
 
 /** Chosen so a piece lands at the same speed the hand-tuned drop height was built around. */
@@ -26,7 +26,7 @@ export function validCommand(v: unknown): v is AimCommand {
   if (!v || typeof v !== 'object') return false;
   const c = v as AimCommand;
   return Number.isSafeInteger(c.seq) && c.seq >= 0 && Number.isSafeInteger(c.turn) && c.turn >= 0
-    && Number.isFinite(c.x) && Number.isFinite(c.angle) && typeof c.drop === 'boolean';
+    && Number.isFinite(c.x) && Number.isFinite(c.angle) && typeof c.drop === 'boolean' && typeof c.swap === 'boolean';
 }
 
 export class TowerEngine {
@@ -51,7 +51,8 @@ export class TowerEngine {
     this.platform.createFixture(
       planck.Box(PLATFORM_WIDTH / 2 * METRES_PER_PIXEL, 5 * METRES_PER_PIXEL), { ...SURFACE });
     this.world = { tick: 0, turn: 0, side: 0, phase: 'aim', kind: 0, next: this.pick(), x: 160,
-      y: 100, angle: 0, score: 0, loser: null, complete: false, ack: -1, bodies: [] };
+      y: 100, angle: 0, score: 0, loser: null, complete: false, ack: -1,
+      swaps: [SWAP_TOKENS, SWAP_TOKENS], bodies: [] };
     this.updateSpawn();
   }
 
@@ -80,6 +81,12 @@ export class TowerEngine {
     if (this.world.phase !== 'aim' || side !== this.world.side || value.turn !== this.world.turn) return;
     this.world.x = clampX(value.x);
     this.world.angle = wrapAngle(value.angle);
+    // A token trades the waiting animal for the preview, so the cost is always visible before it is paid.
+    if (value.swap && this.world.swaps[side] > 0) {
+      const swaps: [number, number] = [...this.world.swaps];
+      swaps[side]--;
+      this.world = { ...this.world, swaps, kind: this.world.next, next: this.world.kind };
+    }
     if (!value.drop) return;
     this.updateSpawn();
     const { kind, x, y, angle } = this.world;
@@ -156,7 +163,7 @@ export class TowerEngine {
   get isOver(): boolean { return this.world.phase === 'over' && this.overTicks >= 240; }
 
   snapshot(): TowerWorld {
-    return { ...this.world, bodies: this.animals.map(({ body, kind, owner }) => {
+    return { ...this.world, swaps: [...this.world.swaps], bodies: this.animals.map(({ body, kind, owner }) => {
       const position = body.getPosition();
       return [kind, owner, position.x / METRES_PER_PIXEL, position.y / METRES_PER_PIXEL, wrapAngle(body.getAngle())];
     }) };

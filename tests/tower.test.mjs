@@ -12,7 +12,8 @@ import { WorldAssembler, encodeWorld } from '../dist/renderer/games/tower/wire.j
 import { cameraTargetY } from '../dist/renderer/games/tower/draw.js';
 import { createInputSource } from '../dist/renderer/games/tower/input.js';
 
-const command = (turn = 0, seq = 1, x = 160, angle = 0) => ({ seq, turn, x, angle, drop: true });
+const command = (turn = 0, seq = 1, x = 160, angle = 0) => ({ seq, turn, x, angle, drop: true, swap: false });
+const swapCommand = (turn, seq) => ({ seq, turn, x: 160, angle: 0, drop: false, swap: true });
 /** Physics runs in metres; every assertion below is written in the game's pixels. */
 const makeBody = (kind, x = 0, y = 0, angle = 0) =>
   createAnimalBody(planck.World({ gravity: planck.Vec2(0, 0) }), kind, x, y, angle);
@@ -79,9 +80,58 @@ test('drop commands reject wrong player, stale turns, duplicates and invalid val
 
 test('host clamps aim and normalizes rotations', () => {
   const e = new TowerEngine();
-  e.command(0, { seq: 1, turn: 0, x: 1e9, angle: 33 * Math.PI, drop: false });
+  e.command(0, { seq: 1, turn: 0, x: 1e9, angle: 33 * Math.PI, drop: false, swap: false });
   assert.equal(e.snapshot().x, 280);
   assert.ok(Math.abs(e.snapshot().angle) <= Math.PI);
+});
+
+test('animal-change tokens trade the waiting animal for the preview, three times each', () => {
+  const e = new TowerEngine(false, 7);
+  const start = e.snapshot();
+  assert.deepEqual(start.swaps, [3, 3]);
+  e.command(0, swapCommand(0, 1));
+  let w = e.snapshot();
+  assert.equal(w.kind, start.next); assert.equal(w.next, start.kind);
+  assert.deepEqual(w.swaps, [2, 3]);
+  e.step();
+  w = e.snapshot();
+  assert.ok(Math.abs(w.y + GEOMETRY[w.kind].radius - (PLATFORM_Y - 38)) < 0.001, 'spawn height follows the new animal');
+  // Trading back is allowed, and costs a second token.
+  e.command(0, swapCommand(0, 2));
+  assert.equal(e.snapshot().kind, start.kind);
+  assert.deepEqual(e.snapshot().swaps, [1, 3]);
+  e.command(0, swapCommand(0, 3));
+  const exhausted = e.snapshot();
+  assert.deepEqual(exhausted.swaps, [0, 3]);
+  e.command(0, swapCommand(0, 4));
+  assert.equal(e.snapshot().kind, exhausted.kind);
+  assert.deepEqual(e.snapshot().swaps, [0, 3]);
+});
+
+test('a token is only spendable on your own live turn', () => {
+  const e = new TowerEngine(false, 7);
+  e.command(1, swapCommand(0, 1));
+  assert.deepEqual(e.snapshot().swaps, [3, 3]);
+  e.command(0, swapCommand(9, 2));
+  assert.deepEqual(e.snapshot().swaps, [3, 3]);
+  const before = e.snapshot();
+  e.command(0, command(0, 3));
+  assert.equal(e.snapshot().phase, 'fall');
+  e.command(0, swapCommand(0, 4));
+  assert.deepEqual(e.snapshot().swaps, [3, 3]);
+  assert.equal(e.snapshot().kind, before.kind);
+  untilSettled(e);
+  e.command(1, swapCommand(1, 5));
+  assert.deepEqual(e.snapshot().swaps, [3, 2]);
+});
+
+test('a token spent with the drop places the animal it was traded for', () => {
+  const e = new TowerEngine(false, 11);
+  const start = e.snapshot();
+  e.command(0, { seq: 1, turn: 0, x: 160, angle: 0, drop: true, swap: true });
+  assert.equal(e.animals.length, 1);
+  assert.equal(e.animals[0].kind, start.next);
+  assert.deepEqual(e.snapshot().swaps, [2, 3]);
 });
 
 test('missing the platform loses; result stays visible before match completion', () => {
@@ -149,6 +199,21 @@ test('lost snapshot chunk is repaired by a new complete cycle, without mixing ti
   assert.equal(a.ingest(old[0]), null);
 });
 
+test('token counters survive the wire and reject impossible values', () => {
+  const e = new TowerEngine(false, 3);
+  e.command(0, swapCommand(0, 1));
+  assert.deepEqual(new WorldAssembler().ingest(encodeWorld(e.snapshot())[0]).swaps, [2, 3]);
+  const w = e.snapshot();
+  for (const swaps of [[4, 3], [-1, 3], [2], [2, 3, 3], [1.5, 3], 2, null]) {
+    const packet = encodeWorld({ ...w, tick: 5 })[0];
+    packet.world.swaps = swaps;
+    assert.equal(new WorldAssembler().ingest(packet), null, JSON.stringify(swaps));
+  }
+  const missing = encodeWorld({ ...w, tick: 6 });
+  delete missing[0].world.swaps;
+  assert.equal(new WorldAssembler().ingest(missing[0]), null);
+});
+
 test('client retains a drop through a lost send; host accepts it exactly once and acknowledges', () => {
   const host = new TowerMatch(true), guest = new TowerMatch(false);
   host.step({ ...NO_INPUT, drop: true });
@@ -168,16 +233,45 @@ test('client retains a drop through a lost send; host accepts it exactly once an
   assert.equal(guest.hud().status.split(' · ')[1], host.hud().status.split(' · ')[1]);
 });
 
+test('client sends one swap, holds it until acknowledged, and stops asking once spent out', () => {
+  const host = new TowerMatch(true), guest = new TowerMatch(false);
+  const relay = () => { host.step(NO_INPUT); guest.applyOpponentPacket(host.buildOutgoingPacket()); guest.step(NO_INPUT); };
+  host.step({ ...NO_INPUT, drop: true });
+  for (let i = 0; i < 200; i++) relay();
+  assert.match(guest.hud().status, /내 차례/);
+  guest.step({ ...NO_INPUT, swap: true });
+  const sent = guest.buildOutgoingPacket();
+  assert.equal(sent.cmd.swap, true); assert.equal(sent.cmd.drop, false);
+  // Aiming stays parked on the unacknowledged trade, so a lost packet can never spend two tokens.
+  guest.step({ ...NO_INPUT, left: true, rotate: true });
+  assert.deepEqual(guest.buildOutgoingPacket(), sent);
+  host.applyOpponentPacket(sent); host.applyOpponentPacket(sent); host.step(NO_INPUT);
+  assert.deepEqual(host.buildOutgoingPacket().world.swaps, [3, 2]);
+  guest.applyOpponentPacket(host.buildOutgoingPacket());
+  assert.equal(guest.buildOutgoingPacket().cmd, null);
+  for (let i = 0; i < 2; i++) {
+    guest.step({ ...NO_INPUT, swap: true });
+    host.applyOpponentPacket(guest.buildOutgoingPacket());
+    host.step(NO_INPUT);
+    guest.applyOpponentPacket(host.buildOutgoingPacket());
+  }
+  assert.deepEqual(host.buildOutgoingPacket().world.swaps, [3, 0]);
+  guest.step({ ...NO_INPUT, swap: true });
+  assert.equal(guest.buildOutgoingPacket().cmd, null, 'an empty wallet sends nothing');
+});
+
 test('keyboard actions are edge triggered and clear on blur', () => {
   const target = new EventTarget(), input = createInputSource(target);
   function key(type, code, repeat = false) {
     const e = new Event(type, { cancelable: true }); Object.assign(e, { code, repeat }); target.dispatchEvent(e);
   }
   key('keydown', 'Space'); key('keydown', 'ArrowUp'); key('keydown', 'ArrowLeft');
-  assert.deepEqual(input.read(), { left: true, right: false, rotate: true, rotateBack: false, drop: true });
+  assert.deepEqual(input.read(), { left: true, right: false, rotate: true, rotateBack: false, drop: true, swap: false });
   key('keydown', 'Space', true); assert.equal(input.read().drop, false);
   assert.equal(input.read().rotate, false);
   key('keyup', 'Space'); key('keydown', 'Space'); assert.equal(input.read().drop, true);
+  key('keydown', 'KeyR'); assert.equal(input.read().swap, true); assert.equal(input.read().swap, false);
+  key('keydown', 'KeyR', true); assert.equal(input.read().swap, false);
   target.dispatchEvent(new Event('blur')); assert.deepEqual(input.read(), NO_INPUT);
   key('keydown', 'Space'); input.clear(); assert.deepEqual(input.read(), NO_INPUT);
 });
@@ -268,6 +362,32 @@ test('bot placement is based only on the snapshot, reproducible with a seed and 
   assert.ok(differs); assert.equal(JSON.stringify(world), original);
   const plan = planPlacement(world, () => 0.5);
   assert.ok(plan.x >= 40 && plan.x <= 280);
+});
+
+test('bot spends a token when the preview is clearly the better animal, and only once', () => {
+  const engine = new TowerEngine(false, 5);
+  engine.command(0, command()); untilSettled(engine);
+  const base = engine.snapshot();
+  assert.equal(base.side, 1);
+  const scores = ANIMALS.map((_, kind) => planPlacement(base, () => 0.5, kind).score);
+  const worst = scores.indexOf(Math.min(...scores)), best = scores.indexOf(Math.max(...scores));
+  assert.ok(scores[best] - scores[worst] > 5, 'the seeded board must actually favour one animal');
+  let world = { ...base, kind: worst, next: best };
+  const bot = new TowerBot(11);
+  let swaps = 0, dropped = false;
+  for (let tick = 0; tick < 800 && !dropped; tick++) {
+    const action = bot.step(world);
+    if (!action) continue;
+    if (action.swap) { swaps++; world = { ...world, kind: world.next, next: world.kind, swaps: [3, world.swaps[1] - 1] }; }
+    world = { ...world, x: action.x, angle: action.angle };
+    dropped = action.drop;
+  }
+  assert.equal(swaps, 1, 'one trade, never a loop');
+  assert.equal(world.kind, best);
+  assert.ok(dropped, 'the trade must not stall the turn');
+  const frugal = new TowerBot(11);
+  const spent = { ...base, kind: worst, next: best, swaps: [3, 0] };
+  for (let tick = 0; tick < 200; tick++) assert.notEqual(frugal.step(spent)?.swap, true, 'no trading without tokens');
 });
 
 test('bot usually supports a second animal without stalling or bypassing physics', () => {

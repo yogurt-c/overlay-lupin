@@ -24,9 +24,12 @@ function envelope(points: Point[], x: number, bottom: boolean): number {
   return result;
 }
 
+/** How much better the preview must look before the bot spends one of its animal-change tokens. */
+const SWAP_MARGIN = 5;
+
 /** Lightweight geometric judgement. No exact rollouts: a seemingly good placement can still slip. */
-export function planPlacement(world: TowerWorld, random: () => number): { x: number; angle: number } {
-  const shapes = world.bodies.map(([kind, , x, y, angle]) => outline(kind, angle, x, y));
+export function planPlacement(world: TowerWorld, random: () => number, kind = world.kind): { x: number; angle: number; score: number } {
+  const shapes = world.bodies.map(([bodyKind, , x, y, angle]) => outline(bodyKind, angle, x, y));
   const skyline = Array.from({ length: 161 }, (_, i) => {
     const x = i * 2;
     return Math.min(Math.abs(x - 160) <= PLATFORM_WIDTH / 2 ? PLATFORM_Y : Infinity,
@@ -34,7 +37,7 @@ export function planPlacement(world: TowerWorld, random: () => number): { x: num
   });
   const candidates: { x: number; angle: number; score: number }[] = [];
   for (let rotation = -12; rotation < 12; rotation++) {
-    const angle = rotation * ROTATION, shape = outline(world.kind, angle);
+    const angle = rotation * ROTATION, shape = outline(kind, angle);
     const bottom: Point[] = [];
     const minX = Math.min(...shape.map(p => p.x)), maxX = Math.max(...shape.map(p => p.x));
     for (let x = Math.ceil(minX / 2) * 2; x <= maxX; x += 2) {
@@ -56,13 +59,13 @@ export function planPlacement(world: TowerWorld, random: () => number): { x: num
   }
   candidates.sort((a, b) => b.score - a.score);
   const best = candidates[0];
-  if (!best) return { x: 160, angle: 0 };
+  if (!best) return { x: 160, angle: 0, score: -Infinity };
   // Choose among a few plausible places. Slight hand-position error varies each turn, with occasional
   // less precise choices; the bot can lose by the same physics and rules as a human.
   const options = candidates.filter(c => c.score >= best.score - 4).slice(0, 8);
   const choice = options[Math.floor(random() * options.length)];
   const error = (random() - 0.5) * (random() < 0.12 ? 10 : 3);
-  return { x: clampX(choice.x + error), angle: choice.angle };
+  return { x: clampX(choice.x + error), angle: choice.angle, score: best.score };
 }
 
 /** Turn-local motor behaviour: look, approach, pause, correct, then release. All timing uses game ticks. */
@@ -80,7 +83,9 @@ export class TowerBot {
   private correction = 0;
   private corrected = false;
   private dropped = false;
-  private target = { x: 160, angle: 0 };
+  private wantSwap = false;
+  private kind = -1;
+  private target = { x: 160, angle: 0, score: 0 };
   private state: number;
   constructor(seed = (Math.random() * 0xffffffff) >>> 0) { this.state = seed || 1; }
   private random = (): number => {
@@ -92,7 +97,11 @@ export class TowerBot {
     if (world.phase !== 'aim' || world.side !== 1) return null;
     if (world.turn !== this.turn) {
       this.turn = world.turn; this.age = this.settled = 0; this.dropped = this.corrected = false;
+      this.kind = world.kind;
       this.target = planPlacement(world, this.random);
+      // Trade only on a clear improvement, so tokens are not burned on a coin-flip difference.
+      const alternative = world.swaps[1] > 0 ? planPlacement(world, this.random, world.next) : null;
+      this.wantSwap = !!alternative && alternative.score > this.target.score + SWAP_MARGIN;
       this.think = 35 + Math.floor(this.random() * 55);
       this.confirm = 20 + Math.floor(this.random() * 35);
       this.speed = 0.7 + this.random() * 0.65;
@@ -101,9 +110,18 @@ export class TowerBot {
       this.pauseFor = 8 + Math.floor(this.random() * 15);
       this.correction = (this.random() < 0.65 ? 1 : 0) * (this.random() < 0.5 ? -1 : 1) * (3 + this.random() * 4);
     }
+    if (world.kind !== this.kind) {
+      this.kind = world.kind;
+      this.target = planPlacement(world, this.random);
+      this.settled = 0; this.corrected = false;
+    }
     if (this.dropped) return null;
     this.age++;
     if (this.age < this.think) return null;
+    if (this.wantSwap) {
+      this.wantSwap = false;
+      return { seq: ++this.seq, turn: world.turn, x: world.x, angle: world.angle, drop: false, swap: true };
+    }
     if (this.age >= this.pauseAt && this.pauseFor > 0) { this.pauseFor--; return null; }
     const targetX = this.target.x + (this.corrected ? 0 : this.correction);
     const dx = targetX - world.x;
@@ -122,6 +140,6 @@ export class TowerBot {
     const drop = this.corrected && this.settled >= this.confirm;
     this.dropped = drop;
     if (!drop && x === world.x && angle === world.angle) return null;
-    return { seq: ++this.seq, turn: world.turn, x, angle, drop };
+    return { seq: ++this.seq, turn: world.turn, x, angle, drop, swap: false };
   }
 }

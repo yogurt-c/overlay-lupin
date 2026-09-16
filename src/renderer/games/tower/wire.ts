@@ -1,5 +1,5 @@
 import { ANIMALS } from './animals.js';
-import { MAX_ANIMALS } from './types.js';
+import { MAX_ANIMALS, SWAP_TOKENS } from './types.js';
 import type { AnimalPose, TowerWorld } from './types.js';
 
 // Snapshots travel in independently bounded UDP chunks. A missing chunk leaves the previous complete
@@ -22,6 +22,7 @@ function validPacket(p: unknown): p is TowerPacket {
     && coord(w.x) && coord(w.y) && Number.isFinite(w.angle) && Math.abs(w.angle) <= Math.PI + 0.001
     && integer(w.score, total) && (w.loser === null || integer(w.loser, 1))
     && typeof w.complete === 'boolean' && Number.isSafeInteger(w.ack) && w.ack >= -1
+    && Array.isArray(w.swaps) && w.swaps.length === 2 && w.swaps.every(n => integer(n, SWAP_TOKENS))
     && Array.isArray(w.bodies) && w.bodies.length === Math.min(CHUNK_SIZE, total - part * CHUNK_SIZE)
     && w.bodies.every(validPose);
 }
@@ -31,7 +32,7 @@ export function encodeWorld(world: TowerWorld): TowerPacket[] {
   const packets: TowerPacket[] = [];
   for (let part = 0; part < Math.max(1, Math.ceil(bodies.length / CHUNK_SIZE)); part++) {
     packets.push({ t: 'tower-world', part, total: bodies.length,
-      world: { ...world, x: round(world.x, 10), y: round(world.y, 10), angle: round(world.angle, 1000),
+      world: { ...world, swaps: [...world.swaps], x: round(world.x, 10), y: round(world.y, 10), angle: round(world.angle, 1000),
         bodies: bodies.slice(part * CHUNK_SIZE, (part + 1) * CHUNK_SIZE) } });
   }
   return packets;
