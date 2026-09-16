@@ -186,6 +186,7 @@
     right: 10px;
     bottom: 44px;
     width: 168px;
+    max-height: calc(100vh - 54px);
     background: rgba(255, 255, 255, 0.94);
     border: 1.3px solid rgba(20, 24, 26, 0.45);
     border-radius: 10px;
@@ -194,6 +195,7 @@
     font-size: 11px;
     color: #14181a;
     -webkit-app-region: no-drag;
+    overflow-y: auto;
   }
   #panel[hidden] { display: none; }
   #panel h2 {
@@ -357,13 +359,18 @@
 
   #hint {
     margin: 8px 0 0;
-    padding-top: 7px;
+    padding: 7px 4px 0 0;
     border-top: 1px solid rgba(20, 24, 26, 0.12);
     font-size: 9.5px;
     line-height: 1.5;
     color: #7a827c;
     white-space: pre-line;
+    max-height: 62px;
+    overflow-y: auto;
   }
+  #hint::-webkit-scrollbar { width: 4px; }
+  #hint::-webkit-scrollbar-thumb { background: rgba(20, 24, 26, 0.25); border-radius: 999px; }
+  #hint::-webkit-scrollbar-track { background: transparent; }
 
   #reconnect-msg {
     position: absolute;
