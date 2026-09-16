@@ -14,6 +14,13 @@ export const METRES_PER_PIXEL = 1 / 30;
 const MAX_HULL_VERTICES = 12;
 /** Convex pieces below this drop out: they add contacts without changing the outline. */
 const MIN_PART_AREA = 1;
+/**
+ * Box2D wraps every polygon in a skin of `polygonRadius` and tolerates overlap up
+ * to `linearSlop`, so a piece thinner than that skin has no reliable interior for
+ * a contact normal to point out of. Decomposition leaves a few such slivers along
+ * near-collinear stretches of the outline; dropping them costs no visible shape.
+ */
+const MIN_PART_WIDTH = 0.6;
 
 type Point = { x: number; y: number };
 
@@ -28,6 +35,20 @@ function centroid(points: Point[]): Point {
     y += (a.y + b.y) * cross;
   }
   return { x: x / (3 * twiceArea), y: y / (3 * twiceArea) };
+}
+
+/** Narrowest crossing of a convex ring: the smallest distance between two parallel supports. */
+function width(points: number[][]): number {
+  let narrowest = Infinity;
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i], b = points[(i + 1) % points.length];
+    const ex = b[0] - a[0], ey = b[1] - a[1], edge = Math.hypot(ex, ey);
+    if (edge < 1e-9) continue;
+    let span = 0;
+    for (const v of points) span = Math.max(span, Math.abs((v[0] - a[0]) * ey - (v[1] - a[1]) * ex) / edge);
+    if (span < narrowest) narrowest = span;
+  }
+  return narrowest;
 }
 
 function area(points: number[][]): number {
@@ -65,7 +86,7 @@ export const GEOMETRY = ANIMALS.map((animal) => {
   decomp.makeCCW(outline);
   const parts = decomp.quickDecomp(outline.map(p => [...p]))
     .flatMap(withinHullLimit)
-    .filter(part => part.length >= 3 && area(part) >= MIN_PART_AREA)
+    .filter(part => part.length >= 3 && area(part) >= MIN_PART_AREA && width(part) >= MIN_PART_WIDTH)
     .map(part => part.map(([x, y]) => planck.Vec2(x * METRES_PER_PIXEL, y * METRES_PER_PIXEL)));
   return { vertices, centre, scale, extent, parts,
     radius: Math.max(...vertices.map(v => Math.hypot(v.x - centre.x, v.y - centre.y))) };
@@ -89,9 +110,13 @@ export function createAnimalBody(world: planck.World, kind: number, x: number, y
     angle,
     linearDamping: LINEAR_DAMPING,
     angularDamping: ANGULAR_DAMPING,
-    // Thin ears and legs on a long drop would otherwise step straight through a
-    // resting outline between frames.
-    bullet: true
+    // Continuous detection stays off between animals. Box2D always sweeps a dynamic
+    // body against static geometry, so the platform is covered either way, and at the
+    // speeds a drop actually reaches (about 3.5px per tick, half that per substep)
+    // nothing steps over a silhouette. Turning it on for animal-on-animal instead let
+    // the time-of-impact pass settle pieces up to 3px inside each other, which reads
+    // as blocks melting together and props the tower up on overlap rather than contact.
+    bullet: false
   });
   for (const part of GEOMETRY[kind].parts) {
     body.createFixture(planck.Polygon(part), { density: DENSITY, ...SURFACE });

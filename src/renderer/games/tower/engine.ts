@@ -6,7 +6,12 @@ import type { AimCommand, Side, TowerWorld } from './types.js';
 
 /** Chosen so a piece lands at the same speed the hand-tuned drop height was built around. */
 const GRAVITY = 530 * METRES_PER_PIXEL;
-const TIME_STEP = 1 / 60;
+/**
+ * Two substeps per 60Hz tick. Box2D solves each contact island per step, so halving
+ * the step halves how far a thin ear travels between solves and sharpens the stack.
+ */
+const SUBSTEPS = 2;
+const TIME_STEP = 1 / 60 / SUBSTEPS;
 const VELOCITY_ITERATIONS = 8;
 const POSITION_ITERATIONS = 3;
 /** Ticks a settled tower must hold before the turn hands over. */
@@ -109,15 +114,19 @@ export class TowerEngine {
     return this.animals.length > 0 && this.animals.every(a => !a.body.isAwake());
   }
 
+  private advance(): void {
+    for (let i = 0; i < SUBSTEPS; i++) this.physics.step(TIME_STEP, VELOCITY_ITERATIONS, POSITION_ITERATIONS);
+  }
+
   step(): void {
     this.world.tick++;
     if (this.world.phase === 'over') {
       this.overTicks++;
       // Let the collapse play out during the result banner.
-      if (this.overTicks < COLLAPSE_TICKS) this.physics.step(TIME_STEP, VELOCITY_ITERATIONS, POSITION_ITERATIONS);
+      if (this.overTicks < COLLAPSE_TICKS) this.advance();
       return;
     }
-    this.physics.step(TIME_STEP, VELOCITY_ITERATIONS, POSITION_ITERATIONS);
+    this.advance();
     if (this.animals.some(a => {
       const bounds = bodyBounds(a.body);
       return bounds.minY > PLATFORM_Y + 55 || Math.abs(a.body.getPosition().x / METRES_PER_PIXEL - 160) > 420;
