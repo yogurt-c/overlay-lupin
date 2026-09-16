@@ -186,30 +186,28 @@
     right: 10px;
     bottom: 44px;
     width: 168px;
-    max-height: calc(100vh - 54px);
     background: rgba(255, 255, 255, 0.94);
     border: 1.3px solid rgba(20, 24, 26, 0.45);
     border-radius: 10px;
     box-shadow: 0 12px 26px -14px rgba(20, 24, 26, 0.5);
-    padding: 10px;
+    padding: 8px;
     font-size: 11px;
     color: #14181a;
     -webkit-app-region: no-drag;
-    overflow-y: auto;
   }
   #panel[hidden] { display: none; }
   #panel h2 {
-    margin: 0 0 8px;
+    margin: 0 0 6px;
     font-size: 10.5px;
     font-weight: 600;
     letter-spacing: 0.02em;
   }
-  #game-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; margin: 0 0 8px; }
+  #game-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; margin: 0 0 6px; }
   #game-tabs button {
     flex: 1;
     font-family: inherit;
     font-size: 10.5px;
-    padding: 5px 0;
+    padding: 4px 0;
     border-radius: 6px;
     border: 1.3px solid rgba(20, 24, 26, 0.35);
     background: rgba(20, 24, 26, 0.04);
@@ -221,9 +219,10 @@
 
   #mode-choice[hidden], #match-view[hidden] { display: none; }
   #mode-choice .btn-row { margin: 0; }
-  #variant-choice { margin: 0 0 11px; }
-  .choice-label { margin: 0 0 4px; font-size: 9px; letter-spacing: 0.4px; color: #7a827c; }
-  #variant-buttons button { font-size: 10.5px; padding: 4px 0; border-radius: 999px; }
+  #variant-choice { display: flex; align-items: center; gap: 6px; margin: 0 0 6px; }
+  .choice-label { margin: 0; flex-shrink: 0; font-size: 9px; letter-spacing: 0.4px; color: #7a827c; }
+  #variant-buttons { flex: 1; }
+  #variant-buttons button { font-size: 10.5px; padding: 3px 0; border-radius: 999px; }
   #variant-buttons button.active { background: #14181a; border-color: #14181a; color: #fff; }
   #mode-choice button[disabled] { opacity: 0.35; cursor: default; }
 
@@ -294,7 +293,7 @@
     flex: 1;
     font-family: inherit;
     font-size: 11px;
-    padding: 6px 0;
+    padding: 5px 0;
     border-radius: 6px;
     border: 1.3px solid rgba(20, 24, 26, 0.35);
     background: rgba(20, 24, 26, 0.04);
@@ -358,14 +357,14 @@
   }
 
   #hint {
-    margin: 8px 0 0;
-    padding: 7px 4px 0 0;
+    margin: 6px 0 0;
+    padding: 6px 4px 0 0;
     border-top: 1px solid rgba(20, 24, 26, 0.12);
     font-size: 9.5px;
     line-height: 1.5;
     color: #7a827c;
     white-space: pre-line;
-    max-height: 62px;
+    max-height: 44px;
     overflow-y: auto;
   }
   #hint::-webkit-scrollbar { width: 4px; }
