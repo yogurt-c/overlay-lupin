@@ -1,7 +1,8 @@
 import { advanceSketchSeed } from '../lib/sketch.js';
+import { acceleratorFromKeyboardEvent } from '../lib/accelerator.js';
 import { GAME_MODULES } from '../games/registry.js';
 import type { GameMatch, GameModule } from '../games/types.js';
-import type { PeerInfo, RoomInfo, RoomRoster } from '../types.js';
+import type { PeerInfo, RoomInfo, RoomRoster, VisibilityShortcuts } from '../types.js';
 
 /** The simulation advances in fixed 1/60s ticks; every constant below is per tick. */
 const STEP_MS = 1000 / 60;
@@ -33,6 +34,12 @@ const scoreEl = document.getElementById('score') as HTMLSpanElement;
 const bannerEl = document.getElementById('banner') as HTMLDivElement;
 const reconnectMsg = document.getElementById('reconnect-msg') as HTMLDivElement;
 const quitBtn = document.getElementById('quit-btn') as HTMLButtonElement;
+const settingsBtn = document.getElementById('settings-btn') as HTMLButtonElement;
+const settingsPanel = document.getElementById('settings-panel') as HTMLDivElement;
+const shortcutHideBtn = document.getElementById('shortcut-hide-btn') as HTMLButtonElement;
+const shortcutShowBtn = document.getElementById('shortcut-show-btn') as HTMLButtonElement;
+const settingsResetBtn = document.getElementById('settings-reset-btn') as HTMLButtonElement;
+const settingsMsg = document.getElementById('settings-msg') as HTMLParagraphElement;
 const waitingBox = document.getElementById('waiting-box') as HTMLDivElement;
 const waitingName = document.getElementById('waiting-name') as HTMLElement;
 const cancelInviteBtn = document.getElementById('cancel-invite-btn') as HTMLButtonElement;
@@ -321,6 +328,109 @@ function renderLobby(roster: RoomRoster): void {
 }
 
 quitBtn.addEventListener('click', () => window.overlayLupin.quit());
+
+/* ------------------------------------------------------------- Shortcuts panel */
+
+let shortcuts: VisibilityShortcuts = { hide: 'PageDown', show: 'PageUp' };
+/** Which of the two accelerators is currently waiting for its next keypress, if any. */
+let recordingKey: 'hide' | 'show' | null = null;
+
+window.overlayLupin.getShortcuts().then((current) => {
+  shortcuts = current;
+  renderShortcuts();
+});
+
+function renderShortcuts(): void {
+  if (recordingKey !== 'hide') shortcutHideBtn.textContent = shortcuts.hide;
+  if (recordingKey !== 'show') shortcutShowBtn.textContent = shortcuts.show;
+}
+
+function startRecording(key: 'hide' | 'show'): void {
+  recordingKey = key;
+  settingsMsg.textContent = '';
+  shortcutHideBtn.classList.toggle('recording', key === 'hide');
+  shortcutShowBtn.classList.toggle('recording', key === 'show');
+  (key === 'hide' ? shortcutHideBtn : shortcutShowBtn).textContent = '키 입력 대기…';
+}
+
+function stopRecording(): void {
+  recordingKey = null;
+  shortcutHideBtn.classList.remove('recording');
+  shortcutShowBtn.classList.remove('recording');
+  renderShortcuts();
+}
+
+async function applyShortcuts(next: VisibilityShortcuts): Promise<void> {
+  const result = await window.overlayLupin.setShortcuts(next);
+  shortcuts = result.shortcuts;
+  settingsMsg.textContent = result.ok ? '' : '이미 다른 곳에서 사용 중인 단축키예요';
+  renderShortcuts();
+}
+
+shortcutHideBtn.addEventListener('click', () => startRecording('hide'));
+shortcutShowBtn.addEventListener('click', () => startRecording('show'));
+
+settingsResetBtn.addEventListener('click', async () => {
+  const result = await window.overlayLupin.resetShortcuts();
+  shortcuts = result.shortcuts;
+  settingsMsg.textContent = '';
+  renderShortcuts();
+});
+
+settingsBtn.addEventListener('click', () => {
+  settingsPanel.hidden = !settingsPanel.hidden;
+  if (settingsPanel.hidden) stopRecording();
+  else settingsMsg.textContent = '';
+});
+
+// Closing the panel from outside also cancels an in-progress recording, same as #panel's own
+// click-outside handler below.
+document.addEventListener(
+  'click',
+  (e) => {
+    if (settingsPanel.hidden) return;
+    const target = e.target as HTMLElement;
+    if (!settingsPanel.contains(target) && !settingsBtn.contains(target)) {
+      settingsPanel.hidden = true;
+      stopRecording();
+    }
+  },
+  true
+);
+
+// Capture phase so a recording in progress swallows the keypress before it can reach a game's
+// own input listener (all of which are also attached to `window`).
+window.addEventListener(
+  'keydown',
+  (e) => {
+    if (!recordingKey) return;
+    e.preventDefault();
+
+    if (e.key === 'Escape') {
+      stopRecording();
+      return;
+    }
+
+    const result = acceleratorFromKeyboardEvent(e);
+    if (!result.ok) {
+      if (result.reason === 'unsafe-alone') {
+        settingsMsg.textContent = '이 키는 다른 창에서도 쓰여요. Cmd/Ctrl/Alt와 함께 눌러줘';
+      }
+      return; // keep waiting for a usable combo
+    }
+
+    const key = recordingKey;
+    const next = { ...shortcuts, [key]: result.accelerator };
+    if (next.hide === next.show) {
+      settingsMsg.textContent = '숨기기와 보이기는 다른 키로 설정해줘';
+      return;
+    }
+
+    stopRecording();
+    applyShortcuts(next);
+  },
+  true
+);
 
 /** First click arms a short confirm window (visually flagged via .armed + a warning tooltip) instead of leaving immediately; a second click within it actually leaves. Resets on its own if the player doesn't confirm. */
 let leaveArmedTimer: ReturnType<typeof setTimeout> | null = null;

@@ -1,8 +1,16 @@
 import { app, ipcMain, BrowserWindow } from 'electron';
 import { createGameWindow } from './window';
 import { GameNetwork } from './network';
-import { installQuitMenu, installVisibilityShortcuts, uninstallVisibilityShortcuts } from './shortcuts';
+import {
+  installQuitMenu,
+  installVisibilityShortcuts,
+  uninstallVisibilityShortcuts,
+  updateVisibilityShortcuts,
+  getActiveVisibilityShortcuts
+} from './shortcuts';
 import { installAutoUpdater } from './updater';
+import { loadVisibilityShortcuts, saveVisibilityShortcuts, DEFAULT_VISIBILITY_SHORTCUTS } from './settings';
+import type { VisibilityShortcuts } from '../shared/shortcuts.js';
 
 let win: BrowserWindow | null = null;
 const net = new GameNetwork();
@@ -12,7 +20,7 @@ app.whenReady().then(() => {
   net.start();
 
   installQuitMenu();
-  installVisibilityShortcuts(() => win);
+  installVisibilityShortcuts(() => win, loadVisibilityShortcuts());
   installAutoUpdater();
 
   net.on('peers', (peers) => win?.webContents.send('net:peers', peers));
@@ -50,6 +58,18 @@ app.whenReady().then(() => {
   ipcMain.on('net:room-pos', (_event, payload: unknown) => net.sendRoomState(payload));
 
   ipcMain.on('app:quit', () => app.quit());
+
+  ipcMain.handle('shortcuts:get', () => getActiveVisibilityShortcuts());
+  ipcMain.handle('shortcuts:set', (_event, next: VisibilityShortcuts) => {
+    const ok = updateVisibilityShortcuts(() => win, next);
+    if (ok) saveVisibilityShortcuts(next);
+    return { ok, shortcuts: getActiveVisibilityShortcuts() };
+  });
+  ipcMain.handle('shortcuts:reset', () => {
+    const ok = updateVisibilityShortcuts(() => win, DEFAULT_VISIBILITY_SHORTCUTS);
+    if (ok) saveVisibilityShortcuts(DEFAULT_VISIBILITY_SHORTCUTS);
+    return { ok, shortcuts: getActiveVisibilityShortcuts() };
+  });
 
   ipcMain.on('win:move-by', (_event, { dx, dy }: { dx: number; dy: number }) => {
     if (!win) return;

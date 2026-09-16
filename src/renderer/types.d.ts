@@ -1,6 +1,7 @@
 import type { PeerInfo, RoomInfo, RoomRoster } from '../shared/protocol.js';
+import type { VisibilityShortcuts } from '../shared/shortcuts.js';
 
-export type { PeerInfo, RoomInfo, RoomRoster };
+export type { PeerInfo, RoomInfo, RoomRoster, VisibilityShortcuts };
 
 export interface OverlayLupinApi {
   whoAmI(): Promise<{ id: string; name: string }>;
@@ -43,6 +44,12 @@ export interface OverlayLupinApi {
 
   /** Moves the window by a relative offset (CSS px) — for games that need `#field` to be a `no-drag` region (so it can receive mouse events) but still want click-and-drag-to-move on empty space. */
   moveWindowBy(dx: number, dy: number): void;
+
+  /** Currently active hide/show accelerators (defaults to PageDown/PageUp). */
+  getShortcuts(): Promise<VisibilityShortcuts>;
+  /** Rejected (ok: false) when the pair reuses one key for both, or the OS/another app already owns one of the accelerators — `shortcuts` is always the resulting active pair either way. */
+  setShortcuts(shortcuts: VisibilityShortcuts): Promise<{ ok: boolean; shortcuts: VisibilityShortcuts }>;
+  resetShortcuts(): Promise<{ ok: boolean; shortcuts: VisibilityShortcuts }>;
 }
 
 declare global {

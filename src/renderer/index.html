@@ -74,6 +74,89 @@
   #quit-btn:hover { opacity: 1; }
   #quit-btn svg { width: 9px; height: 9px; }
 
+  #settings-btn {
+    position: absolute;
+    left: 26px;
+    top: 8px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    -webkit-app-region: no-drag;
+    opacity: 0.32;
+    transition: opacity 150ms ease;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #settings-btn:hover { opacity: 1; }
+  #settings-btn svg { width: 12px; height: 12px; }
+
+  #settings-panel {
+    position: absolute;
+    left: 8px;
+    top: 28px;
+    width: 176px;
+    background: rgba(255, 255, 255, 0.94);
+    border: 1.3px solid rgba(20, 24, 26, 0.45);
+    border-radius: 10px;
+    box-shadow: 0 12px 26px -14px rgba(20, 24, 26, 0.5);
+    padding: 10px;
+    font-size: 11px;
+    color: #14181a;
+    -webkit-app-region: no-drag;
+  }
+  #settings-panel[hidden] { display: none; }
+  #settings-panel h2 {
+    margin: 0 0 8px;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  .shortcut-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    margin: 0 0 6px;
+  }
+  .shortcut-row span { color: #7a827c; }
+  .shortcut-row button {
+    flex: none;
+    min-width: 84px;
+    font-family: inherit;
+    font-size: 10.5px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    border: 1.3px solid rgba(20, 24, 26, 0.35);
+    background: rgba(20, 24, 26, 0.04);
+    cursor: pointer;
+    color: #14181a;
+  }
+  .shortcut-row button.recording { background: #2f6b4f; border-color: #2f6b4f; color: #fff; }
+  #settings-reset-btn {
+    display: block;
+    margin: 8px 0 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+    font-family: inherit;
+    font-size: 10.5px;
+    color: #7a827c;
+    cursor: pointer;
+  }
+  #settings-reset-btn:hover { color: #14181a; }
+  #settings-msg {
+    margin: 6px 0 0;
+    font-size: 9.5px;
+    line-height: 1.4;
+    color: #9a4a3f;
+    min-height: 1.2em;
+  }
+
   #leave-btn {
     position: absolute;
     right: 10px;
@@ -365,6 +448,29 @@
       <path d="M9 1 L1 9" />
     </svg>
   </button>
+
+  <button id="settings-btn" title="단축키 설정">
+    <svg viewBox="0 0 16 16" fill="none" stroke="#14181a" stroke-width="1.6" stroke-linecap="round">
+      <path d="M2 5 H14" />
+      <circle cx="6" cy="5" r="1.6" fill="#14181a" stroke="none" />
+      <path d="M2 11 H14" />
+      <circle cx="11" cy="11" r="1.6" fill="#14181a" stroke="none" />
+    </svg>
+  </button>
+
+  <div id="settings-panel" hidden>
+    <h2>단축키</h2>
+    <div class="shortcut-row">
+      <span>숨기기</span>
+      <button id="shortcut-hide-btn"></button>
+    </div>
+    <div class="shortcut-row">
+      <span>보이기</span>
+      <button id="shortcut-show-btn"></button>
+    </div>
+    <button id="settings-reset-btn">기본값으로</button>
+    <p id="settings-msg"></p>
+  </div>
 
   <button id="leave-btn" title="나가기" hidden>
     <svg viewBox="0 0 16 16" fill="none" stroke="#14181a" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">

@@ -1,4 +1,6 @@
 import { app, BrowserWindow, globalShortcut, Menu } from 'electron';
+import { DEFAULT_VISIBILITY_SHORTCUTS } from './settings.js';
+import type { VisibilityShortcuts } from '../shared/shortcuts.js';
 
 const isMac = process.platform === 'darwin';
 
@@ -22,20 +24,65 @@ export function installQuitMenu(): void {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+/** Whichever hide/show pair is currently held by the OS, so it can be released precisely on update/uninstall. */
+let active: VisibilityShortcuts | null = null;
+
+function bind(getWindow: () => BrowserWindow | null, shortcuts: VisibilityShortcuts): boolean {
+  if (!globalShortcut.register(shortcuts.hide, () => getWindow()?.hide())) return false;
+  if (!globalShortcut.register(shortcuts.show, () => getWindow()?.show())) {
+    globalShortcut.unregister(shortcuts.hide);
+    return false;
+  }
+  return true;
+}
+
+function unbind(shortcuts: VisibilityShortcuts): void {
+  globalShortcut.unregister(shortcuts.hide);
+  globalShortcut.unregister(shortcuts.show);
+}
+
 /**
  * PageUp/PageDown must work even when the overlay is hidden or another app is focused, so these
  * use globalShortcut (OS-wide) instead of the application menu.
  */
-export function installVisibilityShortcuts(getWindow: () => BrowserWindow | null): void {
-  globalShortcut.register('PageDown', () => {
-    getWindow()?.hide();
-  });
-
-  globalShortcut.register('PageUp', () => {
-    getWindow()?.show();
-  });
+export function installVisibilityShortcuts(getWindow: () => BrowserWindow | null, shortcuts: VisibilityShortcuts): void {
+  if (bind(getWindow, shortcuts)) {
+    active = shortcuts;
+    return;
+  }
+  // The saved pair no longer registers (OS conflict, corrupted config file, ...) — fall back to the
+  // known-good defaults rather than leaving the overlay with no way to show/hide itself at all.
+  if (bind(getWindow, DEFAULT_VISIBILITY_SHORTCUTS)) {
+    active = { ...DEFAULT_VISIBILITY_SHORTCUTS };
+  }
 }
 
 export function uninstallVisibilityShortcuts(): void {
-  globalShortcut.unregisterAll();
+  if (active) unbind(active);
+  active = null;
+}
+
+/**
+ * Swaps in a new hide/show pair (e.g. from the in-app shortcut recorder). Registers the new pair
+ * before releasing the old one, so a bad accelerator — already claimed by the OS or another app —
+ * is rejected without leaving the user with no working shortcut in the meantime.
+ */
+export function updateVisibilityShortcuts(getWindow: () => BrowserWindow | null, shortcuts: VisibilityShortcuts): boolean {
+  if (shortcuts.hide === shortcuts.show) return false;
+
+  const previous = active;
+  if (previous) unbind(previous); // free the slot in case the new pair reuses one of the old keys
+
+  if (bind(getWindow, shortcuts)) {
+    active = shortcuts;
+    return true;
+  }
+
+  if (previous) bind(getWindow, previous); // restore whatever was working before the failed attempt
+  active = previous;
+  return false;
+}
+
+export function getActiveVisibilityShortcuts(): VisibilityShortcuts {
+  return active ?? DEFAULT_VISIBILITY_SHORTCUTS;
 }

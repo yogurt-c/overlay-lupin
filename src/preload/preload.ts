@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { PeerInfo, RoomInfo, RoomRoster } from '../shared/protocol.js';
+import type { VisibilityShortcuts } from '../shared/shortcuts.js';
 
 contextBridge.exposeInMainWorld('overlayLupin', {
   whoAmI: (): Promise<{ id: string; name: string }> => ipcRenderer.invoke('net:whoami'),
@@ -63,5 +64,10 @@ contextBridge.exposeInMainWorld('overlayLupin', {
 
   quit: () => ipcRenderer.send('app:quit'),
 
-  moveWindowBy: (dx: number, dy: number) => ipcRenderer.send('win:move-by', { dx, dy })
+  moveWindowBy: (dx: number, dy: number) => ipcRenderer.send('win:move-by', { dx, dy }),
+
+  getShortcuts: (): Promise<VisibilityShortcuts> => ipcRenderer.invoke('shortcuts:get'),
+  setShortcuts: (shortcuts: VisibilityShortcuts): Promise<{ ok: boolean; shortcuts: VisibilityShortcuts }> =>
+    ipcRenderer.invoke('shortcuts:set', shortcuts),
+  resetShortcuts: (): Promise<{ ok: boolean; shortcuts: VisibilityShortcuts }> => ipcRenderer.invoke('shortcuts:reset')
 });
