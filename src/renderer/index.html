@@ -136,6 +136,10 @@
 
   #mode-choice[hidden], #match-view[hidden] { display: none; }
   #mode-choice .btn-row { margin: 0; }
+  #variant-choice { margin: 0 0 11px; }
+  .choice-label { margin: 0 0 4px; font-size: 9px; letter-spacing: 0.4px; color: #7a827c; }
+  #variant-buttons button { font-size: 10.5px; padding: 4px 0; border-radius: 999px; }
+  #variant-buttons button.active { background: #14181a; border-color: #14181a; color: #fff; }
   #mode-choice button[disabled] { opacity: 0.35; cursor: default; }
 
   #mode-back-btn {
@@ -275,6 +279,7 @@
     font-size: 9.5px;
     line-height: 1.5;
     color: #7a827c;
+    white-space: pre-line;
   }
 
   #reconnect-msg {
@@ -301,6 +306,10 @@
     <h2 id="panel-title">찾는 중…</h2>
     <div id="game-tabs"></div>
     <div id="mode-choice">
+      <div id="variant-choice" hidden>
+        <p class="choice-label">규칙</p>
+        <div id="variant-buttons" class="btn-row"></div>
+      </div>
       <div class="btn-row">
         <button id="solo-btn">혼자하기</button>
         <button id="versus-btn" class="primary">같이하기</button>

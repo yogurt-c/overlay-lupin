@@ -22,6 +22,18 @@ export interface MatchHud {
   bannerKind: string;
 }
 
+/**
+ * A rule variant offered before the match starts. The first entry is the default.
+ * Only the side that creates the simulation is told which one was picked — an
+ * opponent that merely renders a host's snapshot reads the rules off that snapshot.
+ */
+export interface GameVariant {
+  id: string;
+  label: string;
+  /** One line describing the rule, shown under the chooser. */
+  hint: string;
+}
+
 export interface GameMatch {
   /** Advances the simulation by exactly one fixed tick. */
   step(input: unknown): void;
@@ -48,9 +60,11 @@ export interface GameModule {
   matching?: 'duel' | 'room';
   /** Only meaningful for `matching: 'room'`. */
   roomCapacity?: number;
+  /** Offered in the panel before a match starts; absent means the game has one fixed rule set. */
+  variants?: GameVariant[];
   /** `myId`/`myName` are this machine's network identity — only games that need to tell "me" apart in an N-player snapshot use them. */
-  createMatch(isHost: boolean, myId: string, myName: string): GameMatch;
+  createMatch(isHost: boolean, myId: string, myName: string, variant?: string): GameMatch;
   /** Present only for games with a bot opponent — lets the matching panel offer "혼자하기" with no networking involved. */
-  createSoloMatch?(myId: string, myName: string): GameMatch;
+  createSoloMatch?(myId: string, myName: string, variant?: string): GameMatch;
   createInputSource(target: Window): { read(): unknown; clear(): void };
 }

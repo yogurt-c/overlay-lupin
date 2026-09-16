@@ -27,6 +27,10 @@ function envelope(points: Point[], x: number, bottom: boolean): number {
 
 /** How far below a fresh draw's average the animal in hand must sit before a token is worth spending. */
 const SWAP_MARGIN = 5;
+/** Share of its usual deliberation the bot allows itself when a fuse is burning. */
+const EXTREME_HURRY = 0.4;
+/** A hurried hand still moves like a hand, so the approach only speeds up modestly. */
+const EXTREME_SPEED = 1.6;
 
 /** The visible top surface of the tower, sampled every 2px. Independent of what is about to land on it. */
 function skylineOf(world: TowerWorld): number[] {
@@ -100,6 +104,7 @@ export class TowerBot {
   private pauseFor = 0;
   private speed = 1;
   private correction = 0;
+  private hurry = 1;
   private corrected = false;
   private dropped = false;
   private wantSwap = false;
@@ -116,6 +121,8 @@ export class TowerBot {
     if (world.phase !== 'aim' || world.side !== 1) return null;
     if (world.turn !== this.turn) {
       this.turn = world.turn; this.age = this.settled = 0; this.dropped = this.corrected = false;
+      // 극한 mode fuses the turn, so every deliberation below is compressed to fit inside it.
+      this.hurry = world.extreme ? EXTREME_HURRY : 1;
       this.kind = world.kind;
       this.target = planPlacement(world, this.random);
       // A reroll is a gamble, so trade only when the animal in hand is worse than an average draw.
@@ -123,12 +130,12 @@ export class TowerBot {
       const scores = world.swaps[1] > 0 ? scoreEachKind(world) : null;
       const average = scores ? scores.reduce((sum, s) => sum + s, 0) / scores.length : 0;
       this.wantSwap = !!scores && average - scores[world.kind] > SWAP_MARGIN;
-      this.think = 35 + Math.floor(this.random() * 55);
-      this.confirm = 20 + Math.floor(this.random() * 35);
-      this.speed = 0.7 + this.random() * 0.65;
-      this.rotateIn = 8;
-      this.pauseAt = this.think + 15 + Math.floor(this.random() * 25);
-      this.pauseFor = 8 + Math.floor(this.random() * 15);
+      this.think = Math.round((35 + Math.floor(this.random() * 55)) * this.hurry);
+      this.confirm = Math.round((20 + Math.floor(this.random() * 35)) * this.hurry);
+      this.speed = (0.7 + this.random() * 0.65) * (world.extreme ? EXTREME_SPEED : 1);
+      this.rotateIn = Math.round(8 * this.hurry);
+      this.pauseAt = this.think + Math.round((15 + Math.floor(this.random() * 25)) * this.hurry);
+      this.pauseFor = Math.round((8 + Math.floor(this.random() * 15)) * this.hurry);
       this.correction = (this.random() < 0.65 ? 1 : 0) * (this.random() < 0.5 ? -1 : 1) * (3 + this.random() * 4);
     }
     if (world.kind !== this.kind) {
@@ -151,7 +158,7 @@ export class TowerBot {
     const da = wrapAngle(this.target.angle - angle);
     if (--this.rotateIn <= 0 && Math.abs(da) > 0.01) {
       angle = wrapAngle(angle + Math.sign(da) * Math.min(Math.abs(da), ROTATION));
-      this.rotateIn = 9 + Math.floor(this.random() * 8);
+      this.rotateIn = Math.round((9 + Math.floor(this.random() * 8)) * this.hurry);
     }
     const aligned = Math.abs(x - targetX) < 0.1 && Math.abs(wrapAngle(this.target.angle - angle)) < 0.01;
     this.settled = aligned ? this.settled + 1 : 0;

@@ -19,7 +19,7 @@ app.whenReady().then(() => {
   net.on('invite-sent', (peer) => win?.webContents.send('net:invite-sent', peer));
   net.on('invite-received', (peer) => win?.webContents.send('net:invite-received', peer));
   net.on('invite-cleared', (reason) => win?.webContents.send('net:invite-cleared', reason));
-  net.on('match-found', (peer, isHost, gameId) => win?.webContents.send('net:match-found', { peer, isHost, gameId }));
+  net.on('match-found', (peer, isHost, gameId, variant) => win?.webContents.send('net:match-found', { peer, isHost, gameId, variant }));
   net.on('match-lost', (reason) => win?.webContents.send('net:match-lost', reason));
   net.on('opponent-state', (payload) => win?.webContents.send('net:opponent-state', payload));
 
@@ -31,8 +31,8 @@ app.whenReady().then(() => {
   net.on('room-world', (payload) => win?.webContents.send('net:room-world', payload));
   net.on('room-member-left', (peerId) => win?.webContents.send('net:room-member-left', peerId));
 
-  ipcMain.on('net:invite', (_event, { peerId, gameId }: { peerId: string; gameId: string }) =>
-    net.invite(peerId, gameId)
+  ipcMain.on('net:invite', (_event, { peerId, gameId, variant }: { peerId: string; gameId: string; variant?: string }) =>
+    net.invite(peerId, gameId, variant)
   );
   ipcMain.on('net:cancel-invite', () => net.cancelInvite());
   ipcMain.on('net:accept-invite', (_event, peerId: string) => net.acceptInvite(peerId));

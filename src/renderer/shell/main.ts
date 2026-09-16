@@ -19,6 +19,8 @@ const panel = document.getElementById('panel') as HTMLDivElement;
 const panelTitle = document.getElementById('panel-title') as HTMLHeadingElement;
 const gameTabsEl = document.getElementById('game-tabs') as HTMLDivElement;
 const hintEl = document.getElementById('hint') as HTMLParagraphElement;
+const variantChoiceEl = document.getElementById('variant-choice') as HTMLDivElement;
+const variantButtonsEl = document.getElementById('variant-buttons') as HTMLDivElement;
 const modeChoiceEl = document.getElementById('mode-choice') as HTMLDivElement;
 const soloBtn = document.getElementById('solo-btn') as HTMLButtonElement;
 const versusBtn = document.getElementById('versus-btn') as HTMLButtonElement;
@@ -57,6 +59,8 @@ let uiState: UiState = 'idle';
 let selectedGameId = GAME_MODULES[0].id;
 /** Which half of the panel is showing: the 혼자하기/같이하기 choice, or the peer/room search. Reset whenever the panel (re)opens or the game tab changes. */
 let panelStep: 'mode' | 'match' = 'mode';
+/** Rule variant picked per game, remembered while the app is open. Absent means the game's default. */
+const selectedVariants = new Map<string, string>();
 let activeMatch: GameMatch | null = null;
 let activeMatchMode: 'duel' | 'room' | 'solo' | null = null;
 let activeInput: { read(): unknown; clear(): void } | null = null;
@@ -131,12 +135,12 @@ function clearCanvas(): void {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 }
 
-/** `gameId` is authoritative — for the host it's whatever was selected; for the
+/** `gameId`/`variant` are authoritative — for the host it's whatever was selected; for the
  * invitee it's whatever the host actually invited to, which may differ from
  * whatever tab they last had open. */
-function beginMatch(isHost: boolean, gameId: string): void {
+function beginMatch(isHost: boolean, gameId: string, variant?: string): void {
   incomingPeerId = null;
-  startMatch('duel', isHost, gameId);
+  startMatch('duel', isHost, gameId, variant);
 }
 
 function beginRoomMatch(isHost: boolean, gameId: string): void {
@@ -144,11 +148,11 @@ function beginRoomMatch(isHost: boolean, gameId: string): void {
   startMatch('room', isHost, gameId);
 }
 
-function startMatch(mode: 'duel' | 'room', isHost: boolean, gameId: string): void {
+function startMatch(mode: 'duel' | 'room', isHost: boolean, gameId: string, variant?: string): void {
   const module = GAME_MODULES.find((m) => m.id === gameId) ?? GAME_MODULES[0];
   selectedGameId = module.id;
   activeMatchMode = mode;
-  activeMatch = module.createMatch(isHost, myId, myName);
+  activeMatch = module.createMatch(isHost, myId, myName, knownVariant(module, variant));
   activeInput = inputSources.get(module.id) ?? null;
   stepAccumulator = 0;
   lastFrameAt = performance.now();
@@ -162,7 +166,7 @@ function beginSoloMatch(): void {
   const module = currentModule();
   if (!module.createSoloMatch) return;
   activeMatchMode = 'solo';
-  activeMatch = module.createSoloMatch(myId, myName);
+  activeMatch = module.createSoloMatch(myId, myName, variantOf(module));
   activeInput = inputSources.get(module.id) ?? null;
   stepAccumulator = 0;
   lastFrameAt = performance.now();
@@ -194,7 +198,37 @@ function renderGameTabs(): void {
     });
     gameTabsEl.appendChild(btn);
   }
-  hintEl.textContent = currentModule().hint;
+  renderVariants();
+}
+
+function variantOf(module: GameModule): string | undefined {
+  return module.variants ? selectedVariants.get(module.id) ?? module.variants[0].id : undefined;
+}
+
+/** A variant that arrived over the network is only a hint; anything unrecognised falls back to the default. */
+function knownVariant(module: GameModule, variant: string | undefined): string | undefined {
+  return module.variants?.some((v) => v.id === variant) ? variant : variantOf(module);
+}
+
+/** The rule chooser sits above 혼자하기/같이하기; games without variants simply have no row. */
+function renderVariants(): void {
+  const module = currentModule();
+  const variants = module.variants ?? [];
+  const chosen = variantOf(module);
+  variantChoiceEl.hidden = variants.length === 0;
+  variantButtonsEl.innerHTML = '';
+  for (const variant of variants) {
+    const btn = document.createElement('button');
+    btn.textContent = variant.label;
+    btn.classList.toggle('active', variant.id === chosen);
+    btn.addEventListener('click', () => {
+      selectedVariants.set(module.id, variant.id);
+      renderVariants();
+    });
+    variantButtonsEl.appendChild(btn);
+  }
+  const hint = variants.find((v) => v.id === chosen)?.hint;
+  hintEl.textContent = hint ? `${module.hint}\n${hint}` : module.hint;
 }
 
 /** Picks between the 혼자하기/같이하기 choice and the peer/room search, per `panelStep`. */
@@ -233,7 +267,7 @@ function renderPeerList(): void {
   for (const peer of peers) {
     const li = document.createElement('li');
     li.textContent = peer.name;
-    li.addEventListener('click', () => window.overlayLupin.invite(peer.id, selectedGameId));
+    li.addEventListener('click', () => window.overlayLupin.invite(peer.id, selectedGameId, variantOf(currentModule())));
     peerListEl.appendChild(li);
   }
 }
@@ -394,7 +428,7 @@ window.overlayLupin.onInviteCleared(() => {
   if (uiState === 'waiting' || uiState === 'incoming') setUiState('idle');
 });
 
-window.overlayLupin.onMatchFound((_peer, isHost, gameId) => beginMatch(isHost, gameId));
+window.overlayLupin.onMatchFound((_peer, isHost, gameId, variant) => beginMatch(isHost, gameId, variant));
 
 window.overlayLupin.onMatchLost((reason) => {
   if (reason === 'left') {

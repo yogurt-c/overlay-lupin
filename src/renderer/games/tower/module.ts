@@ -22,8 +22,8 @@ export class TowerMatch implements GameMatch {
 
   private bot: TowerBot | null;
 
-  constructor(isHost: boolean, private vsBot = false) {
-    this.engine = isHost ? new TowerEngine() : null;
+  constructor(isHost: boolean, private vsBot = false, extreme = false) {
+    this.engine = isHost ? new TowerEngine(false, undefined, extreme) : null;
     this.bot = isHost && vsBot ? new TowerBot() : null;
     this.side = isHost ? 0 : 1;
   }
@@ -66,10 +66,11 @@ export class TowerMatch implements GameMatch {
   hud(): MatchHud {
     const w = this.current();
     if (!w) return { status: '동물탑 · 연결 중', banner: '', bannerKind: '' };
-    let status = `${w.side === this.side ? '내 차례' : this.vsBot ? '봇 차례' : '상대 차례'} · ${w.score}마리`;
+    const mode = w.extreme ? '극한 · ' : '';
+    let status = `${mode}${w.side === this.side ? '내 차례' : this.vsBot ? '봇 차례' : '상대 차례'} · ${w.score}마리`;
     let banner = '';
     if (w.phase === 'over') {
-      status = `동물탑 · ${w.score}마리`;
+      status = `동물탑 · ${mode}${w.score}마리`;
       banner = w.complete ? '64마리 완성!' : w.loser === this.side ? '패배' : '승리';
     }
     return { status, banner, bannerKind: w.phase === 'over' ? 'over' : '' };
@@ -99,10 +100,16 @@ export class TowerMatch implements GameMatch {
   }
 }
 
+export const EXTREME_VARIANT = 'extreme';
+
 export const towerModule: GameModule = {
   id: 'tower', label: '동물탑',
   hint: '← → 이동 · ↑ ↓ 회전 · Space 놓기 · R 동물 변경(3회) · 번갈아 쌓고 떨어뜨리면 패배 · 혼자하기는 봇 대전',
-  createMatch: isHost => new TowerMatch(isHost),
-  createSoloMatch: () => new TowerMatch(true, true),
+  variants: [
+    { id: 'normal', label: '일반', hint: '시간 제한 없이 원하는 만큼 자리를 고를 수 있습니다.' },
+    { id: EXTREME_VARIANT, label: '극한', hint: '5초 안에 놓지 않으면 그 자리에 그대로 떨어집니다.' }
+  ],
+  createMatch: (isHost, _myId, _myName, variant) => new TowerMatch(isHost, false, variant === EXTREME_VARIANT),
+  createSoloMatch: (_myId, _myName, variant) => new TowerMatch(true, true, variant === EXTREME_VARIANT),
   createInputSource
 };

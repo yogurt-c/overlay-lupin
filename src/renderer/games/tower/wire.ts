@@ -1,5 +1,5 @@
 import { ANIMALS } from './animals.js';
-import { MAX_ANIMALS, SWAP_TOKENS } from './types.js';
+import { EXTREME_TICKS, MAX_ANIMALS, SWAP_TOKENS } from './types.js';
 import type { AnimalPose, TowerWorld } from './types.js';
 
 // Snapshots travel in independently bounded UDP chunks. A missing chunk leaves the previous complete
@@ -23,6 +23,7 @@ function validPacket(p: unknown): p is TowerPacket {
     && integer(w.score, total) && (w.loser === null || integer(w.loser, 1))
     && typeof w.complete === 'boolean' && Number.isSafeInteger(w.ack) && w.ack >= -1
     && Array.isArray(w.swaps) && w.swaps.length === 2 && w.swaps.every(n => integer(n, SWAP_TOKENS))
+    && typeof w.extreme === 'boolean' && integer(w.fuse, EXTREME_TICKS)
     && Array.isArray(w.bodies) && w.bodies.length === Math.min(CHUNK_SIZE, total - part * CHUNK_SIZE)
     && w.bodies.every(validPose);
 }

@@ -7,7 +7,7 @@ import { planck } from '../dist/renderer/lib/tower-physics.js';
 import { TowerBot, planPlacement, scoreEachKind } from '../dist/renderer/games/tower/bot.js';
 import { TowerEngine } from '../dist/renderer/games/tower/engine.js';
 import { TowerMatch, towerModule } from '../dist/renderer/games/tower/module.js';
-import { NO_INPUT, PLATFORM_Y, MAX_ANIMALS } from '../dist/renderer/games/tower/types.js';
+import { NO_INPUT, PLATFORM_Y, MAX_ANIMALS, EXTREME_TICKS } from '../dist/renderer/games/tower/types.js';
 import { WorldAssembler, encodeWorld } from '../dist/renderer/games/tower/wire.js';
 import { cameraTargetY } from '../dist/renderer/games/tower/draw.js';
 import { createInputSource } from '../dist/renderer/games/tower/input.js';
@@ -145,6 +145,38 @@ test('a token spent with the drop places the animal it drew', () => {
   assert.deepEqual(e.snapshot().swaps, [2, 3]);
 });
 
+test('극한 mode places the aim where it stands once the five seconds run out', () => {
+  const e = new TowerEngine(false, 4, true);
+  assert.equal(e.snapshot().extreme, true);
+  assert.equal(e.snapshot().fuse, EXTREME_TICKS);
+  e.command(0, { seq: 1, turn: 0, x: 140, angle: 0, drop: false, swap: false });
+  for (let i = 0; i < EXTREME_TICKS - 1; i++) e.step();
+  assert.equal(e.snapshot().phase, 'aim');
+  assert.equal(e.snapshot().fuse, 1);
+  e.step();
+  assert.equal(e.snapshot().phase, 'fall', 'the fuse places it');
+  assert.equal(e.animals.length, 1);
+  assert.equal(e.animals[0].owner, 0, 'it belongs to whoever was holding it');
+  assert.ok(Math.abs(e.animals[0].body.getPosition().x / METRES_PER_PIXEL - 140) < 0.001, 'placed on the spot, not recentred');
+  untilSettled(e);
+  assert.equal(e.snapshot().phase, 'aim');
+  assert.equal(e.snapshot().fuse, EXTREME_TICKS, 'the next turn gets a full five seconds');
+  assert.equal(e.snapshot().side, 1);
+  // The fuse is the rule, not a handicap: it burns on the opponent's turn too.
+  for (let i = 0; i < EXTREME_TICKS; i++) e.step();
+  assert.equal(e.animals.length, 2);
+  assert.equal(e.animals[1].owner, 1);
+});
+
+test('일반 mode never places an animal on its own', () => {
+  const e = new TowerEngine(false, 4);
+  assert.equal(e.snapshot().extreme, false);
+  assert.equal(e.snapshot().fuse, 0);
+  for (let i = 0; i < EXTREME_TICKS * 3; i++) e.step();
+  assert.equal(e.snapshot().phase, 'aim');
+  assert.equal(e.animals.length, 0);
+});
+
 test('missing the platform loses; result stays visible before match completion', () => {
   const e = new TowerEngine(false, 1);
   e.command(0, command(0, 1, 40)); untilSettled(e);
@@ -225,6 +257,20 @@ test('token counters survive the wire and reject impossible values', () => {
   assert.equal(new WorldAssembler().ingest(missing[0]), null);
 });
 
+test('mode and fuse cross the wire, so a guest reads the rules off the snapshot', () => {
+  const e = new TowerEngine(false, 3, true);
+  e.step();
+  const w = e.snapshot();
+  const received = new WorldAssembler().ingest(encodeWorld(w)[0]);
+  assert.equal(received.extreme, true);
+  assert.equal(received.fuse, EXTREME_TICKS - 1);
+  for (const [key, value] of [['fuse', EXTREME_TICKS + 1], ['fuse', -1], ['fuse', 1.5], ['fuse', null], ['extreme', 'yes'], ['extreme', undefined]]) {
+    const packet = encodeWorld({ ...w, tick: 40 })[0];
+    packet.world[key] = value;
+    assert.equal(new WorldAssembler().ingest(packet), null, `${key}=${value}`);
+  }
+});
+
 test('client retains a drop through a lost send; host accepts it exactly once and acknowledges', () => {
   const host = new TowerMatch(true), guest = new TowerMatch(false);
   host.step({ ...NO_INPUT, drop: true });
@@ -296,6 +342,21 @@ test('registry module provides both duel and solo factories', () => {
   assert.match(solo.hud().status, /1마리/);
 });
 
+
+test('panel offers 일반 and 극한, and only the chosen rule fuses the turn', () => {
+  assert.deepEqual(towerModule.variants.map(v => v.id), ['normal', 'extreme']);
+  assert.deepEqual(towerModule.variants.map(v => v.label), ['일반', '극한']);
+  for (const v of towerModule.variants) assert.ok(v.hint.length > 0, `${v.id}: the chooser explains the rule`);
+  const worldOf = match => match.buildOutgoingPacket().world;
+  assert.equal(worldOf(towerModule.createSoloMatch('me', 'Me')).extreme, false, 'default is 일반');
+  assert.equal(worldOf(towerModule.createSoloMatch('me', 'Me', 'normal')).extreme, false);
+  assert.equal(worldOf(towerModule.createSoloMatch('me', 'Me', 'extreme')).extreme, true);
+  assert.equal(worldOf(towerModule.createMatch(true, 'me', 'Me', 'extreme')).extreme, true);
+  // A guest never picks: it builds no simulation and takes the rules from the host's snapshot.
+  const guest = towerModule.createMatch(false, 'me', 'Me');
+  guest.applyOpponentPacket(encodeWorld({ ...new TowerEngine(false, 1, true).snapshot(), tick: 3 })[0]);
+  assert.match(guest.hud().status, /극한/);
+});
 
 test('camera pans upward as tower grows while keeping a fixed world scale', () => {
   const world = new TowerEngine().snapshot();
@@ -406,6 +467,23 @@ test('bot rerolls an animal that is worse than an average draw, at most once a t
   assert.deepEqual(run(worst, 3), { rerolls: 1, dropped: true, kind: best }, 'one reroll, never a wallet-emptying loop');
   assert.equal(run(worst, 0).rerolls, 0, 'no trading without tokens');
   assert.equal(run(best, 3).rerolls, 0, 'a good animal is kept');
+});
+
+test('bot releases before the fuse burns out in 극한 mode', () => {
+  for (let seed = 1; seed <= 8; seed++) {
+    const engine = new TowerEngine(false, seed, true), bot = new TowerBot(seed);
+    engine.command(0, command()); untilSettled(engine);
+    assert.equal(engine.snapshot().phase, 'aim');
+    assert.equal(engine.snapshot().side, 1);
+    let spare = -1;
+    for (let tick = 0; tick < EXTREME_TICKS; tick++) {
+      const action = bot.step(engine.snapshot());
+      if (action) engine.command(1, action);
+      if (action?.drop) { spare = engine.snapshot().fuse; break; }
+      engine.step();
+    }
+    assert.ok(spare > 0, `seed ${seed}: the bot must place it itself, not let the fuse do it`);
+  }
 });
 
 test('bot usually supports a second animal without stalling or bypassing physics', () => {

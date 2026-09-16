@@ -16,8 +16,8 @@ contextBridge.exposeInMainWorld('overlayLupin', {
   onInviteCleared: (cb: (reason: 'declined' | 'cancelled' | 'timeout') => void) => {
     ipcRenderer.on('net:invite-cleared', (_e, reason) => cb(reason));
   },
-  onMatchFound: (cb: (peer: PeerInfo, isHost: boolean, gameId: string) => void) => {
-    ipcRenderer.on('net:match-found', (_e, data) => cb(data.peer, data.isHost, data.gameId));
+  onMatchFound: (cb: (peer: PeerInfo, isHost: boolean, gameId: string, variant?: string) => void) => {
+    ipcRenderer.on('net:match-found', (_e, data) => cb(data.peer, data.isHost, data.gameId, data.variant));
   },
   onMatchLost: (cb: (reason: 'left' | 'timeout') => void) => {
     ipcRenderer.on('net:match-lost', (_e, reason) => cb(reason));
@@ -26,7 +26,7 @@ contextBridge.exposeInMainWorld('overlayLupin', {
     ipcRenderer.on('net:opponent-state', (_e, packet) => cb(packet));
   },
 
-  invite: (peerId: string, gameId: string) => ipcRenderer.send('net:invite', { peerId, gameId }),
+  invite: (peerId: string, gameId: string, variant?: string) => ipcRenderer.send('net:invite', { peerId, gameId, variant }),
   cancelInvite: () => ipcRenderer.send('net:cancel-invite'),
   acceptInvite: (peerId: string) => ipcRenderer.send('net:accept-invite', peerId),
   declineInvite: (peerId: string) => ipcRenderer.send('net:decline-invite', peerId),

@@ -67,8 +67,8 @@ interface OpenRoom extends RoomInfo {
 
 type WireMessage =
   | { t: 'HELLO'; id: string; name: string; replyPort: number }
-  | { t: 'INVITE'; id: string; gameId: string }
-  | { t: 'ACCEPT'; id: string; gameId: string }
+  | { t: 'INVITE'; id: string; gameId: string; variant?: string }
+  | { t: 'ACCEPT'; id: string; gameId: string; variant?: string }
   | { t: 'DECLINE'; id: string }
   | { t: 'CANCEL'; id: string }
   | { t: 'LEAVE'; id: string }
@@ -105,7 +105,7 @@ export declare interface GameNetwork {
   /** Whatever waiting/incoming prompt was showing should be dismissed (cancelled, declined, or timed out). */
   on(event: 'invite-cleared', listener: (reason: 'declined' | 'cancelled' | 'timeout') => void): this;
   /** `gameId` is whatever the inviter picked — both sides start the same game. */
-  on(event: 'match-found', listener: (peer: PeerInfo, isHost: boolean, gameId: string) => void): this;
+  on(event: 'match-found', listener: (peer: PeerInfo, isHost: boolean, gameId: string, variant?: string) => void): this;
   /** 'left' means the opponent intentionally left; 'timeout' means we stopped hearing from them. */
   on(event: 'match-lost', listener: (reason: 'left' | 'timeout') => void): this;
   on(event: 'opponent-state', listener: (payload: unknown) => void): this;
@@ -146,8 +146,8 @@ export class GameNetwork extends EventEmitter {
   private replyPort = 0;
 
   private peers = new Map<string, KnownPeer>();
-  private pendingOutgoing: { peer: KnownPeer; gameId: string; sentAt: number } | null = null;
-  private pendingIncoming: { peer: KnownPeer; gameId: string; receivedAt: number } | null = null;
+  private pendingOutgoing: { peer: KnownPeer; gameId: string; variant?: string; sentAt: number } | null = null;
+  private pendingIncoming: { peer: KnownPeer; gameId: string; variant?: string; receivedAt: number } | null = null;
   private currentMatch: KnownPeer | null = null;
   private lastPosReceived = 0;
   private helloTimer?: ReturnType<typeof setInterval>;
@@ -196,12 +196,16 @@ export class GameNetwork extends EventEmitter {
     this.replySocket.close();
   }
 
-  /** Sends an invite for `gameId` and waits for the peer to accept or decline. */
-  invite(peerId: string, gameId: string): void {
+  /**
+   * Sends an invite for `gameId` and waits for the peer to accept or decline.
+   * `variant` is the inviter's rule choice, carried both ways so the match runs on
+   * it whichever side ends up hosting — host is decided by id, not by who invited.
+   */
+  invite(peerId: string, gameId: string, variant?: string): void {
     const peer = this.peers.get(peerId);
     if (!peer || this.currentMatch || this.pendingOutgoing) return;
-    this.pendingOutgoing = { peer, gameId, sentAt: Date.now() };
-    this.sendDirect({ t: 'INVITE', id: this.myId, gameId }, peer);
+    this.pendingOutgoing = { peer, gameId, variant, sentAt: Date.now() };
+    this.sendDirect({ t: 'INVITE', id: this.myId, gameId, variant }, peer);
     this.emit('invite-sent', this.toPeerInfo(peer));
   }
 
@@ -216,10 +220,10 @@ export class GameNetwork extends EventEmitter {
   /** Accepts an invite someone sent us. */
   acceptInvite(peerId: string): void {
     if (!this.pendingIncoming || this.pendingIncoming.peer.id !== peerId) return;
-    const { peer, gameId } = this.pendingIncoming;
+    const { peer, gameId, variant } = this.pendingIncoming;
     this.pendingIncoming = null;
-    this.sendDirect({ t: 'ACCEPT', id: this.myId, gameId }, peer);
-    this.establishMatch(peer, gameId);
+    this.sendDirect({ t: 'ACCEPT', id: this.myId, gameId, variant }, peer);
+    this.establishMatch(peer, gameId, variant);
   }
 
   /** Declines an invite someone sent us. */
@@ -402,7 +406,7 @@ export class GameNetwork extends EventEmitter {
       case 'INVITE': {
         const peer = this.peers.get(msg.id);
         if (!peer || this.currentMatch || this.pendingIncoming) return;
-        this.pendingIncoming = { peer, gameId: msg.gameId, receivedAt: Date.now() };
+        this.pendingIncoming = { peer, gameId: msg.gameId, variant: msg.variant, receivedAt: Date.now() };
         this.emit('invite-received', this.toPeerInfo(peer));
         break;
       }
@@ -411,7 +415,7 @@ export class GameNetwork extends EventEmitter {
         const peer = this.peers.get(msg.id);
         if (!peer || !this.pendingOutgoing || this.pendingOutgoing.peer.id !== msg.id) return;
         this.pendingOutgoing = null;
-        this.establishMatch(peer, msg.gameId);
+        this.establishMatch(peer, msg.gameId, msg.variant);
         break;
       }
 
@@ -533,11 +537,11 @@ export class GameNetwork extends EventEmitter {
     }
   }
 
-  private establishMatch(peer: KnownPeer, gameId: string): void {
+  private establishMatch(peer: KnownPeer, gameId: string, variant?: string): void {
     this.currentMatch = peer;
     this.lastPosReceived = Date.now();
     const isHost = this.myId < peer.id;
-    this.emit('match-found', this.toPeerInfo(peer), isHost, gameId);
+    this.emit('match-found', this.toPeerInfo(peer), isHost, gameId, variant);
   }
 
   private toPeerInfo(peer: KnownPeer): PeerInfo {

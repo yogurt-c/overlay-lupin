@@ -1,7 +1,7 @@
 import { planck } from '../../lib/tower-physics.js';
 import { ANIMALS } from './animals.js';
 import { bodyBounds, createAnimalBody, GEOMETRY, METRES_PER_PIXEL, SURFACE } from './geometry.js';
-import { DROP_MAX_X, DROP_MIN_X, MAX_ANIMALS, PLATFORM_WIDTH, PLATFORM_Y, SWAP_TOKENS } from './types.js';
+import { DROP_MAX_X, DROP_MIN_X, EXTREME_TICKS, MAX_ANIMALS, PLATFORM_WIDTH, PLATFORM_Y, SWAP_TOKENS } from './types.js';
 import type { AimCommand, Side, TowerWorld } from './types.js';
 
 /** Chosen so a piece lands at the same speed the hand-tuned drop height was built around. */
@@ -42,7 +42,7 @@ export class TowerEngine {
   private bag: number[] = [];
   private rng: number;
 
-  constructor(readonly solo = false, seed = (Math.random() * 0xffffffff) >>> 0) {
+  constructor(readonly solo = false, seed = (Math.random() * 0xffffffff) >>> 0, readonly extreme = false) {
     this.rng = seed || 1;
     this.platform = this.physics.createBody({
       type: 'static',
@@ -52,7 +52,7 @@ export class TowerEngine {
       planck.Box(PLATFORM_WIDTH / 2 * METRES_PER_PIXEL, 5 * METRES_PER_PIXEL), { ...SURFACE });
     this.world = { tick: 0, turn: 0, side: 0, phase: 'aim', kind: 0, next: this.pick(), x: 160,
       y: 100, angle: 0, score: 0, loser: null, complete: false, ack: -1,
-      swaps: [SWAP_TOKENS, SWAP_TOKENS], bodies: [] };
+      swaps: [SWAP_TOKENS, SWAP_TOKENS], extreme, fuse: extreme ? EXTREME_TICKS : 0, bodies: [] };
     this.updateSpawn();
   }
 
@@ -94,7 +94,11 @@ export class TowerEngine {
       swaps[side]--;
       this.world = { ...this.world, swaps, kind: this.reroll(this.world.kind) };
     }
-    if (!value.drop) return;
+    if (value.drop) this.place(side);
+  }
+
+  /** The one way an animal ever leaves the hand — a released aim and a burnt-out fuse land identically. */
+  private place(side: Side): void {
     this.updateSpawn();
     const { kind, x, y, angle } = this.world;
     this.animals.push({ body: createAnimalBody(this.physics, kind, x, y, angle), kind, owner: side });
@@ -149,7 +153,12 @@ export class TowerEngine {
       this.world.loser = this.lastDropper;
       return;
     }
-    if (this.world.phase === 'aim') { this.updateSpawn(); return; }
+    if (this.world.phase === 'aim') {
+      this.updateSpawn();
+      // Placed wherever the aim happens to stand: running out of time is the cost, not a free retry.
+      if (this.world.extreme && --this.world.fuse <= 0) this.place(this.world.side);
+      return;
+    }
     this.fallTicks++;
     this.stableTicks = this.settled() && this.supported() ? this.stableTicks + 1 : 0;
     if (this.fallTicks < MIN_FALL_TICKS || this.stableTicks < REST_TICKS) return;
@@ -164,6 +173,7 @@ export class TowerEngine {
     this.world.next = this.pick();
     this.world.x = 160;
     this.world.angle = 0;
+    this.world.fuse = this.world.extreme ? EXTREME_TICKS : 0;
     this.updateSpawn();
   }
 

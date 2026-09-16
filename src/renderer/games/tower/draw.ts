@@ -1,11 +1,11 @@
 import { ANIMALS } from './animals.js';
 import { GEOMETRY } from './geometry.js';
 import { beginSketchFrame, roughStroke } from '../../lib/sketch.js';
-import { PLATFORM_WIDTH, PLATFORM_Y, SWAP_TOKENS } from './types.js';
+import { EXTREME_TICKS, PLATFORM_WIDTH, PLATFORM_Y, SWAP_TOKENS } from './types.js';
 import type { TowerWorld, Side } from './types.js';
 import type { Viewport } from '../types.js';
 
-const INK = '#14181a', OTHER = '#7a5433', PAPER = '#fffefa', HALO = 'rgba(255,255,255,0.94)', FADED = '#a8ada6';
+const INK = '#14181a', OTHER = '#7a5433', PAPER = '#fffefa', HALO = 'rgba(255,255,255,0.94)', FADED = '#a8ada6', ALARM = '#9a4a3f';
 const paths = new Map<string, Path2D>();
 function path(d: string): Path2D {
   let p = paths.get(d);
@@ -57,6 +57,17 @@ function text(ctx: CanvasRenderingContext2D, value: string, x: number, y: number
   ctx.fillStyle = ink; ctx.fillText(value, x, y);
 }
 
+/** The 극한 fuse: seconds left plus a bar that empties with them, in the preview column. */
+function drawFuse(ctx: CanvasRenderingContext2D, fuse: number): void {
+  const seconds = fuse / 60, urgent = seconds <= 2;
+  const ink = urgent ? ALARM : INK;
+  text(ctx, '극한', 282, 96, 8, ink);
+  text(ctx, `${seconds.toFixed(1)}초`, 282, 108, urgent ? 10 : 9, ink);
+  const left = 262, width = 40 * Math.max(0, Math.min(1, fuse / EXTREME_TICKS));
+  roughStroke(ctx, left, 114, left + 40, 114, 1, FADED, HALO);
+  if (width > 0) roughStroke(ctx, left, 114, left + width, 114, 2.2, ink, HALO);
+}
+
 /** World-space viewport offset: pan upward without shrinking animal artwork. */
 export function cameraTargetY(world: TowerWorld): number {
   const top = Math.min(world.y - GEOMETRY[world.kind].radius - 5,
@@ -102,6 +113,7 @@ export function renderTower(ctx: CanvasRenderingContext2D, world: TowerWorld | n
     // Tokens sit under the animal in hand — that is what a redraw replaces, not the preview.
     const left = world.swaps[side];
     text(ctx, `변경권(R) ${'●'.repeat(left)}${'○'.repeat(SWAP_TOKENS - left)}`, 160, 57, 8, left > 0 ? INK : FADED);
+    if (world.extreme) drawFuse(ctx, world.phase === 'aim' ? world.fuse : 0);
   }
   text(ctx, '← → 이동 · ↑ ↓ 회전 · Space 놓기 · R 변경', 153, 270, 8);
   ctx.restore();
