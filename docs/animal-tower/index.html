@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>동물탑 · Overlay Lupin 디자인 시안</title>
+<style>
+:root{color-scheme:light;--ink:#14181a;--muted:#727970;--green:#2f6b4f;--paper:#f5f2e9}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font-family:Arial,'Apple SD Gothic Neo',sans-serif}main{max-width:1120px;margin:auto;padding:36px 44px}header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #d8d7cd;padding-bottom:20px}.brand{font:11px Menlo,monospace;letter-spacing:2px}.tag{font-size:11px;color:var(--green);border:1px solid #c7d3c7;border-radius:20px;padding:7px 12px}h1{font-size:40px;letter-spacing:-2px;margin:24px 0 10px}p{font-size:13px;line-height:1.7;color:var(--muted);margin:0}.intro{display:flex;justify-content:space-between;align-items:end;margin-bottom:24px}.intro aside{font-size:12px;line-height:1.8;color:var(--muted);text-align:right}.grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}.label{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:11px;letter-spacing:.5px}.label span{color:var(--muted)}.desktop{height:310px;border:1px solid #d9dcd7;border-radius:12px;background:#fafcfb;position:relative;overflow:hidden}.desktop.dark{background:#22252a;border-color:#22252a}.work{position:absolute;left:18px;top:20px;font:10px Menlo,monospace;color:#a6ada7;line-height:2;opacity:.55}.dark .work{color:#777f89}.overlay{width:320px;height:280px;position:absolute;right:12px;bottom:5px}.overlay svg{width:100%;height:100%;overflow:visible}.controls{display:flex;gap:6px;margin-top:12px;align-items:center;flex-wrap:wrap}button{font:11px inherit;color:var(--ink);background:#fff9;border:1px solid #cccec5;border-radius:6px;padding:7px 11px;cursor:pointer}button:hover{background:#e7ece4}button.primary{background:var(--green);color:white;border-color:var(--green)}button:disabled{opacity:.45;cursor:default}.controls small{margin-left:auto;font-size:10px;color:var(--muted)}.lineup{margin-top:28px;border-top:1px solid #d8d7cd;padding-top:18px}.animals{display:grid;grid-template-columns:repeat(4,1fr);margin-top:12px;gap:20px 0}.animal{text-align:center;border-right:1px solid #deded5}.animal:nth-child(4n){border:0}.animal{padding:10px 0}.animal svg{height:100px;width:150px}.animal strong{display:block;font-size:12px;font-weight:500}.animal span{font-size:10px;color:var(--muted);display:block;margin-top:5px}.notes{display:grid;grid-template-columns:repeat(3,1fr);gap:25px;margin-top:25px;border-top:1px solid #d8d7cd;padding-top:19px}.notes b{font-size:12px}.notes p{font-size:11px;margin-top:7px}footer{margin-top:24px;font:10px Menlo,monospace;color:#899087;display:flex;justify-content:space-between}.ink{stroke:currentColor;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;fill:#fffefa}.halo{filter:drop-shadow(1px 0 0 white) drop-shadow(-1px 0 0 white) drop-shadow(0 1px 0 white) drop-shadow(0 -1px 0 white)}.eye{fill:currentColor;stroke:none}.detail{fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round}.hud{font:10px Menlo,'Apple SD Gothic Neo',monospace;fill:#14181a;paint-order:stroke;stroke:#fff;stroke-width:3px;stroke-linejoin:round}.fall{transition:transform .7s cubic-bezier(.45,0,1,1)}@media(max-width:750px){main{padding:24px}.grid{grid-template-columns:1fr}.intro aside{display:none}.animals{grid-template-columns:repeat(3,1fr);gap:18px}.notes{grid-template-columns:1fr}h1{font-size:34px}footer{gap:20px}}
+</style>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<g id="hippo"><path class="ink" d="M-45 12Q-52-6-38-20Q-25-28 1-24L20-22Q20-35 28-31L33-23Q50-25 52-10L54 9Q50 17 34 16L29 26L19 25L16 17L-20 19L-23 27L-35 26L-37 17Z"/><path class="detail" d="M24-10Q20-2 28 3M34 8L44 7"/><circle class="eye" cx="37" cy="-13" r="2"/><circle class="eye" cx="47" cy="-3" r="1.5"/></g>
+<g id="cat"><path class="ink" d="M-34 5Q-52-1-50-24Q-49-33-44-29Q-40-27-43-21Q-44-9-32-6Q-21-17 5-11L12-15L12-36L25-27L37-35L39-17Q47-8 37 0L32 4L32 27L23 27L21 8L15 8L12 26L4 26L5 8L-15 8L-17 27L-26 27L-27 11L-30 26L-37 26Z"/><path class="detail" d="M23-9L28-8M18-5L9-6M31-5L42-6M-10-10L-8-3M-19-9L-17-2"/><circle class="eye" cx="23" cy="-17" r="2"/><circle class="eye" cx="33" cy="-17" r="2"/></g>
+<g id="rabbit"><path class="ink" d="M-24 15Q-38 15-34 25Q-30 32-22 26Q-13 32 7 29L28 29Q34 24 24 22L16 21L16 1Q34-2 32-15Q31-25 19-28Q30-58 20-60Q13-61 8-31L3-32Q3-64-6-63Q-15-61-6-28Q-16-23-12-12Q-29-7-24 15Z"/><path class="detail" d="M-19 17Q-23-2-8 1Q4 4-1 20L-9 23L7 24M8 2L7 20M23-10L30-10M-5-52L-1-35M19-50L13-33"/><circle class="eye" cx="20" cy="-19" r="2"/></g>
+<g id="turtle"><path class="ink" d="M-40 12Q-39-22-10-24Q18-26 28 4Q40-5 45 5Q50 19 28 18L18 25L11 18L-21 18L-28 25L-33 18L-43 16Z"/><path class="detail" d="M-37 10Q-11 17 27 10M-22-17L-13-5L3-7L10-20M-13-5L-16 13M3-7L11 12"/><circle class="eye" cx="38" cy="7" r="2"/></g>
+<g id="seal"><path class="ink" d="M-47 15L-48 0L-37 6Q-28-12 3-10Q15-31 31-23Q47-18 37 0Q28 20-9 22L-18 28L-25 20Q-34 20-39 15Z"/><circle class="eye" cx="28" cy="-13" r="2"/><path class="detail" d="M31-4L42-6M30 0L42 2M-7 8L-19 18"/></g>
+<g id="giraffe"><path class="ink" d="M-28 26L-28 6Q-25-5-9-4L7-3L8-48L5-56L13-60L17-68L21-67L23-58L37-55Q43-48 37-43L23-41L25 6L18 27L10 27L10 13L-15 12L-19 27Z"/><path class="detail" d="M11-32L19-29M11-17L21-13M-16 1L-11 7"/><circle class="eye" cx="29" cy="-51" r="2"/></g>
+<g id="penguin"><path class="ink" d="M-20 21Q-30 9-25-11L-20-20Q-22-43 0-45Q21-43 20-22L26-10L34 10L23 7L20 24L27 30L7 30L1 25L-6 30L-27 30Z"/><path d="M-19-20Q-21-40 0-42Q20-40 18-20L22 8Q19 22 10 23Q18-3 8-15Q2-10 0-16Q-5-10-11-15Q-20-2-11 24Q-26 20-23 4Z" fill="currentColor"/><path class="ink" d="M-5-23L6-23L0-17Z"/><ellipse cx="-8" cy="-28" rx="5" ry="7" fill="#fffefa"/><ellipse cx="8" cy="-28" rx="5" ry="7" fill="#fffefa"/><circle class="eye" cx="-7" cy="-27" r="2"/><circle class="eye" cx="7" cy="-27" r="2"/><path class="detail" d="M-18-9L-23 8M19-9L23 7"/></g>
+<g id="elephant"><path class="ink" d="M-43 15L-44-12Q-39-31-15-28L9-27Q29-35 42-20L43 7Q44 18 49 10L53 12Q53 32 40 27Q32 24 31 6L24 9L23 28L12 28L9 12L-15 12L-18 28L-30 28L-32 11L-36 25L-44 24Z"/><path class="detail" d="M9-20Q-12-31-10-8Q-5 13 11 2L13-14M-43-11L-51 4"/><circle class="eye" cx="30" cy="-14" r="2"/></g>
+<g id="bear"><path class="ink" d="M-35 24Q-42 12-34-3L-31-17Q-39-31-28-34Q-20-35-16-27Q0-33 15-26Q24-38 32-28Q38-20 29-15L32 5Q37 16 29 28L13 28L8 20L-11 20L-18 29L-33 29Z"/><path class="detail" d="M-23 7L-26 20M21 7L24 21M-5-6L4-6L0-1L-5-6M0-1L0 4L6 5"/><circle class="eye" cx="-11" cy="-13" r="2"/><circle class="eye" cx="12" cy="-13" r="2"/></g>
+<g id="dog"><path class="ink" d="M-35-4L-46-19Q-51-20-48-12L-41 4L-38 27L-29 27L-26 10L-5 10L1 28L10 28L10 6L20 2Q37 3 40-9L29-13L26-28Q16-38 5-27L0-12Q-20-19-35-4Z"/><path class="detail" d="M8-25Q-2-19 2-6Q10 0 13-13L14-26M29-12L37-11M-24 10L-22 25L-15 25"/><circle class="eye" cx="23" cy="-20" r="2"/></g>
+<g id="panda"><path class="ink" d="M-27-13Q-40-24-30-32Q-21-39-13-27Q0-31 13-26Q22-38 32-29Q40-19 28-12Q31-2 23 5Q37 31 14 31L5 26L-7 27Q-26 36-33 24Q-37 13-23 4Q-33-2-27-13Z"/><ellipse cx="-13" cy="-12" rx="7" ry="9" fill="currentColor" transform="rotate(20 -13 -12)"/><ellipse cx="13" cy="-12" rx="7" ry="9" fill="currentColor" transform="rotate(-20 13 -12)"/><circle cx="-11" cy="-14" r="2" fill="white"/><circle cx="11" cy="-14" r="2" fill="white"/><path d="M-23 7Q-35 10-29 22L-16 19L-12 9ZM23 7Q35 10 29 22L16 19L12 9Z" fill="currentColor"/><path class="detail" d="M-11 11Q0 5 11 11M-4-1L3-1L0 3Z"/></g>
+<g id="crocodile"><path class="ink" d="M-52 17L-37-4L-29-3L-24-13L-16-7L-7-17L1-9L10-17L18-10L23-20Q33-23 35-10L53-7L54 5L29 10L23 25L11 25L12 13L-13 14L-22 26L-33 25L-28 13Z"/><path class="detail" d="M26 0L52 0M34 0L37 5L40 0M-14 2L-6 4M2 0L9 2"/><circle class="eye" cx="28" cy="-14" r="2"/></g>
+<g id="sheep"><path class="ink" d="M-36 17Q-49 14-42 2Q-50-9-39-15Q-41-28-27-28Q-21-40-10-31Q1-39 10-28Q23-31 28-20L35-24L43-20L38-12Q48-6 38 6L27 10L24 28L15 28L13 16L-13 16L-17 28L-26 28L-27 18Q-34 24-36 17Z"/><path class="detail" d="M27-16Q17-6 26 4M-30-14Q-21-20-18-10M-8-23Q1-27 4-19"/><circle class="eye" cx="35" cy="-7" r="2"/></g>
+<g id="duck"><path class="ink" d="M-42 5L-32 10Q-14-8 9 4L12-5Q1-19 12-30Q22-40 34-30Q42-26 36-16L51-13L49-6L34-6Q37 14 19 23L17 28L3 28L0 24Q-28 31-42 5Z"/><path class="detail" d="M-23 11Q-3 1 9 12Q-2 23-18 17M36-12L46-11"/><circle class="eye" cx="29" cy="-23" r="2"/></g>
+<g id="squirrel"><path class="ink" d="M-16 24Q-46 35-49 10Q-53-17-37-29Q-19-40-15-22Q-13-12-26-8Q-37-9-34 7Q-31 17-22 10Q-18 0-9-4L-7-20L-13-32L-1-28Q13-34 22-22L31-15L23-8L11-6L14 14L28 22Q32 29 17 28L3 27Q-4 31-16 24Z"/><path class="detail" d="M-19 15Q-11 3-3 10Q4 19-4 23M10 2L20 6M-39-20Q-48-1-39 10"/><circle class="eye" cx="14" cy="-21" r="2"/></g>
+<g id="hedgehog"><path class="ink" d="M-45 16L-48 5L-42 1L-47-10L-35-10L-35-24L-23-19L-17-33L-7-25L3-34L10-23L22-27L26-13L39-1L50 8L41 17L27 18L24 26L14 26L11 20L-19 20L-22 26L-33 25L-34 18Z"/><circle class="eye" cx="48" cy="8" r="3"/><path class="detail" d="M26-13Q13 1 21 17M-32-6L-24 2M-16-16L-10-7M0-18L5-8M-8 4L-1 10"/><circle class="eye" cx="33" cy="3" r="2"/></g>
+</defs></svg>
+<main>
+<header><div class="brand">OVERLAY LUPIN / GAME STUDY 07</div><div class="tag">디자인 제안 · 동물탑</div></header>
+<div class="intro"><div><h1>일하는 화면에, 동물 한 마리.</h1><p>기존 루팡의 무표정한 낙서를 작은 동물로. 조용히 쌓고, 아슬아슬하게 넘겨요.</p></div><aside>검은 잉크 · 흰 테두리 · 투명 배경<br>320 × 280 기본 창 안에서 시작</aside></div>
+<div class="grid">
+<section><div class="label">01 / 밝은 작업 화면 <span>실제 크기 320 × 280</span></div><div class="desktop"><div class="work">NOTES / WEEKLY PLAN<br>─────────────────────<br>09:30 &nbsp; design review<br>11:00 &nbsp; focus time<br><br>□ update the document<br>□ review changes</div><div class="overlay" id="light"></div></div></section>
+<section><div class="label">02 / 어두운 작업 화면 <span>같은 그림, 흰 테두리로 구분</span></div><div class="desktop dark"><div class="work">~/workspace<br><br>const today = {<br>&nbsp; status: 'working',<br>&nbsp; focus: true<br>};<br><br>▍</div><div class="overlay" id="dark"></div></div></section>
+</div>
+<div class="controls"><button data-act="left" aria-label="왼쪽 이동">←</button><button data-act="right" aria-label="오른쪽 이동">→</button><button data-act="rotate">↑ ↻</button><button data-act="rotateBack">↓ ↺</button><button data-act="drop" class="primary">Space · 놓기</button><button data-act="reset">처음으로</button><small aria-live="polite" id="message">조작 시안 · 물리 판정 없이 놓기 연출만 재생합니다</small></div>
+<section class="lineup"><div class="label">03 / 동물도 루팡처럼 · 총 16종 <span>서 있는 고양이 · 앉은 토끼 · 서로 다른 16개의 실루엣</span></div><div class="animals" id="animals"></div></section>
+<div class="notes"><div><b>01 &nbsp; 한 탑에 번갈아 한 마리</b><p>1:1 대전으로 시작. 놓은 동물이 안정되면 상대 차례.<br>자기 차례에 동물이 받침대 밖으로 떨어지면 패배.</p></div><div><b>02 &nbsp; 색보다 모양으로 읽기</b><p>나는 먹색, 상대는 기존 게임의 갈색 잉크.<br>하마는 넓게, 토끼는 길게, 물개는 비스듬하게.</p></div><div><b>03 &nbsp; 작게 시작해서 위로 쌓기</b><p>받침대와 차례만 표시. 탑이 높아지면 카메라가 위로 이동.<br>착지에는 짧은 흔들림, 붕괴에는 작은 잉크 조각.</p></div></div>
+<footer><span>REFERENCE · assets/hero.png + screenshot-match / sword / cell / invite</span><span>VISUAL PROTOTYPE / 2026.09</span></footer>
+</main>
+<script>
+const svgNS='http://www.w3.org/2000/svg';
+const animal=(id,x,y,s=1,angle=0,color='#14181a')=>`<g transform="translate(${x} ${y}) rotate(${angle}) scale(${s})" style="color:${color}" class="halo"><use href="#${id}"/></g>`;
+const scene=()=>`<svg viewBox="0 0 320 280" role="img" aria-label="하마, 물개, 고양이 위로 토끼를 쌓는 동물탑 시안"><text x="14" y="23" class="hud" opacity=".45">×</text><text x="160" y="24" text-anchor="middle" class="hud status">내 차례 · 3마리</text><text x="272" y="25" class="hud" font-size="8">다음</text>${animal('turtle',282,46,.26,0,'#7a5433')}<path d="M163 99L163 116" stroke="#939b93" stroke-width="1" stroke-dasharray="3 5"/><g class="active" transform="translate(163 75)">${animal('rabbit',0,0,.62)}</g>${animal('hippo',153,223,.74,0)}${animal('seal',153,192,.69,-7,'#7a5433')}${animal('cat',158,151,.61,8)}<g class="halo"><path d="M102 246Q154 244 210 246M107 250L204 250" fill="none" stroke="#14181a" stroke-width="2.4" stroke-linecap="round"/></g><text x="156" y="269" text-anchor="middle" class="hud" style="font-size:8px;opacity:.6">← → 이동 · ↑ ↓ 회전 · Space 놓기</text><g class="halo" transform="translate(298 260)" stroke="#14181a" fill="#fffefa" stroke-width="1.8"><circle r="10"/><path d="M-4-3L4 3M-4 3L4-3"/></g></svg>`;
+for(const id of ['light','dark'])document.getElementById(id).innerHTML=scene();
+const animals=[
+['hippo','하마','넓고 든든한 받침',.83,45],
+['seal','물개','엎드린 몸과 앞지느러미',.88,43],
+['cat','고양이','네 발로 서서 꼬리를 쫑긋',.86,43],
+['rabbit','토끼','뒷다리를 접고 앉은 자세',.72,49],
+['turtle','거북이','미끄러운 둥근 등',.9,43],
+['giraffe','기린','높지만 불안한 목',.72,57],
+['penguin','펭귄','곧게 선 몸과 짧은 날개',.85,43],
+['elephant','코끼리','커다란 귀와 긴 코',.85,43],
+['bear','곰','둥근 귀와 묵직한 몸',.9,43],
+['dog','강아지','늘어진 귀와 들린 꼬리',.88,43],
+['panda','판다','검은 눈무늬와 통통한 배',.9,42],
+['crocodile','악어','긴 주둥이와 울퉁불퉁한 등',.87,43],
+['sheep','양','몽글몽글한 털과 가는 다리',.88,43],
+['duck','오리','납작한 부리와 둥근 가슴',.88,43],
+['squirrel','다람쥐','등 뒤로 말린 큰 꼬리',.86,43],
+['hedgehog','고슴도치','뾰족한 등과 작은 발',.88,43]
+];
+document.getElementById('animals').innerHTML=animals.map(([id,name,desc,s,y])=>`<div class="animal"><svg viewBox="0 0 120 80" aria-label="${name}">${animal(id,60,y,s)}</svg><strong>${name}</strong><span>${desc}</span></div>`).join('');
+let x=163,angle=0,dropped=false,timer;
+function act(action){
+ if(action==='reset'){clearTimeout(timer);x=163;angle=0;dropped=false;document.querySelectorAll('.active').forEach(e=>e.classList.remove('fall'));document.querySelectorAll('.status').forEach(e=>e.textContent='내 차례 · 3마리');document.getElementById('message').textContent='조작 시안 · 물리 판정 없이 놓기 연출만 재생합니다';}
+ else if(dropped)return;
+ if(action==='left')x=Math.max(112,x-8);
+ if(action==='right')x=Math.min(205,x+8);
+ if(action==='rotate')angle=(angle+15)%360;
+ if(action==='rotateBack')angle=(angle-15+360)%360;
+ if(action==='drop'){dropped=true;document.querySelectorAll('.active').forEach(e=>e.classList.add('fall'));timer=setTimeout(()=>{document.querySelectorAll('.status').forEach(e=>e.textContent='상대 차례 · 4마리');document.getElementById('message').textContent='놓기 연출 완료 · 처음으로 버튼으로 다시 확인하세요';},750);}
+ document.querySelectorAll('.active').forEach(e=>e.setAttribute('transform',`translate(${x} ${dropped?112:75}) rotate(${angle})`));
+ document.querySelectorAll('button[data-act]').forEach(e=>e.disabled=dropped&&e.dataset.act!=='reset');
+}
+document.querySelectorAll('button').forEach(e=>e.addEventListener('click',()=>act(e.dataset.act)));
+addEventListener('keydown',e=>{if(e.target instanceof HTMLButtonElement)return;const a={ArrowLeft:'left',ArrowRight:'right',ArrowUp:'rotate',ArrowDown:'rotateBack',' ':'drop'}[e.key];if(a){e.preventDefault();act(a);}});
+</script>
+</html>

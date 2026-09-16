@@ -5,7 +5,8 @@
 ```
 npm install
 npm run dev      # 빌드 후 실행
-npm test         # 시뮬레이션 물리 테스트 (39개 체크: 대두축구 + 세포키우기)
+npm test         # 전체 게임 시뮬레이션 및 동물탑 동기화 테스트
+npm run test:tower-ui # Electron 동물탑 UI/두 창 대전 검사
 ```
 
 ## 매칭 구조
@@ -18,3 +19,5 @@ npm test         # 시뮬레이션 물리 테스트 (39개 체크: 대두축구 
 ## 새 게임 추가하기
 
 `src/renderer/games/<game>/` 아래에 `GameModule` 계약(`src/renderer/games/types.ts`)을 구현하고 `src/renderer/games/registry.ts`에 등록. 축구류(같은 물리 엔진을 쓰는 공 스포츠)는 `src/renderer/lib/ballsport/`를 재사용해서 `GameRules`만 구현하면 되고, 완전히 다른 장르(세포키우기처럼)는 자체 엔진을 새로 짜면 됨.
+
+동물탑 동물 그림은 `docs/animal-tower/index.html`의 SVG가 원본이다. 고치고 나서 `python3 scripts/import-tower-art.py`로 `src/renderer/games/tower/animals.ts`를 다시 만든 뒤 빌드·테스트를 돌린다. 빌드는 TypeScript 컴파일 후 물리 의존성을 로컬 ESM으로 번들링한다.

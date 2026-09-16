@@ -6,24 +6,29 @@
   "private": true,
   "main": "dist/main/main.js",
   "scripts": {
-    "build": "tsc -p tsconfig.main.json && tsc -p tsconfig.renderer.json && npm run copy-assets",
+    "build": "tsc -p tsconfig.main.json && tsc -p tsconfig.renderer.json && npm run build:physics && npm run copy-assets",
     "copy-assets": "node -e \"const fs=require('fs');fs.mkdirSync('dist/renderer',{recursive:true});fs.copyFileSync('src/renderer/index.html','dist/renderer/index.html')\"",
-    "test": "npm run build && node tests/simulation.test.mjs && node tests/cell.test.mjs && node tests/fence.test.mjs && node tests/worm.test.mjs && node tests/merandi.test.mjs",
+    "test": "npm run build && node tests/simulation.test.mjs && node tests/cell.test.mjs && node tests/fence.test.mjs && node tests/worm.test.mjs && node tests/merandi.test.mjs && node tests/tower.test.mjs",
     "dev": "npm run build && electron .",
     "start": "electron .",
     "release:mac": "npm run build && electron-builder --mac --publish=never",
     "release:win": "npm run build && electron-builder --win --publish=never",
     "release:mac:publish": "npm run build && electron-builder --mac --publish=always",
     "release:win:publish": "npm run build && electron-builder --win --publish=always",
-    "release:publish": "npm run build && electron-builder --mac --win --publish=always"
+    "release:publish": "npm run build && electron-builder --mac --win --publish=always",
+    "build:physics": "esbuild src/renderer/lib/tower-physics.ts --bundle --format=esm --platform=browser --outfile=dist/renderer/lib/tower-physics.js",
+    "test:tower-ui": "npm run build && electron tests/tower-renderer.cjs"
   },
   "dependencies": {
-    "electron-updater": "^6.8.9"
+    "electron-updater": "^6.8.9",
+    "planck": "^1.5.0",
+    "poly-decomp": "^0.3.0"
   },
   "devDependencies": {
     "@types/node": "*",
     "electron": "*",
     "electron-builder": "*",
+    "esbuild": "^0.28.2",
     "typescript": "*"
   },
   "build": {

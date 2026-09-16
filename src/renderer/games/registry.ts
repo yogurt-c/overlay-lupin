@@ -1,3 +1,4 @@
+import { towerModule } from './tower/module.js';
 import { soccerModule } from './soccer/module.js';
 import { volleyballModule } from './volleyball/module.js';
 import { fenceModule } from './fence/module.js';
@@ -13,5 +14,6 @@ export const GAME_MODULES: GameModule[] = [
   fenceModule,
   cellModule,
   wormModule,
-  merandiModule
+  merandiModule,
+  towerModule
 ];
