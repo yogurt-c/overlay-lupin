@@ -10,6 +10,16 @@ import { ANIMAL_SIZE } from './sizes.js';
  * place the two frames meet. At 1/30 the cast spans 0.6m to 3.7m.
  */
 export const METRES_PER_PIXEL = 1 / 30;
+
+/**
+ * Box2D's sleep tolerances are absolute, so the scale above decides what they mean
+ * here: the stock 0.01 m/s reads as 0.3 px/s, a piece that needs three seconds to
+ * cross one pixel yet still counts as moving. Contact solving leaves creep at that
+ * order, and a tower stuck just above the line never sleeps and never ends the turn.
+ * Set the threshold from the scale instead, at one pixel per second — still far
+ * below anything visible, and a piece that is genuinely tipping accelerates past it.
+ */
+planck.Settings.linearSleepTolerance = METRES_PER_PIXEL;
 /** Box2D caps a convex polygon's vertex count; longer pieces are fanned into several. */
 const MAX_HULL_VERTICES = 12;
 /** Convex pieces below this drop out: they add contacts without changing the outline. */
