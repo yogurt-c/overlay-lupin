@@ -6,7 +6,9 @@ import {
   installVisibilityShortcuts,
   uninstallVisibilityShortcuts,
   updateVisibilityShortcuts,
-  getActiveVisibilityShortcuts
+  getActiveVisibilityShortcuts,
+  pauseVisibilityShortcuts,
+  resumeVisibilityShortcuts
 } from './shortcuts';
 import { installAutoUpdater } from './updater';
 import { loadVisibilityShortcuts, saveVisibilityShortcuts, DEFAULT_VISIBILITY_SHORTCUTS } from './settings';
@@ -70,6 +72,8 @@ app.whenReady().then(() => {
     if (ok) saveVisibilityShortcuts(DEFAULT_VISIBILITY_SHORTCUTS);
     return { ok, shortcuts: getActiveVisibilityShortcuts() };
   });
+  ipcMain.on('shortcuts:pause', () => pauseVisibilityShortcuts());
+  ipcMain.on('shortcuts:resume', () => resumeVisibilityShortcuts(() => win));
 
   ipcMain.on('win:move-by', (_event, { dx, dy }: { dx: number; dy: number }) => {
     if (!win) return;

@@ -69,5 +69,7 @@ contextBridge.exposeInMainWorld('overlayLupin', {
   getShortcuts: (): Promise<VisibilityShortcuts> => ipcRenderer.invoke('shortcuts:get'),
   setShortcuts: (shortcuts: VisibilityShortcuts): Promise<{ ok: boolean; shortcuts: VisibilityShortcuts }> =>
     ipcRenderer.invoke('shortcuts:set', shortcuts),
-  resetShortcuts: (): Promise<{ ok: boolean; shortcuts: VisibilityShortcuts }> => ipcRenderer.invoke('shortcuts:reset')
+  resetShortcuts: (): Promise<{ ok: boolean; shortcuts: VisibilityShortcuts }> => ipcRenderer.invoke('shortcuts:reset'),
+  pauseShortcuts: (): void => ipcRenderer.send('shortcuts:pause'),
+  resumeShortcuts: (): void => ipcRenderer.send('shortcuts:resume')
 });

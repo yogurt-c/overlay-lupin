@@ -50,6 +50,10 @@ export interface OverlayLupinApi {
   /** Rejected (ok: false) when the pair reuses one key for both, or the OS/another app already owns one of the accelerators — `shortcuts` is always the resulting active pair either way. */
   setShortcuts(shortcuts: VisibilityShortcuts): Promise<{ ok: boolean; shortcuts: VisibilityShortcuts }>;
   resetShortcuts(): Promise<{ ok: boolean; shortcuts: VisibilityShortcuts }>;
+  /** Releases the OS-level global accelerators while the in-app recorder waits for a keypress, so a key that matches the current hide/show pair isn't swallowed before it reaches this window. */
+  pauseShortcuts(): void;
+  /** Restores whatever pair `pauseShortcuts` released. */
+  resumeShortcuts(): void;
 }
 
 declare global {

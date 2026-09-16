@@ -86,3 +86,26 @@ export function updateVisibilityShortcuts(getWindow: () => BrowserWindow | null,
 export function getActiveVisibilityShortcuts(): VisibilityShortcuts {
   return active ?? DEFAULT_VISIBILITY_SHORTCUTS;
 }
+
+/** Whichever pair was released by `pauseVisibilityShortcuts`, waiting to be restored. */
+let paused: VisibilityShortcuts | null = null;
+
+/**
+ * Releases the OS-level hide/show hooks while the in-app recorder is waiting for a keypress.
+ * Without this, pressing either currently-bound accelerator gets swallowed by globalShortcut
+ * before it ever reaches the renderer's keydown listener, so the recorder just sits at "키 입력
+ * 대기…" forever for that key.
+ */
+export function pauseVisibilityShortcuts(): void {
+  if (!active) return;
+  unbind(active);
+  paused = active;
+  active = null;
+}
+
+export function resumeVisibilityShortcuts(getWindow: () => BrowserWindow | null): void {
+  if (!paused) return;
+  bind(getWindow, paused);
+  active = paused;
+  paused = null;
+}

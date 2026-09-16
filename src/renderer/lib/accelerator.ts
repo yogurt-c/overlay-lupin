@@ -1,8 +1,9 @@
 /**
  * Turns a captured keydown into an Electron accelerator string for the shortcut recorder in the
- * settings panel. A plain letter/digit/space/etc. registered with no modifier becomes a
+ * settings panel. A plain letter/digit/punctuation/etc. registered with no modifier becomes a
  * SYSTEM-WIDE global shortcut that swallows that key in every other app on the machine — so only
- * navigation/function keys are accepted alone; everything else must carry a modifier.
+ * navigation/function keys are accepted alone; everything else (any character key) must carry a
+ * modifier.
  */
 
 const KEY_NAME_MAP: Record<string, string> = {
@@ -42,7 +43,9 @@ export function acceleratorFromKeyboardEvent(e: KeyboardEvent): AcceleratorResul
 
   let key = KEY_NAME_MAP[e.key];
   if (!key) {
-    if (/^[a-zA-Z0-9]$/.test(e.key)) key = e.key.toUpperCase();
+    // Any single character the keyboard can produce — letters, digits, and punctuation like
+    // `-`, `=`, `[`, `]`, `₩` — is a valid Electron accelerator literal.
+    if (e.key.length === 1) key = e.key.toUpperCase();
     else if (isFunctionKey(e.key)) key = e.key;
     else return { ok: false, reason: 'unsupported' };
   }

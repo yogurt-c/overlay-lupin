@@ -351,6 +351,9 @@ function startRecording(key: 'hide' | 'show'): void {
   shortcutHideBtn.classList.toggle('recording', key === 'hide');
   shortcutShowBtn.classList.toggle('recording', key === 'show');
   (key === 'hide' ? shortcutHideBtn : shortcutShowBtn).textContent = '키 입력 대기…';
+  // Otherwise pressing a key that matches the currently-bound hide/show pair gets swallowed by
+  // the OS-level global accelerator before it ever reaches this window's keydown listener.
+  window.overlayLupin.pauseShortcuts();
 }
 
 function stopRecording(): void {
@@ -358,12 +361,13 @@ function stopRecording(): void {
   shortcutHideBtn.classList.remove('recording');
   shortcutShowBtn.classList.remove('recording');
   renderShortcuts();
+  window.overlayLupin.resumeShortcuts();
 }
 
 async function applyShortcuts(next: VisibilityShortcuts): Promise<void> {
   const result = await window.overlayLupin.setShortcuts(next);
   shortcuts = result.shortcuts;
-  settingsMsg.textContent = result.ok ? '' : '이미 다른 곳에서 사용 중인 단축키예요';
+  settingsMsg.textContent = result.ok ? '' : '이미 다른 곳에서 사용 중인 단축키입니다.';
   renderShortcuts();
 }
 
@@ -414,7 +418,9 @@ window.addEventListener(
     const result = acceleratorFromKeyboardEvent(e);
     if (!result.ok) {
       if (result.reason === 'unsafe-alone') {
-        settingsMsg.textContent = '이 키는 다른 창에서도 쓰여요. Cmd/Ctrl/Alt와 함께 눌러줘';
+        settingsMsg.textContent = '영문·숫자·특수문자 키는 단독으로 사용할 수 없습니다. Cmd, Ctrl, Alt 중 하나와 함께 눌러주세요.';
+      } else if (result.reason === 'unsupported') {
+        settingsMsg.textContent = '지원하지 않는 키입니다. 다른 키를 눌러주세요.';
       }
       return; // keep waiting for a usable combo
     }
@@ -422,7 +428,7 @@ window.addEventListener(
     const key = recordingKey;
     const next = { ...shortcuts, [key]: result.accelerator };
     if (next.hide === next.show) {
-      settingsMsg.textContent = '숨기기와 보이기는 다른 키로 설정해줘';
+      settingsMsg.textContent = '숨기기와 보이기는 서로 다른 키로 설정해주세요.';
       return;
     }
 
