@@ -1,3 +1,4 @@
+import { ANIMALS } from './animals.js';
 import { GEOMETRY } from './geometry.js';
 import { clampX, wrapAngle } from './engine.js';
 import { PLATFORM_WIDTH, PLATFORM_Y } from './types.js';
@@ -24,17 +25,20 @@ function envelope(points: Point[], x: number, bottom: boolean): number {
   return result;
 }
 
-/** How much better the preview must look before the bot spends one of its animal-change tokens. */
+/** How far below a fresh draw's average the animal in hand must sit before a token is worth spending. */
 const SWAP_MARGIN = 5;
 
-/** Lightweight geometric judgement. No exact rollouts: a seemingly good placement can still slip. */
-export function planPlacement(world: TowerWorld, random: () => number, kind = world.kind): { x: number; angle: number; score: number } {
+/** The visible top surface of the tower, sampled every 2px. Independent of what is about to land on it. */
+function skylineOf(world: TowerWorld): number[] {
   const shapes = world.bodies.map(([bodyKind, , x, y, angle]) => outline(bodyKind, angle, x, y));
-  const skyline = Array.from({ length: 161 }, (_, i) => {
+  return Array.from({ length: 161 }, (_, i) => {
     const x = i * 2;
     return Math.min(Math.abs(x - 160) <= PLATFORM_WIDTH / 2 ? PLATFORM_Y : Infinity,
       ...shapes.map(shape => envelope(shape, x, false)));
   });
+}
+
+function rank(kind: number, skyline: number[]): { x: number; angle: number; score: number }[] {
   const candidates: { x: number; angle: number; score: number }[] = [];
   for (let rotation = -12; rotation < 12; rotation++) {
     const angle = rotation * ROTATION, shape = outline(kind, angle);
@@ -58,6 +62,21 @@ export function planPlacement(world: TowerWorld, random: () => number, kind = wo
     }
   }
   candidates.sort((a, b) => b.score - a.score);
+  return candidates;
+}
+
+/**
+ * How well every animal in the cast would sit on this tower, sharing one skyline pass.
+ * A token draws at random, so the average of these is what a reroll is actually worth.
+ */
+export function scoreEachKind(world: TowerWorld): number[] {
+  const skyline = skylineOf(world);
+  return ANIMALS.map((_, kind) => rank(kind, skyline)[0]?.score ?? -Infinity);
+}
+
+/** Lightweight geometric judgement. No exact rollouts: a seemingly good placement can still slip. */
+export function planPlacement(world: TowerWorld, random: () => number, kind = world.kind): { x: number; angle: number; score: number } {
+  const candidates = rank(kind, skylineOf(world));
   const best = candidates[0];
   if (!best) return { x: 160, angle: 0, score: -Infinity };
   // Choose among a few plausible places. Slight hand-position error varies each turn, with occasional
@@ -99,9 +118,11 @@ export class TowerBot {
       this.turn = world.turn; this.age = this.settled = 0; this.dropped = this.corrected = false;
       this.kind = world.kind;
       this.target = planPlacement(world, this.random);
-      // Trade only on a clear improvement, so tokens are not burned on a coin-flip difference.
-      const alternative = world.swaps[1] > 0 ? planPlacement(world, this.random, world.next) : null;
-      this.wantSwap = !!alternative && alternative.score > this.target.score + SWAP_MARGIN;
+      // A reroll is a gamble, so trade only when the animal in hand is worse than an average draw.
+      // Decided once per turn: chasing a better draw could burn the whole wallet on one placement.
+      const scores = world.swaps[1] > 0 ? scoreEachKind(world) : null;
+      const average = scores ? scores.reduce((sum, s) => sum + s, 0) / scores.length : 0;
+      this.wantSwap = !!scores && average - scores[world.kind] > SWAP_MARGIN;
       this.think = 35 + Math.floor(this.random() * 55);
       this.confirm = 20 + Math.floor(this.random() * 35);
       this.speed = 0.7 + this.random() * 0.65;

@@ -68,6 +68,13 @@ export class TowerEngine {
     return this.bag.pop()!;
   }
 
+  /** Drawing the same silhouette back would read as a lost token, so keep pulling until it differs. */
+  private reroll(kind: number): number {
+    let drawn = this.pick();
+    for (let i = 0; i < ANIMALS.length && drawn === kind; i++) drawn = this.pick();
+    return drawn;
+  }
+
   private updateSpawn(): void {
     const top = Math.min(PLATFORM_Y, ...this.animals.map(a => bodyBounds(a.body).minY));
     this.world.y = top - GEOMETRY[this.world.kind].radius - 38;
@@ -81,11 +88,11 @@ export class TowerEngine {
     if (this.world.phase !== 'aim' || side !== this.world.side || value.turn !== this.world.turn) return;
     this.world.x = clampX(value.x);
     this.world.angle = wrapAngle(value.angle);
-    // A token trades the waiting animal for the preview, so the cost is always visible before it is paid.
+    // A token redraws the waiting animal. The preview stays put, so whatever plan follows it survives.
     if (value.swap && this.world.swaps[side] > 0) {
       const swaps: [number, number] = [...this.world.swaps];
       swaps[side]--;
-      this.world = { ...this.world, swaps, kind: this.world.next, next: this.world.kind };
+      this.world = { ...this.world, swaps, kind: this.reroll(this.world.kind) };
     }
     if (!value.drop) return;
     this.updateSpawn();

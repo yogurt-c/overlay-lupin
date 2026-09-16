@@ -97,11 +97,12 @@ export function renderTower(ctx: CanvasRenderingContext2D, world: TowerWorld | n
   if (visual.cameraY < -20) text(ctx, `받침대 ↓ ${Math.round(-visual.cameraY)}`, 153, 248, 8);
   text(ctx, '다음', 282, 42, 8);
   drawAnimal(ctx, world.next, 282, 65, 0, INK, 24 / GEOMETRY[world.next].extent);
-  // Tokens read as pips so the count stays legible next to the preview it trades against.
-  const left = world.swaps[side];
-  text(ctx, 'R 변경', 282, 92, 8, left > 0 ? INK : FADED);
-  text(ctx, '●'.repeat(left) + '○'.repeat(SWAP_TOKENS - left), 282, 103, 8, left > 0 ? INK : FADED);
-  if (world.phase !== 'over') text(ctx, world.phase === 'fall' ? '균형 잡는 중…' : world.side === side ? ANIMALS[world.kind].label : vsBot ? '봇이 놓는 중' : '상대가 놓는 중', 160, 45, 9);
+  if (world.phase !== 'over') {
+    text(ctx, world.phase === 'fall' ? '균형 잡는 중…' : world.side === side ? ANIMALS[world.kind].label : vsBot ? '봇이 놓는 중' : '상대가 놓는 중', 160, 45, 9);
+    // Tokens sit under the animal in hand — that is what a redraw replaces, not the preview.
+    const left = world.swaps[side];
+    text(ctx, `변경권(R) ${'●'.repeat(left)}${'○'.repeat(SWAP_TOKENS - left)}`, 160, 57, 8, left > 0 ? INK : FADED);
+  }
   text(ctx, '← → 이동 · ↑ ↓ 회전 · Space 놓기 · R 변경', 153, 270, 8);
   ctx.restore();
 }

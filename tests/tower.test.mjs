@@ -4,7 +4,7 @@ import decomp from 'poly-decomp';
 import { ANIMALS } from '../dist/renderer/games/tower/animals.js';
 import { bodyBounds, createAnimalBody, GEOMETRY, METRES_PER_PIXEL } from '../dist/renderer/games/tower/geometry.js';
 import { planck } from '../dist/renderer/lib/tower-physics.js';
-import { TowerBot, planPlacement } from '../dist/renderer/games/tower/bot.js';
+import { TowerBot, planPlacement, scoreEachKind } from '../dist/renderer/games/tower/bot.js';
 import { TowerEngine } from '../dist/renderer/games/tower/engine.js';
 import { TowerMatch, towerModule } from '../dist/renderer/games/tower/module.js';
 import { NO_INPUT, PLATFORM_Y, MAX_ANIMALS } from '../dist/renderer/games/tower/types.js';
@@ -85,27 +85,37 @@ test('host clamps aim and normalizes rotations', () => {
   assert.ok(Math.abs(e.snapshot().angle) <= Math.PI);
 });
 
-test('animal-change tokens trade the waiting animal for the preview, three times each', () => {
-  const e = new TowerEngine(false, 7);
-  const start = e.snapshot();
-  assert.deepEqual(start.swaps, [3, 3]);
-  e.command(0, swapCommand(0, 1));
-  let w = e.snapshot();
-  assert.equal(w.kind, start.next); assert.equal(w.next, start.kind);
-  assert.deepEqual(w.swaps, [2, 3]);
-  e.step();
-  w = e.snapshot();
-  assert.ok(Math.abs(w.y + GEOMETRY[w.kind].radius - (PLATFORM_Y - 38)) < 0.001, 'spawn height follows the new animal');
-  // Trading back is allowed, and costs a second token.
-  e.command(0, swapCommand(0, 2));
-  assert.equal(e.snapshot().kind, start.kind);
-  assert.deepEqual(e.snapshot().swaps, [1, 3]);
-  e.command(0, swapCommand(0, 3));
-  const exhausted = e.snapshot();
-  assert.deepEqual(exhausted.swaps, [0, 3]);
-  e.command(0, swapCommand(0, 4));
-  assert.equal(e.snapshot().kind, exhausted.kind);
-  assert.deepEqual(e.snapshot().swaps, [0, 3]);
+test('animal-change tokens redraw the waiting animal at random, three times each', () => {
+  for (let seed = 1; seed <= 24; seed++) {
+    const e = new TowerEngine(false, seed);
+    const start = e.snapshot();
+    assert.deepEqual(start.swaps, [3, 3]);
+    let previous = start.kind;
+    for (let use = 1; use <= 3; use++) {
+      e.command(0, swapCommand(0, use));
+      const w = e.snapshot();
+      assert.notEqual(w.kind, previous, `seed ${seed}: a token must change the animal`);
+      assert.equal(w.next, start.next, 'the preview is not touched');
+      assert.deepEqual(w.swaps, [3 - use, 3]);
+      previous = w.kind;
+    }
+    e.step();
+    const w = e.snapshot();
+    assert.ok(Math.abs(w.y + GEOMETRY[w.kind].radius - (PLATFORM_Y - 38)) < 0.001, 'spawn height follows the new animal');
+    e.command(0, swapCommand(0, 4));
+    assert.equal(e.snapshot().kind, previous, 'an empty wallet buys nothing');
+    assert.deepEqual(e.snapshot().swaps, [0, 3]);
+  }
+});
+
+test('a redraw is seeded, so both a replay and the guest see the same animal', () => {
+  const draw = seed => {
+    const e = new TowerEngine(false, seed);
+    e.command(0, swapCommand(0, 1));
+    return e.snapshot().kind;
+  };
+  assert.equal(draw(5), draw(5));
+  assert.ok(new Set([1, 2, 3, 4, 5, 6, 7, 8].map(draw)).size > 1, 'the draw is not a fixed animal');
 });
 
 test('a token is only spendable on your own live turn', () => {
@@ -125,12 +135,13 @@ test('a token is only spendable on your own live turn', () => {
   assert.deepEqual(e.snapshot().swaps, [3, 2]);
 });
 
-test('a token spent with the drop places the animal it was traded for', () => {
+test('a token spent with the drop places the animal it drew', () => {
   const e = new TowerEngine(false, 11);
   const start = e.snapshot();
   e.command(0, { seq: 1, turn: 0, x: 160, angle: 0, drop: true, swap: true });
   assert.equal(e.animals.length, 1);
-  assert.equal(e.animals[0].kind, start.next);
+  assert.notEqual(e.animals[0].kind, start.kind);
+  assert.equal(e.animals[0].kind, e.snapshot().kind);
   assert.deepEqual(e.snapshot().swaps, [2, 3]);
 });
 
@@ -364,30 +375,37 @@ test('bot placement is based only on the snapshot, reproducible with a seed and 
   assert.ok(plan.x >= 40 && plan.x <= 280);
 });
 
-test('bot spends a token when the preview is clearly the better animal, and only once', () => {
+test('bot rerolls an animal that is worse than an average draw, at most once a turn', () => {
   const engine = new TowerEngine(false, 5);
   engine.command(0, command()); untilSettled(engine);
   const base = engine.snapshot();
   assert.equal(base.side, 1);
-  const scores = ANIMALS.map((_, kind) => planPlacement(base, () => 0.5, kind).score);
-  const worst = scores.indexOf(Math.min(...scores)), best = scores.indexOf(Math.max(...scores));
-  assert.ok(scores[best] - scores[worst] > 5, 'the seeded board must actually favour one animal');
-  let world = { ...base, kind: worst, next: best };
-  const bot = new TowerBot(11);
-  let swaps = 0, dropped = false;
-  for (let tick = 0; tick < 800 && !dropped; tick++) {
-    const action = bot.step(world);
-    if (!action) continue;
-    if (action.swap) { swaps++; world = { ...world, kind: world.next, next: world.kind, swaps: [3, world.swaps[1] - 1] }; }
-    world = { ...world, x: action.x, angle: action.angle };
-    dropped = action.drop;
+  const scores = scoreEachKind(base);
+  assert.equal(scores.length, ANIMALS.length);
+  for (const [kind, score] of scores.entries()) {
+    assert.ok(Math.abs(score - planPlacement(base, () => 0.5, kind).score) < 1e-9, 'one shared skyline, same verdict');
   }
-  assert.equal(swaps, 1, 'one trade, never a loop');
-  assert.equal(world.kind, best);
-  assert.ok(dropped, 'the trade must not stall the turn');
-  const frugal = new TowerBot(11);
-  const spent = { ...base, kind: worst, next: best, swaps: [3, 0] };
-  for (let tick = 0; tick < 200; tick++) assert.notEqual(frugal.step(spent)?.swap, true, 'no trading without tokens');
+  const average = scores.reduce((sum, s) => sum + s, 0) / scores.length;
+  const worst = scores.indexOf(Math.min(...scores)), best = scores.indexOf(Math.max(...scores));
+  assert.ok(average - scores[worst] > 5, 'the seeded board must actually punish one animal');
+
+  const run = (kind, tokens) => {
+    let world = { ...base, kind, swaps: [3, tokens] };
+    const bot = new TowerBot(11);
+    let rerolls = 0, dropped = false;
+    for (let tick = 0; tick < 800 && !dropped; tick++) {
+      const action = bot.step(world);
+      if (!action) continue;
+      // Stand in for the host: a token buys a random animal, here always the same one.
+      if (action.swap) { rerolls++; world = { ...world, kind: best, swaps: [3, world.swaps[1] - 1] }; }
+      world = { ...world, x: action.x, angle: action.angle };
+      dropped = action.drop;
+    }
+    return { rerolls, dropped, kind: world.kind };
+  };
+  assert.deepEqual(run(worst, 3), { rerolls: 1, dropped: true, kind: best }, 'one reroll, never a wallet-emptying loop');
+  assert.equal(run(worst, 0).rerolls, 0, 'no trading without tokens');
+  assert.equal(run(best, 3).rerolls, 0, 'a good animal is kept');
 });
 
 test('bot usually supports a second animal without stalling or bypassing physics', () => {
