@@ -109,3 +109,19 @@ npm run release:win
 ## 수동 배포 (자동 업데이트 없이 exe만 전달할 때)
 
 `release/*.exe` 파일을 GitHub Release에 mac dmg와 함께 올리면 됨. 이렇게 설치해도 이후 `:publish` 릴리즈가 올라오면 자동으로 업데이트를 받음.
+
+---
+
+# GitHub Actions로 빌드 (CI)
+
+`.github/workflows/release.yml`에서 `v*.*.*` 형식 태그 푸시 시(또는 수동 `workflow_dispatch`) mac+win을 각각 러너에서 빌드해 draft 릴리즈 하나로 합침. 로컬 키체인 프로필(`overlaylupin-notary`)은 CI에서 못 쓰므로 아래 GitHub Secrets를 리포지토리에 등록해야 함:
+
+| Secret | 내용 |
+|---|---|
+| `MAC_CERT_P12_BASE64` | Developer ID Application 인증서(.p12)를 `base64 -i cert.p12 \| pbcopy`로 인코딩한 값 |
+| `MAC_CERT_PASSWORD` | 그 .p12 파일의 비밀번호 |
+| `APPLE_ID` | 애플 개발자 계정 이메일 |
+| `APPLE_TEAM_ID` | 팀 ID |
+| `APPLE_APP_SPECIFIC_PASSWORD` | 공증용 앱 전용 암호 (appleid.apple.com에서 매번 새로 발급) |
+
+Windows는 아직 코드사이닝 인증서가 없어서 워크플로우에서 서명 없이 빌드만 함. SignPath.io Foundation(오픈소스 무료) 인증서를 발급받으면 `build-win` 잡에 서명 스텝을 추가할 것.
