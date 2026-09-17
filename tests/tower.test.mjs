@@ -25,9 +25,9 @@ function untilSettled(engine, max = 1500) {
   assert.notEqual(engine.snapshot().phase, 'fall', 'simulation must settle or collapse');
 }
 
-test('16 approved silhouettes decompose into matching finite compound bodies', () => {
-  assert.equal(ANIMALS.length, 16);
-  assert.equal(new Set(ANIMALS.map(a => a.id)).size, 16);
+test('23 approved silhouettes decompose into matching finite compound bodies', () => {
+  assert.equal(ANIMALS.length, 23);
+  assert.equal(new Set(ANIMALS.map(a => a.id)).size, 23);
   for (const [i, a] of ANIMALS.entries()) {
     assert.ok(decomp.isSimple(a.vertices), a.id);
     const b = makeBody(i, 160, 100);
@@ -46,6 +46,25 @@ test('16 approved silhouettes decompose into matching finite compound bodies', (
     const turned = bodyBounds(b);
     assert.ok(Math.abs((turned.maxY - turned.minY) - before) < 0.2, `${a.id}: rotated shape`);
   }
+});
+
+test('new animals spawn from the bag and resolve rotated drops on the platform', () => {
+  const pending = new Set(ANIMALS.slice(16).map((_, i) => i + 16));
+  for (let seed = 1; seed <= 500 && pending.size; seed++) {
+    const preview = new TowerEngine(true, seed).snapshot().next;
+    if (!pending.has(preview)) continue;
+    for (const angle of [0, Math.PI / 2, Math.PI]) {
+      const e = new TowerEngine(true, seed);
+      e.command(0, command()); untilSettled(e);
+      assert.equal(e.snapshot().kind, preview);
+      e.command(0, command(1, 2, 160, angle)); untilSettled(e);
+      assert.ok(e.snapshot().bodies.every(p => p.every(Number.isFinite)), ANIMALS[preview].id);
+      assert.equal(e.animals[1].kind, preview);
+      assert.ok(e.snapshot().phase === 'over' || e.snapshot().score === 2);
+    }
+    pending.delete(preview);
+  }
+  assert.equal(pending.size, 0, 'every new species is available in the random bag');
 });
 
 test('turn advances only after contact and sustained rest; solo retains control', () => {
@@ -217,13 +236,14 @@ test('multiple seeded stacks rotate, settle or collapse without hanging', () => 
 test('fragmented 64-animal state stays MTU safe and assembles out of order', () => {
   const w = new TowerEngine().snapshot();
   w.tick = 100; w.score = MAX_ANIMALS;
-  w.bodies = Array.from({ length: MAX_ANIMALS }, (_, i) => [i % 16, i % 2, 279.99, -9000.333, Math.PI]);
+  w.bodies = Array.from({ length: MAX_ANIMALS }, (_, i) => [i % ANIMALS.length, i % 2, 279.99, -9000.333, Math.PI]);
   const packets = encodeWorld(w);
   for (const packet of packets) assert.ok(Buffer.byteLength(JSON.stringify({ t: 'POS', id: 'x'.repeat(36), payload: packet })) < 1200);
   const assembler = new WorldAssembler();
   for (const packet of packets.slice(1).reverse()) assert.equal(assembler.ingest(packet), null);
   const result = assembler.ingest(packets[0]);
   assert.equal(result.bodies.length, MAX_ANIMALS); assert.equal(result.tick, 100);
+  assert.deepEqual(result.bodies.map(p => p[0]), w.bodies.map(p => p[0]), 'all species survive network assembly');
   assert.equal(assembler.ingest(packets[0]), null);
   assert.equal(assembler.ingest({ ...packets[0], total: 99999 }), null);
   assert.equal(assembler.ingest({}), null);
@@ -531,6 +551,9 @@ test('relative animal size reaches physics mass and inertia without losing small
   assert.ok(longest(body('hippo')) > longest(body('rabbit')) * 3);
   assert.ok(longest(body('giraffe')) > longest(body('bear')));
   assert.ok(longest(body('hedgehog')) >= 17.8);
+  assert.ok(Math.abs(longest(body('pillbug')) - 12) < 0.2);
+  assert.ok(longest(body('pillbug')) < longest(body('hedgehog')));
+  assert.ok(longest(body('gorilla')) > longest(body('orangutan')) * 1.4);
   assert.ok(body('elephant').getMass() > body('cat').getMass() * 5);
   assert.ok(body('elephant').getInertia() > body('cat').getInertia() * 10);
   for (const [i] of ANIMALS.entries()) assert.ok(Math.abs(longest(makeBody(i)) - GEOMETRY[i].extent) < 0.2);

@@ -9,6 +9,7 @@ const windows = [];
 const errors = [];
 let packetCount = 0, maxPacketBytes = 0;
 ipcMain.handle('net:whoami', event => ({ id: String(event.sender.id), name: 'Tower test' }));
+ipcMain.handle('shortcuts:get', () => ({ hide: 'PageDown', show: 'PageUp' }));
 ipcMain.on('net:pos', (event, payload) => {
   packetCount++;
   maxPacketBytes = Math.max(maxPacketBytes, Buffer.byteLength(JSON.stringify(payload)));
@@ -39,6 +40,29 @@ async function press(w, code) {
 }
 app.whenReady().then(async () => {
   const extreme = await create();
+  // Exercise every Path2D, then capture enlarged and actual-size new pieces for visual review.
+  const lineup = await extreme.webContents.executeJavaScript(`(async () => {
+    const { ANIMALS } = await import('./games/tower/animals.js');
+    const { GEOMETRY } = await import('./games/tower/geometry.js');
+    const { drawAnimal } = await import('./games/tower/draw.js');
+    const canvas = document.createElement('canvas');
+    canvas.width = 960; canvas.height = 620;
+    const ctx = canvas.getContext('2d');
+    ANIMALS.forEach((_, kind) => drawAnimal(ctx, kind, 100, 100, Math.PI / 3, '#14181a'));
+    ctx.fillStyle = '#f5f2e9'; ctx.fillRect(0, 0, 960, 620);
+    ctx.fillStyle = '#14181a'; ctx.textAlign = 'center'; ctx.font = '22px sans-serif';
+    ctx.fillText('동물탑 · 신규 7종 실제 게임 그림', 480, 36);
+    const ids = ['orangutan', 'pillbug', 'camel', 'toucan', 'gorilla', 'frog', 'pangolin', 'hedgehog'];
+    ids.forEach((id, i) => {
+      const kind = ANIMALS.findIndex(a => a.id === id), x = 120 + i % 4 * 240, y = 160 + Math.floor(i / 4) * 280;
+      drawAnimal(ctx, kind, x, y, 0, '#14181a', 125 / GEOMETRY[kind].extent);
+      drawAnimal(ctx, kind, x, y + 104, 0, '#14181a');
+      ctx.fillStyle = '#14181a'; ctx.font = '15px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText(ANIMALS[kind].label + ' · ' + GEOMETRY[kind].extent + 'px', x, y - 82);
+    });
+    return canvas.toDataURL('image/png').split(',')[1];
+  })()`);
+  fs.writeFileSync(path.join(require('node:os').tmpdir(), 'overlay-lupin-tower-lineup.png'), Buffer.from(lineup, 'base64'));
   await extreme.webContents.executeJavaScript(`[...document.querySelectorAll('#game-tabs button')].find(b=>b.textContent==='동물탑').click()`);
   assert.equal(await extreme.webContents.executeJavaScript(`document.getElementById('variant-choice').hidden`), false, '동물탑 offers rules');
   await extreme.webContents.executeJavaScript(`[...document.querySelectorAll('#game-tabs button')].find(b=>b.textContent==='축구').click()`);
