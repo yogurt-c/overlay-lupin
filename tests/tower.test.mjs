@@ -291,7 +291,8 @@ test('mode and fuse cross the wire, so a guest reads the rules off the snapshot'
   }
 });
 
-test('client retains a drop through a lost send; host accepts it exactly once and acknowledges', () => {
+test('client retains a drop through a lost send; host accepts it exactly once and acknowledges', t => {
+  t.mock.method(Math, 'random', () => 0.25);
   const host = new TowerMatch(true), guest = new TowerMatch(false);
   host.step({ ...NO_INPUT, drop: true });
   for (let i = 0; i < 200; i++) { host.step(NO_INPUT); guest.applyOpponentPacket(host.buildOutgoingPacket()); guest.step(NO_INPUT); }
@@ -310,7 +311,8 @@ test('client retains a drop through a lost send; host accepts it exactly once an
   assert.equal(guest.hud().status.split(' · ')[1], host.hud().status.split(' · ')[1]);
 });
 
-test('client sends one swap, holds it until acknowledged, and stops asking once spent out', () => {
+test('client sends one swap, holds it until acknowledged, and stops asking once spent out', t => {
+  t.mock.method(Math, 'random', () => 0.25);
   const host = new TowerMatch(true), guest = new TowerMatch(false);
   const relay = () => { host.step(NO_INPUT); guest.applyOpponentPacket(host.buildOutgoingPacket()); guest.step(NO_INPUT); };
   host.step({ ...NO_INPUT, drop: true });
@@ -337,6 +339,86 @@ test('client sends one swap, holds it until acknowledged, and stops asking once 
   assert.equal(guest.buildOutgoingPacket().cmd, null, 'an empty wallet sends nothing');
 });
 
+test('each match draws its starter afresh and only the host draws, including rematches', t => {
+  let roll = 0;
+  const random = t.mock.method(Math, 'random', () => roll);
+  for (const variant of ['normal', 'extreme']) {
+    for (const value of [0, 0.499999, 0.5, 0.999999, 0.5, 0]) {
+      roll = value;
+      const starter = value < 0.5 ? 0 : 1;
+      const host = towerModule.createMatch(true, 'same-host', 'Host', variant);
+      const calls = random.mock.callCount();
+      const guest = towerModule.createMatch(false, 'same-guest', 'Guest', variant);
+      assert.equal(random.mock.callCount(), calls, 'guest never draws independently');
+      const packet = host.buildOutgoingPacket();
+      assert.equal(packet.world.side, starter);
+      assert.equal(packet.world.turn, 0);
+      guest.applyOpponentPacket(packet);
+      assert.match(host.hud().status, starter === 0 ? /내 차례/ : /상대 차례/);
+      assert.match(guest.hud().status, starter === 1 ? /내 차례/ : /상대 차례/);
+      const solo = towerModule.createSoloMatch('same-human', 'Human', variant);
+      assert.equal(solo.buildOutgoingPacket().world.side, starter);
+      assert.match(solo.hud().status, starter === 0 ? /내 차례/ : /봇 차례/);
+    }
+  }
+});
+
+test('either drawn starter owns the first block and passes control to the other player', t => {
+  let roll = 0.25;
+  t.mock.method(Math, 'random', () => roll);
+  for (const starter of [0, 1]) {
+    roll = starter ? 0.75 : 0.25;
+    const host = new TowerMatch(true), guest = new TowerMatch(false);
+    guest.applyOpponentPacket(host.buildOutgoingPacket());
+    const first = starter === 0 ? host : guest, second = starter === 0 ? guest : host;
+    second.step({ ...NO_INPUT, drop: true });
+    host.applyOpponentPacket(guest.buildOutgoingPacket());
+    assert.equal(host.buildOutgoingPacket().world.bodies.length, 0, 'non-starter cannot place');
+    first.step({ ...NO_INPUT, drop: true });
+    host.applyOpponentPacket(guest.buildOutgoingPacket());
+    for (let tick = 0; tick < 220; tick++) {
+      host.step(NO_INPUT);
+      guest.applyOpponentPacket(host.buildOutgoingPacket());
+    }
+    const w = host.buildOutgoingPacket().world;
+    assert.equal(w.score, 1); assert.equal(w.turn, 1); assert.equal(w.side, 1 - starter);
+    assert.equal(w.bodies[0][1], starter);
+    assert.match(second.hud().status, /내 차례/);
+    assert.match(first.hud().status, /상대 차례/);
+  }
+});
+
+test('a bot drawn first places without human input and hands over to the human', t => {
+  t.mock.method(Math, 'random', () => 0.75);
+  for (const variant of ['normal', 'extreme']) {
+    const match = towerModule.createSoloMatch('me', 'Me', variant);
+    assert.match(match.hud().status, /봇 차례/);
+    match.step({ ...NO_INPUT, left: true, rotate: true, drop: true, swap: true });
+    const initial = match.buildOutgoingPacket().world;
+    assert.equal(initial.bodies.length, 0);
+    assert.equal(initial.x, 160); assert.equal(initial.angle, 0);
+    assert.equal(initial.swaps[0], 3);
+    let w = initial;
+    for (let tick = 0; tick < 1200 && w.turn === 0 && w.phase !== 'over'; tick++) {
+      match.step(NO_INPUT); w = match.buildOutgoingPacket().world;
+    }
+    assert.equal(w.score, 1); assert.equal(w.side, 0);
+    assert.equal(w.bodies[0][1], 1);
+    assert.match(match.hud().status, /내 차례/);
+  }
+});
+
+test('a guest drawn first is responsible for a miss or an expired extreme fuse', () => {
+  for (const extreme of [false, true]) {
+    const e = new TowerEngine(false, 1, extreme, 1);
+    e.command(1, { ...command(0, 1, 280), drop: !extreme });
+    if (extreme) for (let tick = 0; tick < EXTREME_TICKS; tick++) e.step();
+    assert.equal(e.animals[0].owner, 1);
+    untilSettled(e);
+    assert.equal(e.snapshot().loser, 1);
+  }
+});
+
 test('keyboard actions are edge triggered and clear on blur', () => {
   const target = new EventTarget(), input = createInputSource(target);
   function key(type, code, repeat = false) {
@@ -353,7 +435,8 @@ test('keyboard actions are edge triggered and clear on blur', () => {
   key('keydown', 'Space'); input.clear(); assert.deepEqual(input.read(), NO_INPUT);
 });
 
-test('registry module provides both duel and solo factories', () => {
+test('registry module provides both duel and solo factories', t => {
+  t.mock.method(Math, 'random', () => 0.25);
   assert.equal(towerModule.id, 'tower');
   const solo = towerModule.createSoloMatch('me', 'Me');
   assert.match(solo.hud().status, /내 차례/);
@@ -390,7 +473,8 @@ test('camera pans upward as tower grows while keeping a fixed world scale', () =
 });
 
 
-test('down arrow rotates counterclockwise once per press and opposite inputs cancel', () => {
+test('down arrow rotates counterclockwise once per press and opposite inputs cancel', t => {
+  t.mock.method(Math, 'random', () => 0.25);
   const target = new EventTarget(), input = createInputSource(target);
   const match = new TowerMatch(true);
   function key(type, repeat = false) {
@@ -526,7 +610,8 @@ test('bot usually supports a second animal without stalling or bypassing physics
   assert.equal(successes + losses, 16);
 });
 
-test('solo factory plays a real bot turn, ignores human controls on bot turn and returns win/loss', () => {
+test('solo factory plays a real bot turn, ignores human controls on bot turn and returns win/loss', t => {
+  t.mock.method(Math, 'random', () => 0.25);
   const match = towerModule.createSoloMatch('me', 'Me');
   match.step({ ...NO_INPUT, drop: true });
   let sawBot = false, botPlaced = false, resolved = false;

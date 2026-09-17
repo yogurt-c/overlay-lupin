@@ -23,7 +23,9 @@ export class TowerMatch implements GameMatch {
   private bot: TowerBot | null;
 
   constructor(isHost: boolean, private vsBot = false, extreme = false) {
-    this.engine = isHost ? new TowerEngine(false, undefined, extreme) : null;
+    // Draw once per match on the host; the guest receives the result through world.side.
+    // Host/human stays side 0, guest/bot stays side 1 regardless of who starts.
+    this.engine = isHost ? new TowerEngine(false, undefined, extreme, Math.random() < 0.5 ? 0 : 1) : null;
     this.bot = isHost && vsBot ? new TowerBot() : null;
     this.side = isHost ? 0 : 1;
   }

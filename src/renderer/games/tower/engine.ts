@@ -42,7 +42,7 @@ export class TowerEngine {
   private bag: number[] = [];
   private rng: number;
 
-  constructor(readonly solo = false, seed = (Math.random() * 0xffffffff) >>> 0, readonly extreme = false) {
+  constructor(readonly solo = false, seed = (Math.random() * 0xffffffff) >>> 0, readonly extreme = false, startingSide: Side = 0) {
     this.rng = seed || 1;
     this.platform = this.physics.createBody({
       type: 'static',
@@ -50,7 +50,8 @@ export class TowerEngine {
     });
     this.platform.createFixture(
       planck.Box(PLATFORM_WIDTH / 2 * METRES_PER_PIXEL, 5 * METRES_PER_PIXEL), { ...SURFACE });
-    this.world = { tick: 0, turn: 0, side: 0, phase: 'aim', kind: 0, next: this.pick(), x: 160,
+    this.lastDropper = startingSide;
+    this.world = { tick: 0, turn: 0, side: startingSide, phase: 'aim', kind: 0, next: this.pick(), x: 160,
       y: 100, angle: 0, score: 0, loser: null, complete: false, ack: -1,
       swaps: [SWAP_TOKENS, SWAP_TOKENS], extreme, fuse: extreme ? EXTREME_TICKS : 0, bodies: [] };
     this.updateSpawn();

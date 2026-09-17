@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f7f5ed">
+  <meta name="description" content="옆자리와 슬쩍 한 판. 같은 Wi-Fi에서 바로 만나는 손그림 미니게임, 오버레이 루팡. macOS와 Windows에서 무료로 즐겨요.">
+  <meta property="og:title" content="오버레이 루팡 — 일하는 화면에, 딴짓 한 스푼.">
+  <meta property="og:description" content="화면 한구석이 작은 놀이터가 되는 순간. 같은 Wi-Fi에서 함께하는 미니게임 모음.">
+  <meta property="og:type" content="website">
+  <title>오버레이 루팡 · 옆자리와 슬쩍 한 판</title>
+  <link rel="icon" href="site-assets/hero.png">
+  <link rel="stylesheet" href="site.css">
+  <script src="site.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">본문으로 바로가기</a>
+<div class="page">
+  <header class="header">
+    <a class="brand" href="#" aria-label="오버레이 루팡 홈"><img src="site-assets/hero.png" alt="" width="38" height="38"><span>오버레이 루팡<small>OVERLAY LUPIN</small></span></a>
+    <nav aria-label="메인 메뉴"><a href="#games">게임 구경</a><a href="#how">플레이 방법</a><a href="#comments">방명록</a></nav>
+    <a class="header-download" href="#download">다운로드 <span aria-hidden="true">↗</span></a>
+  </header>
+  <main id="main">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <span class="eyebrow"><span class="live-dot"></span> 작은 화면, 은근한 승부욕.</span>
+        <h1 id="hero-title">일하는 화면에,<br><span class="underline">딴짓 한 스푼.</span></h1>
+        <p>분명 방금까지 일하고 있었는데.<br>화면 한구석에서 시작되는 옆자리와의 한 판.<br>같은 Wi-Fi라면, 우리 사이에 준비는 끝.</p>
+        <div class="hero-actions"><a class="button primary" href="#download">무료로 다운로드 <span aria-hidden="true">↓</span></a><a class="text-link" href="#games">뭐 하고 놀까? <span aria-hidden="true">↗</span></a></div>
+        <div class="hero-meta">macOS & Windows <span>·</span> 게임 계정 없이 바로 시작</div>
+      </div>
+      <div class="hero-art">
+        <span class="scribble art-note">쉿, 한 판만 하고 돌아올게.</span>
+        <div class="desktop">
+          <div class="window-bar"><span class="window-dots" aria-hidden="true">● ● ●</span><span>아주 중요한 업무.txt</span><span aria-hidden="true">↗</span></div>
+          <div class="work-notes" aria-hidden="true"><small>오늘의 할 일</small><p>☑ 메일 확인하기</p><p>☑ 열심히 일하는 척하기</p><p>☐ 딱 한 판만 더 하기</p><div class="fake-line"></div><div class="fake-line short"></div></div>
+          <div class="mini-invite"><span class="live-dot"></span> 옆자리에서 대전을 신청했어요 <span class="invite-tag">한 판?</span></div>
+          <div class="overlay-scene" id="overlay-scene">
+            <span class="score">0 <span>:</span> 0</span>
+            <svg class="soccer-sketch" viewBox="0 0 500 210" role="img" aria-label="업무 창 위에서 손그림 캐릭터 둘이 축구하는 모습">
+              <defs><g id="player" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M-8 4 Q-20 25-15 42 M8 5Q22 22 18 38M-4 4L-7 47L-20 67M5 6L8 46L22 64" fill="none"/><path d="M-4 6L4 7L7 45L-7 44Z" fill="#fffefa"/><path d="M-24-21Q-22-47 2-45Q27-44 26-20Q26 3 2 4Q-23 5-24-21Z" fill="#fffefa"/><circle cx="6" cy="-24" r="1.7"/><circle cx="16" cy="-23" r="1.7"/><path d="M5-13L15-14"/></g></defs>
+              <path d="M20 177Q220 173 478 179" stroke="#babcb2" stroke-width="1.5" fill="none" stroke-dasharray="5 8"/>
+              <g style="color:#866342" transform="translate(125 105) rotate(-9)"><use href="#player"/></g>
+              <g style="color:#222925" transform="translate(366 105) scale(-1 1) rotate(-8)"><use href="#player"/></g>
+              <g class="sketch-ball" stroke="#222925" stroke-width="2" fill="#fffefa"><path d="M252 135L265 143L269 158L260 170L244 169L235 155L239 141Z"/><path d="M249 148L258 148L261 156L253 162L246 156Z" fill="#222925"/><path d="M239 141L249 148M265 143L258 148M269 158L261 156M244 169L246 156M260 170L253 162"/></g>
+              <path d="M78 40L67 29M82 30L78 20M401 38L412 24" stroke="#866342" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <div class="desktop-bottom"><span><span class="live-dot"></span> 같은 Wi-Fi에서 만났어요</span><button id="hide-demo" type="button" aria-pressed="false">슬쩍 숨기기 <kbd>PgDn</kbd></button></div>
+        </div>
+        <div class="sticky-note">일단 이 판만.<br><span>진짜 마지막.</span><svg viewBox="0 0 70 20" aria-hidden="true"><path d="M3 12Q28 0 63 9M55 2L64 9L55 15"/></svg></div>
+        <span class="art-caption">설치하면, 내 화면도 작은 놀이터.</span>
+      </div>
+    </section>
+    <div class="feature-strip"><span><b>01</b> 화면 위에 살짝</span><span><b>02</b> 같은 Wi-Fi로 바로</span><span><b>03</b> 단축키로 쏙 숨기기</span><span><b>04</b> 부담 없이 무료</span></div>
+    <section class="games section" id="games" aria-labelledby="games-title">
+      <div class="section-heading"><div><span class="eyebrow">THE LITTLE ARCADE</span><h2 id="games-title">오늘은 뭐 하고 놀까?</h2></div><p>대충 그린 것 같아도,<br>승부는 제법 진지합니다.</p></div>
+      <div class="game-grid">
+        <article class="game-card"><div class="game-image"><span class="image-label">01 / FOOTBALL</span><img src="site-assets/game-soccer.png" alt="손그림 캐릭터 둘이 공을 차는 축구 실제 게임 화면" width="600" height="400" loading="lazy"></div><div class="game-info"><div><h3>축구</h3><span class="pill">1 : 1</span></div><p>공을 차고, 골은 시원하게.<br>먼저 5골을 넣으면 오늘의 승자.</p></div></article>
+        <article class="game-card"><div class="game-image"><span class="image-label">02 / SWORD FIGHT</span><img src="site-assets/game-sword.png" alt="상대와 마주 서서 검을 겨누는 칼싸움 실제 게임 화면" width="600" height="400" loading="lazy"></div><div class="game-info"><div><h3>칼싸움</h3><span class="pill">1 : 1</span></div><p>막을까, 찌를까. 눈치가 곧 실력.<br>옆자리의 빈틈을 노려보세요.</p></div></article>
+        <article class="game-card"><div class="game-image"><span class="image-label">03 / VOLLEYBALL</span><img src="site-assets/game-volleyball.png" alt="네트를 사이에 두고 공을 넘기는 배구 실제 게임 화면" width="600" height="400" loading="lazy"></div><div class="game-info"><div><h3>배구</h3><span class="pill">1 : 1</span></div><p>받아 올리고, 힘껏 스파이크.<br>먼저 5점을 내면 오늘의 승자.</p></div></article>
+      </div>
+      <div class="more-games"><span class="more-label">아직 더 있어요</span><span>축구 <i>·</i> 배구 <i>·</i> 칼싸움 <i>·</i> 세포키우기 <i>·</i> 웜즈 <i>·</i> 메랜디 <i>·</i> 동물탑 <i>·</i> 등등..</span></div>
+    </section>
+    <section class="how section" id="how" aria-labelledby="how-title"><div class="section-heading"><div><span class="eyebrow">READY, SET, PLAY</span><h2 id="how-title">준비는 짧게. 한 판은 가볍게.</h2></div></div><div class="steps"><article><span class="step-number">1</span><h3>다운로드하고</h3><p>내 컴퓨터에 맞는 버전을 설치해요.<br>게임 계정을 만들 필요는 없어요.</p></article><article><span class="step-number">2</span><h3>같은 Wi-Fi에 연결하고</h3><p>친구와 같은 네트워크에 접속하면<br>서로를 자동으로 찾아줘요.</p></article><article><span class="step-number">3</span><h3>옆자리에 도전장!</h3><p>게임을 고르고 대전을 신청해요.<br>이제 작은 화면에서 크게 놀 시간.</p></article></div><div class="shortcut-tip"><span>잠깐, 일할 시간이라면?</span><span><kbd>Page Down</kbd> 숨기기 <span class="tip-divider">/</span> <kbd>Page Up</kbd> 다시 꺼내기</span><small>앱 설정에서 단축키를 바꿀 수 있어요.</small></div></section>
+    <section class="download section" id="download" aria-labelledby="download-title"><div class="download-copy"><span class="eyebrow">YOUR NEXT LITTLE BREAK</span><h2 id="download-title">자, 한 판 할래요?</h2><p>작은 놀이터 하나, 내 화면에 들여놓기.</p><span class="release-status" id="release-status" aria-live="polite">GitHub에서 최신 릴리스를 확인하세요.</span></div><div class="download-options"><a class="download-button" id="download-mac" href="https://github.com/yogurt-c/overlay-lupin/releases/latest"><span class="os-mark" aria-hidden="true">⌘</span><span><strong>macOS 다운로드</strong><small>Apple Silicon & Intel · DMG</small></span><span aria-hidden="true">↓</span></a><a class="download-button" id="download-win" href="https://github.com/yogurt-c/overlay-lupin/releases/latest"><span class="os-mark windows-mark" aria-hidden="true">⊞</span><span><strong>Windows 다운로드</strong><small>64-bit · EXE</small></span><span aria-hidden="true">↓</span></a><a class="release-link" href="https://github.com/yogurt-c/overlay-lupin/releases">업데이트 소식 & 이전 버전 ↗</a></div></section>
+    <section class="comments section" id="comments" aria-labelledby="comments-title"><div class="section-heading"><div><span class="eyebrow">LEAVE A LITTLE NOTE</span><h2 id="comments-title">한 판 하고, 한마디.</h2></div><span class="scribble">재밌었으면 발자국 남기기 ↙</span></div><p class="comments-intro">짜릿했던 승리, 아쉬웠던 한 판, 다음에 하고 싶은 게임까지.<br>작은 의견도 반갑게 읽을게요.</p><div class="comment-box"><div class="comment-welcome"><img src="site-assets/hero.png" alt="" width="56" height="56" loading="lazy"><div><h3>루팡들의 방명록</h3><p>닉네임만 적고 익명으로 남길 수 있어요.</p></div></div><form class="anonymous-comment-form" id="anonymous-comment-form"><label>닉네임 <input id="comment-name" name="name" maxlength="24" placeholder="예: 갈색 루팡" required></label><label>한마디 <textarea id="comment-body" name="body" maxlength="500" rows="3" placeholder="어떤 게임이 제일 재밌었나요?" required></textarea></label><button class="button secondary" type="submit">익명으로 남기기 <span aria-hidden="true">↗</span></button></form><div class="comment-list" id="comment-list" aria-live="polite"></div><p class="comment-status" id="comment-status" role="status"></p><noscript><p>익명 댓글을 남기려면 JavaScript를 켜주세요.</p></noscript><div class="comment-bottom"><span>이름과 이메일은 받지 않아요. 서로에게 다정한 한마디를 부탁해요.</span><a href="https://github.com/yogurt-c/overlay-lupin/issues">의견·버그를 GitHub에 남기기 ↗</a></div></div></section>
+  </main>
+  <footer><a class="brand footer-brand" href="#">오버레이 루팡<span class="footer-dot">·</span><span>작고 소중한 딴짓.</span></a><a href="https://github.com/yogurt-c/overlay-lupin">Made for a little break. <span>GitHub ↗</span></a></footer>
+</div>
+</body>
+</html>

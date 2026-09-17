@@ -33,6 +33,14 @@ async function create() {
   await waitFor(w, `document.querySelectorAll('#game-tabs button').length === 7`, 'seven game entries');
   return w;
 }
+async function startSolo(w, draw) {
+  await w.webContents.executeJavaScript(`(() => {
+    const random = Math.random;
+    Math.random = () => ${draw};
+    try { document.getElementById('solo-btn').click(); }
+    finally { Math.random = random; }
+  })()`);
+}
 async function press(w, code) {
   await w.webContents.executeJavaScript(`window.dispatchEvent(new KeyboardEvent('keydown',{code:${JSON.stringify(code)}}))`);
   await pause(35);
@@ -67,7 +75,8 @@ app.whenReady().then(async () => {
   assert.equal(await extreme.webContents.executeJavaScript(`document.getElementById('variant-choice').hidden`), false, '동물탑 offers rules');
   await extreme.webContents.executeJavaScript(`[...document.querySelectorAll('#game-tabs button')].find(b=>b.textContent==='축구').click()`);
   assert.equal(await extreme.webContents.executeJavaScript(`document.getElementById('variant-choice').hidden`), true, 'a game without variants has no chooser');
-  await extreme.webContents.executeJavaScript(`[...document.querySelectorAll('#game-tabs button')].find(b=>b.textContent==='동물탑').click(); [...document.querySelectorAll('#variant-choice button')].find(b=>b.textContent==='극한').click(); document.getElementById('solo-btn').click()`);
+  await extreme.webContents.executeJavaScript(`[...document.querySelectorAll('#game-tabs button')].find(b=>b.textContent==='동물탑').click(); [...document.querySelectorAll('#variant-choice button')].find(b=>b.textContent==='극한').click()`);
+  await startSolo(extreme, 0.25);
   await waitFor(extreme, `document.getElementById('score').textContent.includes('극한')`, '극한 HUD');
   // Nobody touches the keyboard here: the five-second fuse has to place the animal on its own.
   await waitFor(extreme, `document.getElementById('score').textContent.includes('1마리')`, 'fuse places the animal unaided', 240);
@@ -75,7 +84,8 @@ app.whenReady().then(async () => {
   extreme.destroy();
 
   const solo = await create();
-  await solo.webContents.executeJavaScript(`[...document.querySelectorAll('#game-tabs button')].find(b=>b.textContent==='동물탑').click(); document.getElementById('solo-btn').click()`);
+  await solo.webContents.executeJavaScript(`[...document.querySelectorAll('#game-tabs button')].find(b=>b.textContent==='동물탑').click()`);
+  await startSolo(solo, 0.25);
   await waitFor(solo, `document.getElementById('score').textContent.includes('내 차례')`, 'solo HUD');
   await press(solo, 'Space');
   await waitFor(solo, `document.getElementById('score').textContent.includes('1마리')`, 'solo stable landing');
@@ -88,6 +98,13 @@ app.whenReady().then(async () => {
   assert.equal(await solo.webContents.executeJavaScript('innerWidth'), 160);
   solo.destroy();
 
+  const botFirst = await create();
+  await botFirst.webContents.executeJavaScript(`[...document.querySelectorAll('#game-tabs button')].find(b=>b.textContent==='동물탑').click()`);
+  await startSolo(botFirst, 0.75);
+  await waitFor(botFirst, `document.getElementById('score').textContent.includes('봇 차례')`, 'bot wins opening draw');
+  await waitFor(botFirst, `document.getElementById('score').textContent.includes('1마리') && document.getElementById('score').textContent.includes('내 차례')`, 'bot opens unaided and hands over', 240);
+  botFirst.destroy();
+
   // The rule travels with the invite: whichever side ends up hosting runs the inviter's pick.
   const invited = await create();
   invited.webContents.send('net:match-found', { peer: { id: 'zzz' }, isHost: true, gameId: 'tower', variant: 'extreme' });
@@ -95,31 +112,40 @@ app.whenReady().then(async () => {
   invited.destroy();
   const nonsense = await create();
   nonsense.webContents.send('net:match-found', { peer: { id: 'zzz' }, isHost: true, gameId: 'tower', variant: 'no-such-rule' });
-  await waitFor(nonsense, `document.getElementById('score').textContent.includes('내 차례')`, 'unknown rule still starts');
+  await waitFor(nonsense, `/내 차례|상대 차례/.test(document.getElementById('score').textContent)`, 'unknown rule still starts');
   assert.ok(!(await nonsense.webContents.executeJavaScript(`document.getElementById('score').textContent`)).includes('극한'),
     'an unrecognised rule falls back to the default');
   nonsense.destroy();
 
-  const host = await create(), guest = await create();
-  host.webContents.send('net:match-found', { peer: { id: 'guest' }, isHost: true, gameId: 'tower' });
-  guest.webContents.send('net:match-found', { peer: { id: 'host' }, isHost: false, gameId: 'tower' });
-  await waitFor(guest, `document.getElementById('score').textContent.includes('상대 차례')`, 'guest snapshot');
-  await press(host, 'Space');
-  await waitFor(guest, `document.getElementById('score').textContent.includes('내 차례')`, 'guest turn');
-  // An animal-change token travels the same client path and must not stall the aim it pauses.
-  const traded = await guest.webContents.executeJavaScript(`document.getElementById('score').textContent`);
-  await press(guest, 'KeyR');
-  await pause(200);
-  assert.equal(await guest.webContents.executeJavaScript(`document.getElementById('score').textContent`), traded);
-  // Deliberate miss: client controls travel through the real preload + IPC + shell callbacks.
-  await guest.webContents.executeJavaScript(`window.dispatchEvent(new KeyboardEvent('keydown',{code:'ArrowRight'}))`);
-  await pause(1700);
-  await guest.webContents.executeJavaScript(`window.dispatchEvent(new KeyboardEvent('keyup',{code:'ArrowRight'}))`);
-  await press(guest, 'Space');
-  await waitFor(guest, `document.getElementById('banner').textContent === '패배' && !document.getElementById('banner').hidden`, 'guest loses');
-  await waitFor(host, `document.getElementById('banner').textContent === '승리' && !document.getElementById('banner').hidden`, 'host wins');
+  for (const draw of [0.25, 0.75]) {
+    const host = await create(), guest = await create();
+    await host.webContents.executeJavaScript(`window.testRandom = Math.random; Math.random = () => ${draw}; void 0`);
+    host.webContents.send('net:match-found', { peer: { id: 'guest' }, isHost: true, gameId: 'tower' });
+    guest.webContents.send('net:match-found', { peer: { id: 'host' }, isHost: false, gameId: 'tower' });
+    const first = draw < 0.5 ? host : guest, second = draw < 0.5 ? guest : host;
+    await waitFor(first, `document.getElementById('score').textContent.includes('내 차례')`, 'drawn starter sees own turn');
+    await waitFor(second, `document.getElementById('score').textContent.includes('상대 차례')`, 'opponent sees same opening draw');
+    await host.webContents.executeJavaScript(`Math.random = window.testRandom; delete window.testRandom`);
+    // The waiting player cannot place the opening block.
+    await press(second, 'Space');
+    assert.ok((await first.webContents.executeJavaScript(`document.getElementById('score').textContent`)).includes('0마리'));
+    await press(first, 'Space');
+    await waitFor(second, `document.getElementById('score').textContent.includes('내 차례')`, 'opening drop hands over');
+    const traded = await second.webContents.executeJavaScript(`document.getElementById('score').textContent`);
+    await press(second, 'KeyR');
+    await pause(200);
+    assert.equal(await second.webContents.executeJavaScript(`document.getElementById('score').textContent`), traded);
+    // Deliberate miss through the real preload + IPC + shell, with either side owning it.
+    await second.webContents.executeJavaScript(`window.dispatchEvent(new KeyboardEvent('keydown',{code:'ArrowRight'}))`);
+    await pause(1700);
+    await second.webContents.executeJavaScript(`window.dispatchEvent(new KeyboardEvent('keyup',{code:'ArrowRight'}))`);
+    await press(second, 'Space');
+    await waitFor(second, `document.getElementById('banner').textContent === '패배' && !document.getElementById('banner').hidden`, 'second player loses');
+    await waitFor(first, `document.getElementById('banner').textContent === '승리' && !document.getElementById('banner').hidden`, 'starter wins');
+    host.destroy(); guest.destroy();
+  }
   assert.ok(packetCount > 0); assert.ok(maxPacketBytes < 1200);
   assert.deepEqual(errors, []);
-  console.log(`PASS Electron: rule chooser, 극한 fuse placing unaided, invited rule honoured, solo bot turn and placement, resize, two-window duel, guest loss / host win; ${packetCount} packets, max ${maxPacketBytes} bytes`);
+  console.log(`PASS Electron: rule chooser, 극한 fuse placing unaided, invited rule honoured, human/bot opening draws, resize, host/guest opening draws and win/loss; ${packetCount} packets, max ${maxPacketBytes} bytes`);
   app.quit();
 }).catch(error => { console.error(error); app.exit(1); });
