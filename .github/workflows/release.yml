@@ -20,10 +20,13 @@ jobs:
         with:
           node-version: 20
       - run: npm ci
+      - name: Import Developer ID certificate into keychain
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.MAC_CERT_P12_BASE64 }}
+          p12-password: ${{ secrets.MAC_CERT_PASSWORD }}
       - name: Build & sign & notarize (mac universal)
         env:
-          CSC_LINK: ${{ secrets.MAC_CERT_P12_BASE64 }}
-          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
