@@ -27,7 +27,7 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-        run: npx electron-builder --mac --publish=never
+        run: npm run release:mac
       - uses: actions/upload-artifact@v4
         with:
           name: mac-release
@@ -48,7 +48,7 @@ jobs:
       - name: Build (windows)
         # SignPath 인증서가 발급되면 여기에 서명 스텝을 추가할 것
         # (signpath/github-action-submit-signing-request 사용, 빌드 아티팩트를 서명 요청으로 제출)
-        run: npx electron-builder --win --publish=never
+        run: npm run release:win
       - uses: actions/upload-artifact@v4
         with:
           name: win-release
