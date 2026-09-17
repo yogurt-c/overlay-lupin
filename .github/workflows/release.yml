@@ -5,6 +5,11 @@ on:
     tags:
       - "v*.*.*"
   workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "릴리즈 태그 (수동 테스트용, 예: v0.0.0-ci-test)"
+        required: false
+        default: "v0.0.0-ci-test"
 
 jobs:
   build-mac:
@@ -64,5 +69,6 @@ jobs:
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
           draft: true
           files: release/*
