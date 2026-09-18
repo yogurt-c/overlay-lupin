@@ -1,5 +1,13 @@
+## v0.9.1 변경 사항
+
+- 동물탑에 나무늘보, 콩벌레, 낙타, 큰부리새, 고릴라, 개구리, 천산갑을 추가해 총 23종의 동물 블럭을 제공합니다.
+- 개발 중 추가했던 오랑우탄을 나무늘보로 교체했습니다. 길게 든 팔과 오른쪽으로 뻗은 발톱을 잉크 그림으로 구현하고, 실제 모양에 맞춰 충돌 윤곽을 조정했습니다.
+- 동물탑의 새 동물 크기와 물리 동작을 조정했습니다.
+- 게임 소개와 설치 파일을 확인할 수 있는 다운로드 페이지를 추가했습니다.
+
 ## 다운로드
-- macOS: `Overlay Lupin-x.x.x-universal.dmg`
-- Windows: `Overlay Lupin Setup x.x.x.exe`
+
+- macOS: `Overlay Lupin-0.9.1-universal.dmg` (Apple Silicon·Intel 공용)
+- Windows: `Overlay Lupin Setup 0.9.1.exe`
 
 (그 외 `.zip`, `.blockmap`, `.yml` 파일은 자동 업데이트용 내부 파일이니 무시하셔도 됩니다)
