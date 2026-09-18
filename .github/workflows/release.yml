@@ -80,6 +80,28 @@ jobs:
         with:
           path: release
           merge-multiple: true
+      - name: Normalize updater artifact names
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.tag_name || github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          # electron-builder currently emits dot-separated names, while its
+          # latest*.yml metadata uses hyphen-separated URLs. Keep both in sync
+          # so electron-updater can download the published assets.
+          mv "release/Overlay.Lupin-${version}-universal-mac.zip" \
+             "release/Overlay-Lupin-${version}-universal-mac.zip"
+          mv "release/Overlay.Lupin-${version}-universal-mac.zip.blockmap" \
+             "release/Overlay-Lupin-${version}-universal-mac.zip.blockmap"
+          mv "release/Overlay.Lupin-${version}-universal.dmg" \
+             "release/Overlay-Lupin-${version}-universal.dmg"
+          mv "release/Overlay.Lupin-${version}-universal.dmg.blockmap" \
+             "release/Overlay-Lupin-${version}-universal.dmg.blockmap"
+          mv "release/Overlay.Lupin.Setup.${version}.exe" \
+             "release/Overlay-Lupin-Setup-${version}.exe"
+          mv "release/Overlay.Lupin.Setup.${version}.exe.blockmap" \
+             "release/Overlay-Lupin-Setup-${version}.exe.blockmap"
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
