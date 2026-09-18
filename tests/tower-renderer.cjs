@@ -60,7 +60,7 @@ app.whenReady().then(async () => {
     ctx.fillStyle = '#f5f2e9'; ctx.fillRect(0, 0, 960, 620);
     ctx.fillStyle = '#14181a'; ctx.textAlign = 'center'; ctx.font = '22px sans-serif';
     ctx.fillText('동물탑 · 신규 7종 실제 게임 그림', 480, 36);
-    const ids = ['orangutan', 'pillbug', 'camel', 'toucan', 'gorilla', 'frog', 'pangolin', 'hedgehog'];
+    const ids = ['sloth', 'pillbug', 'camel', 'toucan', 'gorilla', 'frog', 'pangolin', 'hedgehog'];
     ids.forEach((id, i) => {
       const kind = ANIMALS.findIndex(a => a.id === id), x = 120 + i % 4 * 240, y = 160 + Math.floor(i / 4) * 280;
       drawAnimal(ctx, kind, x, y, 0, '#14181a', 125 / GEOMETRY[kind].extent);

@@ -18,7 +18,7 @@ export const ANIMAL_SIZE: Readonly<Record<string, number>> = {
   squirrel: 22,
   turtle: 22,
   hedgehog: 18,
-  orangutan: 64,
+  sloth: 64,
   pillbug: 12,
   camel: 88,
   toucan: 36,

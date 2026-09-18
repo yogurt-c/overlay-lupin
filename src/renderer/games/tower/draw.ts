@@ -22,7 +22,10 @@ export function drawAnimal(ctx: CanvasRenderingContext2D, kind: number, x: numbe
   const outline = path(art.outline);
   ctx.strokeStyle = HALO; ctx.lineWidth = 4 / animalScale; ctx.stroke(outline);
   ctx.fillStyle = PAPER; ctx.fill(outline);
-  ctx.strokeStyle = ink; ctx.lineWidth = 1.5 / animalScale; ctx.stroke(outline);
+  // Traced artwork already includes the complete ink outline as filled paths.
+  if (!art.traced) {
+    ctx.strokeStyle = ink; ctx.lineWidth = 1.5 / animalScale; ctx.stroke(outline);
+  }
   for (const mark of art.marks) {
     ctx.save();
     const rotation = mark.transform?.match(/rotate\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)/);

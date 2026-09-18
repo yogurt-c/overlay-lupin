@@ -638,7 +638,7 @@ test('relative animal size reaches physics mass and inertia without losing small
   assert.ok(longest(body('hedgehog')) >= 17.8);
   assert.ok(Math.abs(longest(body('pillbug')) - 12) < 0.2);
   assert.ok(longest(body('pillbug')) < longest(body('hedgehog')));
-  assert.ok(longest(body('gorilla')) > longest(body('orangutan')) * 1.4);
+  assert.ok(longest(body('gorilla')) > longest(body('sloth')) * 1.4);
   assert.ok(body('elephant').getMass() > body('cat').getMass() * 5);
   assert.ok(body('elephant').getInertia() > body('cat').getInertia() * 10);
   for (const [i] of ANIMALS.entries()) assert.ok(Math.abs(longest(makeBody(i)) - GEOMETRY[i].extent) < 0.2);
