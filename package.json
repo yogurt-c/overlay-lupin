@@ -1,6 +1,6 @@
 {
   "name": "overlay-lupin",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "description": "같은 Wi-Fi/LAN에서 즉석으로 붙는, 화면 위에 몰래 떠 있는 미니게임 모음 오버레이",
   "author": "hyungi",
   "license": "MIT",
@@ -52,6 +52,9 @@
     },
     "mac": {
       "icon": "build/icon.icns",
+      "extendInfo": {
+        "NSLocalNetworkUsageDescription": "같은 Wi-Fi/LAN에 있는 다른 플레이어를 찾기 위해 로컬 네트워크 접근이 필요합니다."
+      },
       "target": [
         {
           "target": "dmg",
@@ -81,7 +84,9 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": true,
+      "include": "build/installer.nsh"
     }
   }
 }
