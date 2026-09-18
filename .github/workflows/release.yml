@@ -66,6 +66,16 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+      - name: Check release notes
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          test -s build/release-notes.md
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            test "$RELEASE_TAG" = "v$(node -p "require('./package.json').version")"
+            grep -Fx "## $RELEASE_TAG 변경 사항" build/release-notes.md
+          fi
       - uses: actions/download-artifact@v4
         with:
           path: release
@@ -73,5 +83,15 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
+          name: Overlay Lupin ${{ github.event.inputs.tag_name || github.ref_name }}
+          body_path: build/release-notes.md
+          # Upload every asset before exposing the release to automatic updates.
           draft: true
+          fail_on_unmatched_files: true
           files: release/*
+      - name: Publish tagged release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release edit "$RELEASE_TAG" --draft=false

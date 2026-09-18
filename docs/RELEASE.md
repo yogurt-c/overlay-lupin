@@ -4,7 +4,7 @@
 
 ## 알아둘 것
 
-**자동 업데이트 배포는 항상 `npm run release:publish` 하나로 mac+win을 같이 올릴 것.** `release:mac:publish`/`release:win:publish`를 따로 실행하면 같은 버전의 draft 릴리즈가 GitHub에 2개(mac 자산만 있는 것, win 자산만 있는 것)로 쪼개져서 자동 업데이트가 깨짐.
+**자동 업데이트 배포는 버전 태그를 푸시하는 GitHub Actions 방식을 권장합니다.** 로컬에서 배포할 때는 `npm run release:publish` 하나로 mac+win을 같이 올릴 것. `release:mac:publish`/`release:win:publish`를 따로 실행하면 같은 버전의 draft 릴리즈가 GitHub에 2개(mac 자산만 있는 것, win 자산만 있는 것)로 쪼개져서 자동 업데이트가 깨짐.
 
 **`package.json`의 `build.productName`은 반드시 영문(ASCII)으로 유지할 것.** 한글(예: "오버레이 루팡")로 하면 `electron-builder`의 유니버설(x64+arm64 병합) 단계(`@electron/universal`)가 병합 후 앱을 찾지 못해 몇 분간 조용히 재시도하다 `Application at path "..." could not be found` 에러로 실패합니다. 영문 이름(`Overlay Lupin`)에서는 문제없습니다. 앱 내부 표시 이름(창 제목 등)은 한글로 둬도 무방 — 문제는 오직 빌드 산출물 폴더명이 되는 `productName` 필드입니다.
 
@@ -74,7 +74,7 @@ npm run release:publish
 
 - `GH_TOKEN`: https://github.com/settings/tokens 에서 `repo` 스코프로 발급.
 - 결과물: dmg/zip/latest-mac.yml(mac) + exe/latest.yml(win)이 같은 draft에 업로드됨.
-- 릴리즈 본문(설명)에는 `build/release-notes.md` 내용이 `releaseInfo.releaseNotesFile` 설정(`package.json`)을 통해 자동으로 채워짐 — 어떤 파일을 받아야 하는지 안내하는 고정 문구. 버전별 변경 내역은 여기 포함되지 않으므로 필요하면 GitHub 릴리즈 페이지에서 직접 추가.
+- 릴리즈 본문(설명)에는 배포 전에 작성한 `build/release-notes.md` 내용이 `releaseInfo.releaseNotesFile` 설정(`package.json`)을 통해 자동으로 채워짐. 버전별 한국어 변경 내역과 다운로드 안내를 이 파일에 함께 작성할 것.
 - GitHub Releases 페이지에서 확인 후 **Publish**로 전환해야 사용자 앱들이 실제로 감지함.
 
 ## 수동 배포 (자동 업데이트 없이 dmg만 전달할 때)
@@ -114,7 +114,18 @@ npm run release:win
 
 # GitHub Actions로 빌드 (CI)
 
-`.github/workflows/release.yml`에서 `v*.*.*` 형식 태그 푸시 시(또는 수동 `workflow_dispatch`) mac+win을 각각 러너에서 빌드해 draft 릴리즈 하나로 합침. 로컬 키체인 프로필(`overlaylupin-notary`)은 CI에서 못 쓰므로 아래 GitHub Secrets를 리포지토리에 등록해야 함:
+`.github/workflows/release.yml`은 `v*.*.*` 형식 태그 푸시 시 mac+win 빌드가 모두 성공하면 릴리즈 노트와 설치 파일을 초안에 업로드하고, 업로드 성공 후 자동으로 공개합니다. 수동 `workflow_dispatch` 실행은 테스트용 초안으로 유지합니다.
+
+배포 순서:
+
+1. `package.json`과 `package-lock.json`의 앱 버전을 함께 올립니다.
+2. 이전 릴리즈 이후 변경사항을 확인해 `build/release-notes.md`에 한국어 노트를 작성합니다. 첫 제목은 `## v0.9.2 변경 사항`처럼 이번 태그와 일치시킵니다. 다운로드 파일명도 새 버전으로 갱신합니다. 노트 작성은 배포 준비 단계에서 진행하며, 워크플로우는 작성된 파일을 릴리즈 본문으로 사용합니다.
+3. 테스트 후 버전과 노트를 커밋하고, 해당 커밋에 버전 태그를 만들어 푸시합니다.
+4. CI가 태그와 앱 버전·노트 제목의 일치를 검사하고, 양쪽 플랫폼의 빌드와 파일 업로드가 성공하면 자동 게시합니다. GitHub에서 별도로 Publish를 누를 필요가 없습니다.
+
+이미 푸시한 태그는 해당 커밋의 워크플로우로 실행됩니다. 이 설정은 변경된 워크플로우를 포함하는 새 태그부터 적용됩니다.
+
+로컬 키체인 프로필(`overlaylupin-notary`)은 CI에서 못 쓰므로 아래 GitHub Secrets를 리포지토리에 등록해야 함:
 
 | Secret | 내용 |
 |---|---|
