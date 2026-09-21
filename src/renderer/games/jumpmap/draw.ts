@@ -68,58 +68,150 @@ export function drawCourseDecor(ctx: CanvasRenderingContext2D, camX: number, cam
   ctx.restore();
 }
 
-/** The top is exactly the collision line. All texture and volume sit below it. */
+/** Fill and outline an object against both light and dark desktop backgrounds. */
+function outlined(ctx: CanvasRenderingContext2D, path: Path2D, fill: string, ink: string): void {
+  ctx.fillStyle = fill;
+  ctx.fill(path);
+  ctx.strokeStyle = HALO; ctx.lineWidth = 4;
+  ctx.stroke(path);
+  ctx.strokeStyle = ink; ctx.lineWidth = 1.5;
+  ctx.stroke(path);
+}
+
+function line(ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: number, y2: number): void {
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+}
+
+/** All volume, paper folds and fittings stay below the exact landing surface. */
 function drawBlock(ctx: CanvasRenderingContext2D, kind: PlatformKind, x: number, y: number, w: number, color: string): void {
   const zone = zoneAt(y);
   const style = ZONE_STYLE[zone];
   const moving = kind === 'moving';
-  const cloud = zone === 'sky' && kind === 'static';
-  const fill = moving ? '#d9edf3' : style.fill;
-  const side = moving ? '#a9cdd9' : style.side;
+  const plaza = w >= 170 || kind === 'start' || kind === 'goal';
+  const depth = plaza ? 26 : PLATFORM_H + 6;
   ctx.save();
+  ctx.translate(x, y);
   ctx.lineJoin = 'round';
-  ctx.lineWidth = 1.6;
-  ctx.strokeStyle = moving ? '#446c7b' : style.ink;
-  ctx.fillStyle = fill;
-  ctx.beginPath();
-  ctx.moveTo(x, y); ctx.lineTo(x + w, y);
-  if (cloud) {
-    ctx.lineTo(x + w, y + 11);
-    const bumps = Math.max(3, Math.round(w / 23));
+
+  const body = new Path2D();
+  body.moveTo(0, 0); body.lineTo(w, 0);
+  if (zone === 'sky' && !moving && !plaza && w < 145) {
+    // A paper-cut cloud: flat landing edge, scalloped underside.
+    body.lineTo(w, 10);
+    const bumps = Math.max(3, Math.round(w / 24));
     for (let i = bumps; i > 0; i--) {
-      ctx.quadraticCurveTo(x + (i - 0.5) * w / bumps, y + 29, x + (i - 1) * w / bumps, y + 14);
+      body.quadraticCurveTo((i - 0.5) * w / bumps, 29, (i - 1) * w / bumps, 13);
     }
   } else {
-    ctx.lineTo(x + w - 3, y + PLATFORM_H + 6);
-    ctx.lineTo(x + 3, y + PLATFORM_H + 6);
+    body.lineTo(w, depth - 4); body.lineTo(w - 5, depth);
+    body.lineTo(3, depth); body.lineTo(0, depth - 3);
   }
-  ctx.closePath(); ctx.fill(); ctx.stroke();
-  if (!cloud) {
-    ctx.fillStyle = side;
-    ctx.fillRect(x + 3, y + 8, w - 6, PLATFORM_H + 2);
-    ctx.globalAlpha = 0.45;
-    for (let hatch = x + 10; hatch < x + w - 5; hatch += 14) {
-      ctx.beginPath(); ctx.moveTo(hatch, y + 11); ctx.lineTo(hatch - 4, y + 16); ctx.stroke();
+  body.closePath();
+  outlined(ctx, body, style.fill, style.ink);
+  ctx.save(); ctx.clip(body);
+  ctx.fillStyle = style.side;
+  ctx.fillRect(0, depth - 6, w, 6);
+  ctx.strokeStyle = style.ink; ctx.lineWidth = 1;
+
+  if (zone === 'desk') {
+    if (w >= 145 || plaza) {
+      // Book cover, page edges and a cloth spine. Plazas become a small stack.
+      ctx.fillStyle = '#c58868'; ctx.fillRect(0, 0, w, 5);
+      ctx.fillRect(0, depth - 4, w, 4);
+      ctx.fillRect(0, 4, 10, depth - 8);
+      ctx.strokeStyle = '#c0a783';
+      for (let row = 9; row < depth - 4; row += 4) line(ctx, 15, row, w - 5, row);
+      if (plaza) {
+        ctx.fillStyle = '#799897'; ctx.fillRect(0, 15, w, 4);
+        ctx.fillStyle = '#547777'; ctx.fillRect(w - 13, 18, 8, 8);
+        ctx.fillStyle = '#b76259'; ctx.fillRect(w - 35, 4, 6, 9);
+      }
+    } else if (w >= 95) {
+      // Wooden ruler; sparse ticks read at the native overlay size.
+      ctx.fillStyle = '#e9c891'; ctx.fillRect(0, 0, w, depth - 5);
+      ctx.strokeStyle = '#907049';
+      for (let tick = 10, i = 0; tick < w - 5; tick += 10, i++) {
+        line(ctx, tick, 3, tick, i % 5 === 0 ? 12 : 8);
+      }
+      ctx.globalAlpha = 0.3; line(ctx, 6, 15, w - 6, 15); ctx.globalAlpha = 1;
+    } else {
+      // Pink eraser with a blue paper sleeve.
+      ctx.fillStyle = '#edb6ad'; ctx.fillRect(0, 0, w, depth - 5);
+      ctx.fillStyle = '#8bacba'; ctx.fillRect(w * 0.27, 0, w * 0.46, depth);
+      ctx.fillStyle = '#dce8e7'; ctx.fillRect(w * 0.27 + 3, 7, w * 0.46 - 6, 3);
     }
-    ctx.globalAlpha = 1;
+  } else if (zone === 'workshop') {
+    if (w >= 120 && !plaza && !moving) {
+      // Planked construction platform, with broad seams rather than fine noise.
+      ctx.fillStyle = '#dcc39a'; ctx.fillRect(0, 0, w, depth - 5);
+      ctx.strokeStyle = '#9b805b';
+      for (let seam = 30; seam < w; seam += 36) line(ctx, seam, 2, seam, depth - 5);
+      line(ctx, 7, 10, 23, 10); line(ctx, w - 29, 13, w - 9, 13);
+    } else {
+      // I-beam / workbench: flanges and a recessed web.
+      ctx.fillStyle = '#728e94'; ctx.fillRect(0, 6, w, depth - 11);
+      ctx.fillStyle = '#415e67'; ctx.fillRect(4, 7, w - 8, 3);
+      ctx.fillStyle = '#d0dcd5'; ctx.fillRect(0, depth - 5, w, 3);
+      for (const rivetX of [8, w - 8]) {
+        ctx.beginPath(); ctx.arc(rivetX, depth / 2, 2, 0, Math.PI * 2);
+        ctx.fillStyle = '#e5eeea'; ctx.fill();
+      }
+      if (plaza) {
+        for (const end of [15, w - 43]) {
+          ctx.fillStyle = '#e6bd66'; ctx.fillRect(end, 11, 28, 8);
+          ctx.strokeStyle = '#586061'; ctx.lineWidth = 3;
+          for (let stripe = 4; stripe < 26; stripe += 9) line(ctx, end + stripe, 12, end + stripe - 3, 18);
+        }
+      }
+    }
+  } else {
+    // Folded paper and layered paper islands; folds never suggest a raised top.
+    ctx.strokeStyle = '#c1b9d7';
+    if (plaza || w >= 145 || moving) {
+      line(ctx, 5, depth - 10, w - 6, depth - 10);
+      line(ctx, 7, depth - 6, w - 4, depth - 6);
+      ctx.beginPath(); ctx.moveTo(w - 23, 1); ctx.lineTo(w - 23, 12); ctx.lineTo(w - 5, 12); ctx.closePath();
+      ctx.fillStyle = '#d6cbe9'; ctx.fill(); ctx.stroke();
+      line(ctx, w - 23, 1, w - 5, 12);
+      if (plaza) {
+        ctx.fillStyle = '#b0a2ca'; ctx.fillRect(10, 8, 23, 5);
+        ctx.fillStyle = '#d5c9e5'; ctx.fillRect(38, 8, 14, 5);
+      }
+    } else {
+      ctx.globalAlpha = 0.6;
+      line(ctx, 12, 8, 25, 11); line(ctx, w - 29, 11, w - 16, 7);
+      ctx.globalAlpha = 1;
+    }
   }
-  // One unbroken dark edge makes the landable surface readable on any desktop.
-  ctx.strokeStyle = color; ctx.lineWidth = 2.1;
-  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + w, y); ctx.stroke();
-  ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(x + 5, y + 3); ctx.lineTo(x + w - 5, y + 3); ctx.stroke();
+  ctx.restore();
+
   if (moving) {
-    for (const [cx, direction] of [[x + 15, -1], [x + w - 15, 1]]) {
-      ctx.strokeStyle = '#446c7b'; ctx.lineWidth = 1.8;
-      ctx.beginPath(); ctx.moveTo(cx - direction * 4, y + 5); ctx.lineTo(cx + direction * 2, y + 9); ctx.lineTo(cx - direction * 4, y + 13); ctx.stroke();
+    // The same carriage, wheels and arrows identify movement in every chapter.
+    ctx.strokeStyle = '#446c7b'; ctx.lineWidth = 2;
+    line(ctx, 17, depth, 17, 26); line(ctx, w - 17, depth, w - 17, 26);
+    for (const wheelX of [17, w - 17]) {
+      const wheel = new Path2D(); wheel.arc(wheelX, 26, 3.5, 0, Math.PI * 2);
+      outlined(ctx, wheel, '#638693', '#365561');
+      ctx.fillStyle = '#e9f3f3'; ctx.fillRect(wheelX - 1, 25, 2, 2);
+    }
+    ctx.fillStyle = '#d9edf3'; ctx.fillRect(w / 2 - 17, 5, 34, 11);
+    ctx.strokeStyle = '#365561'; ctx.lineWidth = 1.7;
+    for (const direction of [-1, 1]) {
+      const cx = w / 2 + direction * 10;
+      line(ctx, cx - direction * 4, 7, cx, 10);
+      line(ctx, cx, 10, cx - direction * 4, 13);
     }
   }
   if (kind === 'start' || kind === 'goal') {
-    ctx.fillStyle = color;
-    for (let col = 0; col < Math.floor((w - 12) / 6); col++) {
-      ctx.fillRect(x + 6 + col * 6, y + 6 + (col % 2) * 6, 6, 6);
+    // A small finish strip leaves the object's material visible.
+    ctx.fillStyle = kind === 'goal' ? '#b85e4e' : '#527c76';
+    for (let col = 0; col < 8; col++) {
+      ctx.fillRect(w / 2 - 20 + col * 5, 5 + (col % 2) * 5, 5, 5);
     }
   }
+  // Crisp collision edge and an inset glint, shared by every material.
+  ctx.strokeStyle = color; ctx.lineWidth = 2.1; line(ctx, 0, 0, w, 0);
+  ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 1; line(ctx, 4, 2.5, w - 4, 2.5);
   ctx.restore();
 }
 
@@ -181,13 +273,14 @@ export function drawPlatform(ctx: CanvasRenderingContext2D, kind: PlatformKind, 
       ctx.stroke();
     }
     ctx.fillStyle = '#e5ba7d'; ctx.fillRect(x + 6, y + 25 - compression, w - 12, 4);
-    ctx.fillStyle = '#f6b76f'; ctx.strokeStyle = '#875732';
-    ctx.beginPath(); ctx.roundRect(x, y, w, 8, [0, 0, 4, 4]); ctx.fill(); ctx.stroke();
+    const pad = new Path2D(); pad.roundRect(x, y, w, 11, [0, 0, 4, 4]);
+    outlined(ctx, pad, '#f4ac59', '#875732');
     ctx.strokeStyle = color; ctx.lineWidth = 2.1;
     ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + w, y); ctx.stroke();
-    ctx.strokeStyle = '#875732'; ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#754823'; ctx.lineWidth = 1.8;
     for (const cx of [x + w / 2 - 8, x + w / 2 + 8]) {
-      ctx.beginPath(); ctx.moveTo(cx - 3, y + 6); ctx.lineTo(cx, y + 3); ctx.lineTo(cx + 3, y + 6); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx - 4, y + 7); ctx.lineTo(cx, y + 3); ctx.lineTo(cx + 4, y + 7);
+      ctx.moveTo(cx, y + 3); ctx.lineTo(cx, y + 10); ctx.stroke();
     }
     ctx.restore();
   }
