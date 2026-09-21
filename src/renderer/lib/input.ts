@@ -16,16 +16,19 @@ export interface InputSource<T> {
 /** Maps each field of a game's input shape to the key codes that trigger it. */
 export type KeyBindings<T> = { [K in keyof T]: readonly string[] };
 
-export function createKeyInputSource<T>(target: Window, bindings: KeyBindings<T>): InputSource<T> {
+export function createKeyInputSource<T>(target: Window, bindings: KeyBindings<T>, buffered: readonly (keyof T)[] = []): InputSource<T> {
   const fields = Object.keys(bindings) as (keyof T)[];
   const watched = new Set<string>();
   for (const field of fields) for (const code of bindings[field]) watched.add(code);
 
   const held = new Set<string>();
+  const pressed = new Set<string>();
+  const bufferedCodes = new Set(buffered.flatMap(field => [...bindings[field]]));
 
   target.addEventListener('keydown', (e) => {
     if (!watched.has(e.code)) return;
     e.preventDefault();
+    if (!held.has(e.code) && bufferedCodes.has(e.code)) pressed.add(e.code);
     held.add(e.code);
   });
   target.addEventListener('keyup', (e) => {
@@ -33,16 +36,17 @@ export function createKeyInputSource<T>(target: Window, bindings: KeyBindings<T>
     e.preventDefault();
     held.delete(e.code);
   });
-  target.addEventListener('blur', () => held.clear());
+  target.addEventListener('blur', () => { held.clear(); pressed.clear(); });
 
   return {
     read: () => {
       const out: Record<string, boolean> = {};
       for (const field of fields) {
-        out[field as string] = bindings[field].some((code) => held.has(code));
+        out[field as string] = bindings[field].some((code) => held.has(code) || pressed.has(code));
       }
+      pressed.clear();
       return out as T;
     },
-    clear: () => held.clear()
+    clear: () => { held.clear(); pressed.clear(); }
   };
 }

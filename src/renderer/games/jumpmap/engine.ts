@@ -28,7 +28,7 @@ import {
 } from './field.js';
 import type { PlatformKind } from './field.js';
 import { poseIndex } from './types.js';
-import type { JumpmapInput, JumpmapWorld, Phase, Pose, PlayerView } from './types.js';
+import type { JumpmapInput, JumpmapWorld, Phase, RunnerState, InputFrame } from './types.js';
 
 const TICK_MS = 1000 / 60;
 
@@ -44,36 +44,16 @@ interface RuntimePlatform {
   deltaX: number;
 }
 
-interface EnginePlayer {
+interface EnginePlayer extends RunnerState {
   id: string;
-  /** Host-side only — left out of the snapshot the same way every other game's roster does. */
+  /** Names stay host-side rather than repeating in world packets. */
   name: string;
-  x: number;
-  y: number;
-  vy: number;
-  facing: 1 | -1;
-  airborne: boolean;
-  /** Decaying horizontal drift from a shove; separate from the direct, input-driven walk. */
-  knockVX: number;
-  stunTicks: number;
-  attackCooldown: number;
-  /** Frames left in the shove swing's visual. */
-  atkAnim: number;
-  jumpHeld: boolean;
-  attackHeld: boolean;
-  /** Platform id currently underfoot, or null while airborne. */
-  standingOn: string | null;
-  pose: Pose;
-  poseTimer: number;
-  /** This round's finish order; undefined until the runner touches the goal. */
-  finish?: number;
   input: JumpmapInput;
-  impact?: PlayerView['impact'];
 }
 
 /**
- * The host-only authoritative simulation for one 점프맵 room. Members never
- * run this — they replay the snapshot it produces.
+ * Shared deterministic movement. Prediction runs only the local runner and
+ * leaves hits, finish order, and round transitions to the authoritative host.
  */
 export class JumpmapEngine {
   players = new Map<string, EnginePlayer>();
@@ -82,6 +62,29 @@ export class JumpmapEngine {
   timerMs = 0;
 
   private tick = 0;
+  private remote = new Map<string, { ack: number; frames: InputFrame[] }>();
+
+  constructor(private predicting = false) {}
+
+  /** One sequenced sample represents one 60Hz input tick. Duplicates are harmless. */
+  queueInputs(id: string, frames: InputFrame[]): void {
+    let stream = this.remote.get(id);
+    if (!stream) { stream = { ack: 0, frames: [] }; this.remote.set(id, stream); }
+    for (const frame of frames) {
+      if (!Number.isSafeInteger(frame.seq) || frame.seq <= stream.ack || frame.seq > stream.ack + 180) continue;
+      if (!stream.frames.some(f => f.seq === frame.seq)) stream.frames.push(frame);
+    }
+    stream.frames.sort((a, b) => a.seq - b.seq);
+  }
+
+  restore(id: string, state: RunnerState, tick: number, phase: Phase): void {
+    this.ensurePlayer(id, id);
+    Object.assign(this.players.get(id)!, state, { finish: state.finish, impact: state.impact });
+    this.tick = tick;
+    this.phase = phase;
+    this.updatePlatforms();
+  }
+
   private finishSeq = 0;
   private platformRuntime = new Map<string, RuntimePlatform>();
 
@@ -121,6 +124,7 @@ export class JumpmapEngine {
 
   removePlayer(id: string): void {
     this.players.delete(id);
+    this.remote.delete(id);
   }
 
   /** Advances the simulation by exactly one tick. */
@@ -129,14 +133,36 @@ export class JumpmapEngine {
     this.updatePlatforms();
 
     if (this.phase === 'intermission') {
+      for (const stream of this.remote.values()) {
+        while (stream.frames[0]?.seq === stream.ack + 1) stream.ack = stream.frames.shift()!.seq;
+      }
+      if (this.predicting) return;
       this.timerMs -= TICK_MS;
       if (this.timerMs <= 0) this.resetRound();
       return;
     }
 
-    for (const player of this.players.values()) this.stepPlayer(player);
+    for (const player of this.players.values()) {
+      const stream = this.remote.get(player.id);
+      // During packet gaps the last held input already advanced physics. Coalesce
+      // redundant held samples on recovery, but preserve every input transition.
+      // Never simulate multiple movement/gravity/platform ticks in one host tick.
+      if (stream) {
+        while (stream.frames.length > 4 && stream.frames[0].seq === stream.ack + 1 &&
+          this.sameInput(stream.frames[0].input, player.input)) {
+          stream.ack = stream.frames.shift()!.seq;
+        }
+        const next = stream.frames[0];
+        if (next?.seq === stream.ack + 1) {
+          stream.frames.shift();
+          stream.ack = next.seq;
+          player.input = next.input;
+        }
+      }
+      this.stepPlayer(player);
+    }
 
-    if (this.phase === 'grace') {
+    if (!this.predicting && this.phase === 'grace') {
       this.timerMs -= TICK_MS;
       const everyone = Array.from(this.players.values());
       const allDone = everyone.length > 0 && everyone.every((p) => p.finish !== undefined);
@@ -159,6 +185,11 @@ export class JumpmapEngine {
   }
 
   /* ------------------------------------------------------------ runner */
+
+  private sameInput(a: JumpmapInput, b: JumpmapInput): boolean {
+    return a.left === b.left && a.right === b.right && a.jump === b.jump &&
+      a.down === b.down && a.attack === b.attack;
+  }
 
   private stepPlayer(player: EnginePlayer): void {
     if (player.finish !== undefined) {
@@ -230,6 +261,8 @@ export class JumpmapEngine {
 
     player.attackCooldown = ATTACK_COOLDOWN_TICKS;
     player.atkAnim = ATTACK_SWING_FRAMES;
+
+    if (this.predicting) return; // Local swings are visual; only the host can hit another runner.
 
     let target: EnginePlayer | null = null;
     let bestDistance = Infinity;
@@ -309,7 +342,7 @@ export class JumpmapEngine {
       player.standingOn = null;
       return;
     }
-    if (plat.kind === 'goal' && player.finish === undefined) {
+    if (!this.predicting && plat.kind === 'goal' && player.finish === undefined) {
       this.finish(player);
     }
   }
@@ -378,13 +411,19 @@ export class JumpmapEngine {
 
   /* ------------------------------------------------------------ snapshot */
 
-  snapshot(): JumpmapWorld {
+  private runnerState(player: EnginePlayer): RunnerState {
+    const { id, name, input, ...state } = player;
+    return { ...state, impact: state.impact && this.tick - state.impact.tick < 45 ? { ...state.impact } : undefined };
+  }
+
+  snapshot(withState = false): JumpmapWorld {
     return {
       phase: this.phase,
       timerMs: Math.max(0, Math.round(this.timerMs)),
       tick: this.tick,
       players: Array.from(this.players.values()).map((player) => ({
         id: player.id,
+        ...(withState ? { state: this.runnerState(player), ack: this.remote.get(player.id)?.ack ?? 0 } : {}),
         x: Math.round(player.x),
         y: Math.round(player.y),
         facing: player.facing,

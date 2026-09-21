@@ -1,9 +1,13 @@
+import { encodeWorld, decodeWorld, inputBits, inputFromBits } from './wire.js';
+import type { WorldPacket } from './wire.js';
+import type { InputFrame } from './types.js';
+import { movingPlatformX, PLATFORMS } from './field.js';
 import { JumpmapEngine } from './engine.js';
 import { cameraTarget, followCamera, renderJumpmapScene } from './scene.js';
 import type { Camera } from './scene.js';
 import { createInputSource } from './input.js';
 import { GOAL_Y, ROOM_CAPACITY, START_Y, ZONE_STYLE, zoneAt } from './field.js';
-import type { JumpmapInput, JumpmapMemberPacket, JumpmapMemberPacketTagged, JumpmapWorld, PlayerView } from './types.js';
+import type { JumpmapInput, JumpmapMemberPacketTagged, JumpmapWorld, PlayerView } from './types.js';
 import type { GameMatch, GameModule, MatchHud, Viewport } from '../types.js';
 
 const EMPTY_WORLD: JumpmapWorld = { phase: 'race', timerMs: 0, tick: 0, players: [] };
@@ -49,6 +53,13 @@ class JumpmapMatch implements GameMatch {
   /** Only meaningful for a member: the latest snapshot the host sent. */
   private world: JumpmapWorld = EMPTY_WORLD;
   private lastInput: JumpmapInput = NO_INPUT;
+  private prediction = new JumpmapEngine(true);
+  private pending: InputFrame[] = [];
+  private sequence = 0;
+  private receivedTick = -1;
+  private snapshots: JumpmapWorld[] = [];
+  private displayTick = 0;
+  private correction = { x: 0, y: 0 };
 
   private camera: Camera = { camX: 0, camY: 0 };
   private snapCamera = true;
@@ -62,18 +73,33 @@ class JumpmapMatch implements GameMatch {
   ) {
     this.engine = isHost ? new JumpmapEngine() : null;
     this.engine?.ensurePlayer(myId, myName);
+    this.prediction.ensurePlayer(myId, myName);
   }
 
   step(input: unknown): void {
     this.lastInput = (input as JumpmapInput) ?? NO_INPUT;
     this.anim += 0.16;
-    if (!this.engine) return;
+    if (!this.engine) {
+      // Cap memory during a disconnect; never silently discard an unacknowledged press.
+      if (this.pending.length < 180) {
+        this.pending.push({ seq: ++this.sequence, input: { ...this.lastInput } });
+        this.prediction.setInput(this.myId, this.lastInput);
+        this.prediction.step();
+      }
+      const target = this.world.tick - 3;
+      // A 50ms jitter buffer for remote runners. Do not extrapolate through long outages.
+      if (this.displayTick < this.world.tick) this.displayTick += Math.min(
+        this.world.tick - this.displayTick, Math.max(0.8, Math.min(1.2, 1 + (target - this.displayTick) * 0.05)));
+      this.correction.x *= 0.75;
+      this.correction.y *= 0.75;
+      return;
+    }
     this.engine.setInput(this.myId, this.lastInput);
     this.engine.step();
   }
 
   render(ctx: CanvasRenderingContext2D, viewport: Viewport): void {
-    const world = this.currentWorld();
+    const world = this.renderWorld();
     const me = world.players.find((p) => p.id === this.myId);
     const target = cameraTarget(me);
     this.camera = this.snapCamera ? target : followCamera(this.camera, target);
@@ -94,19 +120,75 @@ class JumpmapMatch implements GameMatch {
   }
 
   buildOutgoingPacket(): unknown {
-    if (this.engine) return this.engine.snapshot();
-    const packet: JumpmapMemberPacket = { name: this.myName, input: this.lastInput };
-    return packet;
+    if (this.engine) return encodeWorld(this.engine.snapshot(true));
+    return { name: this.myName, input: this.lastInput,
+      // Repeat the oldest samples first so a lost packet cannot leave a sequence hole.
+      frames: this.pending.slice(0, 30).map(f => [f.seq, inputBits(f.input)]) };
   }
 
   applyOpponentPacket(packet: unknown): void {
     if (this.engine) {
-      const { from, name, input } = packet as JumpmapMemberPacketTagged;
+      const data = packet as JumpmapMemberPacketTagged;
+      const { from, name, input } = data;
       this.engine.ensurePlayer(from, name);
-      this.engine.setInput(from, input);
-    } else {
-      this.world = packet as JumpmapWorld;
+      if (data.frames) this.engine.queueInputs(from, data.frames.map(([seq, bits]) => ({ seq, input: inputFromBits(bits) })));
+      else this.engine.setInput(from, input);
+      return;
     }
+    const world = 'runners' in (packet as WorldPacket) ? decodeWorld(packet as WorldPacket) : packet as JumpmapWorld;
+    if (world.tick <= this.receivedTick) return;
+    const first = this.receivedTick < 0;
+    this.receivedTick = world.tick;
+    const roundChanged = this.world.phase === 'intermission' && world.phase === 'race';
+    this.world = world;
+    if (roundChanged) this.snapshots = [];
+    this.snapshots.push(world);
+    if (this.snapshots.length > 12) this.snapshots.shift();
+    if (first || roundChanged || world.tick - this.displayTick > 30) this.displayTick = world.tick - 3;
+    const me = world.players.find(p => p.id === this.myId);
+    if (!me?.state) return;
+    const before = this.prediction.snapshot().players[0];
+    this.pending = this.pending.filter(f => f.seq > (me.ack ?? 0));
+    this.prediction.restore(this.myId, me.state, world.tick, world.phase);
+    for (const frame of this.pending) {
+      this.prediction.setInput(this.myId, frame.input);
+      this.prediction.step();
+    }
+    const after = this.prediction.snapshot().players[0];
+    const dx = before.x + this.correction.x - after.x;
+    const dy = before.y + this.correction.y - after.y;
+    const snap = first || roundChanged || Math.hypot(dx, dy) > 100 || me.finish !== before.finish;
+    this.correction = snap ? { x: 0, y: 0 } : { x: dx, y: dy };
+  }
+
+  /** Physics uses the predicted clock; only remote runners use the delayed buffer. */
+  private renderWorld(): JumpmapWorld {
+    if (this.engine) return this.engine.snapshot();
+    const predicted = this.prediction.snapshot();
+    const tick = predicted.tick;
+    const older = [...this.snapshots].reverse().find(w => w.tick <= this.displayTick) ?? this.snapshots[0] ?? this.world;
+    const newer = this.snapshots.find(w => w.tick >= this.displayTick) ?? this.world;
+    const alpha = older.tick === newer.tick ? 1 : Math.max(0, Math.min(1, (this.displayTick - older.tick) / (newer.tick - older.tick)));
+    const players = this.world.players.map(p => {
+      if (p.id === this.myId && p.state) {
+        const me = predicted.players[0];
+        return { ...me, finish: p.finish, x: me.x + this.correction.x, y: me.y + this.correction.y };
+      }
+      const a = older.players.find(v => v.id === p.id);
+      const b = newer.players.find(v => v.id === p.id) ?? p;
+      if (!a || a.finish !== b.finish || Math.hypot(a.x - b.x, a.y - b.y) > 100) return b;
+      let x = a.x + (b.x - a.x) * alpha;
+      // Grounded remote riders stay attached to the platform drawn on our clock.
+      const platform = PLATFORMS.find(spec => spec.id === b.state?.standingOn && spec.kind === 'moving');
+      if (platform && a.state?.standingOn === platform.id) {
+        const offsetA = a.x - movingPlatformX(platform, older.tick);
+        const offsetB = b.x - movingPlatformX(platform, newer.tick);
+        x = movingPlatformX(platform, tick) + offsetA + (offsetB - offsetA) * alpha;
+      }
+      return { ...b, x, y: a.y + (b.y - a.y) * alpha };
+    });
+    if (!players.some(p => p.id === this.myId)) players.push(predicted.players[0]);
+    return { ...this.world, tick, players };
   }
 
   removePeer(peerId: string): void {

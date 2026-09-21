@@ -39,6 +39,9 @@ export interface PlayerView {
   atk?: number;
   /** Short-lived authoritative landing event, also used for spring and finish effects. */
   impact?: { platformId: string; x: number; tick: number };
+  /** Exact state for prediction replay; only carried on the wire. */
+  state?: RunnerState;
+  ack?: number;
 }
 
 export interface JumpmapWorld {
@@ -59,9 +62,20 @@ export interface JumpmapWorld {
 export interface JumpmapMemberPacket {
   name: string;
   input: JumpmapInput;
+  /** Oldest unacknowledged frames are repeated until confirmed. */
+  frames?: [sequence: number, buttons: number][];
 }
 
 /** The shell tags an incoming member packet with who sent it. */
 export interface JumpmapMemberPacketTagged extends JumpmapMemberPacket {
   from: string;
 }
+
+/** Shared by authoritative simulation and local prediction. */
+export interface RunnerState {
+  x: number; y: number; vy: number; facing: 1 | -1; airborne: boolean;
+  knockVX: number; stunTicks: number; attackCooldown: number; atkAnim: number;
+  jumpHeld: boolean; attackHeld: boolean; standingOn: string | null;
+  pose: Pose; poseTimer: number; finish?: number; impact?: PlayerView['impact'];
+}
+export interface InputFrame { seq: number; input: JumpmapInput }

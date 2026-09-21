@@ -1,3 +1,4 @@
+import { advanceSendClock } from '../lib/send-clock.js';
 import { advanceSketchSeed } from '../lib/sketch.js';
 import { acceleratorFromKeyboardEvent } from '../lib/accelerator.js';
 import { GAME_MODULES } from '../games/registry.js';
@@ -643,8 +644,9 @@ function frame(now: number): void {
     drawFrame(stepAccumulator / STEP_MS);
     syncHud();
 
-    if (activeMatchMode !== 'solo' && now - lastSentAt >= SEND_INTERVAL_MS) {
-      lastSentAt = now;
+    const sendAt = advanceSendClock(lastSentAt, now, SEND_INTERVAL_MS);
+    if (activeMatchMode !== 'solo' && sendAt > lastSentAt) {
+      lastSentAt = sendAt;
       const packet = activeMatch.buildOutgoingPacket();
       if (activeMatchMode === 'room') window.overlayLupin.sendRoomState(packet);
       else window.overlayLupin.sendLocalState(packet);

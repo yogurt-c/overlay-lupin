@@ -13,5 +13,5 @@ export function createInputSource(target: Window = window): InputSource<JumpmapI
     jump: ['ArrowUp'],
     down: ['ArrowDown', 'KeyS'],
     attack: ['Space']
-  });
+  }, ['jump', 'attack']);
 }
