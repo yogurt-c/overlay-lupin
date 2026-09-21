@@ -1,5 +1,4 @@
 import {
-  AIR_JUMP_VELOCITY,
   ATTACK_COOLDOWN_TICKS,
   ATTACK_FRONT_SLOP,
   ATTACK_RANGE_X,
@@ -20,7 +19,6 @@ import {
   movingPlatformX,
   PLATFORMS,
   PLAYER_HALF_W,
-  RESPAWN_FALL_MARGIN,
   RESPAWN_WORLD_MARGIN,
   START_X,
   START_Y,
@@ -55,8 +53,6 @@ interface EnginePlayer {
   vy: number;
   facing: 1 | -1;
   airborne: boolean;
-  /** One extra hop per airborne spell — cleared the moment a runner lands. */
-  airJumped: boolean;
   /** Decaying horizontal drift from a shove; separate from the direct, input-driven walk. */
   knockVX: number;
   stunTicks: number;
@@ -67,9 +63,6 @@ interface EnginePlayer {
   attackHeld: boolean;
   /** Platform id currently underfoot, or null while airborne. */
   standingOn: string | null;
-  checkpointX: number;
-  checkpointY: number;
-  checkpointPlatformId: string;
   pose: Pose;
   poseTimer: number;
   /** This round's finish order; undefined until the runner touches the goal. */
@@ -107,7 +100,6 @@ export class JumpmapEngine {
       vy: 0,
       facing: 1,
       airborne: false,
-      airJumped: false,
       knockVX: 0,
       stunTicks: 0,
       attackCooldown: 0,
@@ -115,9 +107,6 @@ export class JumpmapEngine {
       jumpHeld: false,
       attackHeld: false,
       standingOn: 'start',
-      checkpointX: START_X,
-      checkpointY: START_Y,
-      checkpointPlatformId: 'start',
       pose: 'idle',
       poseTimer: 0,
       finish: undefined,
@@ -216,23 +205,17 @@ export class JumpmapEngine {
   }
 
   /**
-   * Edge-triggered: one hop per press, same as every other game's jump. The
-   * second press while still airborne spends the one air-jump instead.
+   * Edge-triggered: one hop per press, same as every other game's jump.
+   * Airborne presses are consumed without jumping; landing enables the next press.
    */
   private applyJump(player: EnginePlayer): void {
     const pressed = player.input.jump && !player.jumpHeld;
     player.jumpHeld = player.input.jump;
-    if (!pressed) return;
+    if (!pressed || player.airborne) return;
 
-    if (!player.airborne) {
-      player.vy = JUMP_VELOCITY;
-      player.airborne = true;
-      player.standingOn = null;
-      player.airJumped = false;
-    } else if (!player.airJumped) {
-      player.vy = AIR_JUMP_VELOCITY;
-      player.airJumped = true;
-    }
+    player.vy = JUMP_VELOCITY;
+    player.airborne = true;
+    player.standingOn = null;
   }
 
   /**
@@ -273,7 +256,6 @@ export class JumpmapEngine {
     target.vy = KNOCKBACK_VY;
     target.airborne = true;
     target.standingOn = null;
-    target.airJumped = true; // a shove doesn't hand out a free extra hop
     target.stunTicks = KNOCKBACK_STUN_TICKS;
     target.pose = 'hit';
     target.poseTimer = KNOCKBACK_STUN_TICKS;
@@ -319,11 +301,7 @@ export class JumpmapEngine {
     player.y = plat.y;
     player.vy = 0;
     player.airborne = false;
-    player.airJumped = false;
     player.standingOn = plat.id;
-    player.checkpointX = player.x;
-    player.checkpointY = plat.y;
-    player.checkpointPlatformId = plat.id;
 
     if (plat.kind === 'trampoline') {
       player.vy = TRAMPOLINE_VELOCITY;
@@ -336,18 +314,19 @@ export class JumpmapEngine {
     }
   }
 
-  /** Fell too far past the last thing stood on, with nothing caught in between — back to the checkpoint. */
+  /** Falling below the entire course restarts the climb at the bottom. */
   private checkRespawn(player: EnginePlayer): void {
     if (player.finish !== undefined) return;
-    if (player.y - player.checkpointY > RESPAWN_FALL_MARGIN || player.y > WORLD_HEIGHT + RESPAWN_WORLD_MARGIN) {
-      player.x = player.checkpointX;
-      player.y = player.checkpointY;
+    if (player.y > WORLD_HEIGHT + RESPAWN_WORLD_MARGIN) {
+      player.x = START_X;
+      player.y = START_Y;
+      player.standingOn = 'start';
+      player.impact = undefined;
+      player.atkAnim = 0;
       player.vy = 0;
       player.airborne = false;
-      player.airJumped = false;
       player.knockVX = 0;
       player.stunTicks = 0;
-      player.standingOn = player.checkpointPlatformId;
       player.pose = 'idle';
     }
   }
@@ -382,15 +361,11 @@ export class JumpmapEngine {
       player.vy = 0;
       player.facing = 1;
       player.airborne = false;
-      player.airJumped = false;
       player.knockVX = 0;
       player.stunTicks = 0;
       player.attackCooldown = 0;
       player.atkAnim = 0;
       player.standingOn = 'start';
-      player.checkpointX = START_X;
-      player.checkpointY = START_Y;
-      player.checkpointPlatformId = 'start';
       player.finish = undefined;
       player.impact = undefined;
       player.pose = 'idle';

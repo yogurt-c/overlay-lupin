@@ -3,15 +3,15 @@ import type { InputSource } from '../../lib/input.js';
 import type { JumpmapInput } from './types.js';
 
 /**
- * ← → walks, Space jumps (press again in the air for one extra hop), ↓ speeds
- * up a fall, and X is the only offense in the game — a short shove.
+ * ← → walks, ↑ jumps from a platform, ↓ speeds up a fall,
+ * and Space swings the bat.
  */
 export function createInputSource(target: Window = window): InputSource<JumpmapInput> {
   return createKeyInputSource<JumpmapInput>(target, {
     left: ['ArrowLeft', 'KeyA'],
     right: ['ArrowRight', 'KeyD'],
-    jump: ['Space'],
+    jump: ['ArrowUp'],
     down: ['ArrowDown', 'KeyS'],
-    attack: ['KeyX', 'KeyJ']
+    attack: ['Space']
   });
 }

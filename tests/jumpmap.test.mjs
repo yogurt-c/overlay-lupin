@@ -6,8 +6,10 @@ import { JumpmapEngine } from '../dist/renderer/games/jumpmap/engine.js';
 import { jumpmapModule } from '../dist/renderer/games/jumpmap/module.js';
 import {
   ATTACK_RANGE_X,
+  GRAVITY,
   PLATFORMS,
-  RESPAWN_FALL_MARGIN,
+  RESPAWN_WORLD_MARGIN,
+  WORLD_HEIGHT,
   START_X,
   START_Y,
   WORLD_WIDTH,
@@ -65,7 +67,7 @@ function check(name, cond, extra = '') {
   check('충분한 시간이 지나면 다시 발판에 내려선다', p.airborne === false, `airborne=${p.airborne}`);
 }
 
-// 4. The air jump is spent the moment it's used, and refills only once a runner lands again.
+// 4. Airborne presses cannot jump, and holding through landing cannot auto-jump.
 {
   const e = new JumpmapEngine();
   e.ensurePlayer('a', 'A');
@@ -75,14 +77,24 @@ function check(name, cond, extra = '') {
   e.setInput('a', NO_INPUT);
   e.step(); // let the rising edge reset
   e.setInput('a', { ...NO_INPUT, jump: true });
-  e.step(); // air jump
-  check('공중에서 다시 스페이스를 누르면 에어점프를 한 번 더 쓴다', p.airJumped === true, `airJumped=${p.airJumped}`);
+  const risingVelocity = p.vy;
+  e.step();
+  check('상승 중 다시 눌러도 더블점프하지 않는다', Math.abs(p.vy - risingVelocity - GRAVITY) < 1e-9);
   e.setInput('a', NO_INPUT);
+  while (p.vy < 0) e.step();
+  const fallingVelocity = p.vy;
+  e.setInput('a', { ...NO_INPUT, jump: true });
+  e.step();
+  check('낙하 중 다시 눌러도 공중점프하지 않는다', Math.abs(p.vy - fallingVelocity - GRAVITY) < 1e-9);
   for (let i = 0; i < 200 && e.players.get('a').airborne; i++) e.step();
-  check('착지하면 에어점프가 다시 채워진다', p.airJumped === false, `airJumped=${p.airJumped}`);
+  e.step();
+  check('공중에서 누른 점프를 유지해도 착지 후 자동으로 뛰지 않는다', !p.airborne);
+  e.setInput('a', NO_INPUT); e.step();
+  e.setInput('a', { ...NO_INPUT, jump: true }); e.step();
+  check('착지 후 새로 누르면 다시 점프할 수 있다', p.airborne && p.vy < 0);
 }
 
-// 5. Falling onto a platform sets it as the new checkpoint.
+// 5. Falling onto a platform lands the runner.
 {
   const e = new JumpmapEngine();
   e.ensurePlayer('a', 'A');
@@ -91,8 +103,8 @@ function check(name, cond, extra = '') {
   Object.assign(p, { x: plat.x + plat.w / 2, y: plat.y - 30, vy: 0, airborne: true, standingOn: null });
   for (let i = 0; i < 40; i++) e.step();
   check(
-    '낙하하다 발판에 닿으면 그 발판이 체크포인트가 된다',
-    p.standingOn === 'p2' && p.checkpointPlatformId === 'p2',
+    '낙하하다 발판에 닿으면 그 발판에 착지한다',
+    p.standingOn === 'p2' && !p.airborne,
     `standingOn=${p.standingOn}`
   );
 }
@@ -183,6 +195,28 @@ function check(name, cond, extra = '') {
   check('밀려난 상대는 잠시 스턴 상태가 된다', b.stunTicks > 0, `stunTicks=${b.stunTicks}`);
 }
 
+// An unopposed hit should travel about one medium platform width in either direction.
+for (const direction of [-1, 1]) {
+  const e = new JumpmapEngine();
+  e.ensurePlayer('attacker', 'A');
+  e.ensurePlayer('target', 'B');
+  const attacker = e.players.get('attacker');
+  const target = e.players.get('target');
+  Object.assign(attacker, { x: 480, y: 500, facing: direction, airborne: true, standingOn: null });
+  const initialX = 480 + direction * 20;
+  Object.assign(target, { x: initialX, y: 500, airborne: true, standingOn: null });
+  e.setInput('attacker', { ...NO_INPUT, attack: true });
+  let highestY = target.y;
+  for (let tick = 0; tick < 60; tick++) {
+    e.step();
+    highestY = Math.min(highestY, target.y);
+  }
+  const distance = (target.x - initialX) * direction;
+  check(`공격 시 ${direction < 0 ? '왼쪽' : '오른쪽'}으로 약 90만큼 날아간다`,
+    distance > 85 && distance < 95, `distance=${distance.toFixed(1)}`);
+  check('피격 시 위로 떠올랐다가 스턴이 풀린다', highestY < 490 && target.stunTicks === 0);
+}
+
 // 10b. A swing only lands on someone roughly in front — not on a runner standing behind you.
 {
   const e = new JumpmapEngine();
@@ -262,15 +296,40 @@ function check(name, cond, extra = '') {
   check('공격은 쿨다운 중에는 다시 발동하지 않는다', b.knockVX === 0 && b.stunTicks === 0, `knockVX=${b.knockVX}`);
 }
 
-// 12. Falling far enough past the last checkpoint with nothing caught in between sends a runner back to it.
+// 12. Long falls continue naturally; only leaving the whole course restarts the climb.
 {
   const e = new JumpmapEngine();
   e.ensurePlayer('a', 'A');
   const p = e.players.get('a');
-  Object.assign(p, { checkpointX: 120, checkpointY: 900, checkpointPlatformId: 'p6' });
-  Object.assign(p, { x: 50, y: 900 + RESPAWN_FALL_MARGIN + 5, airborne: true, standingOn: null, vy: 5 });
+  const upper = PLATFORMS.find(pl => pl.id === 'sky-rest');
+  Object.assign(p, { x: upper.x + upper.w / 2, y: upper.y - 1, vy: 1, airborne: true, standingOn: null });
   e.step();
-  check('체크포인트보다 너무 멀리 떨어지면 체크포인트로 돌아간다', p.x === 120 && p.y === 900, `x=${p.x} y=${p.y}`);
+  check('높은 발판에 먼저 착지한다', p.standingOn === upper.id);
+  Object.assign(p, { x: 20, airborne: true, standingOn: null });
+  for (let i = 0; i < 45; i++) e.step();
+  check('발판 아래로 멀리 떨어져도 되돌아가지 않고 계속 낙하한다',
+    p.y > upper.y + 170 && p.airborne && p.standingOn === null && p.x === 20);
+
+  const lower = PLATFORMS.find(pl => pl.id === 'p2');
+  Object.assign(p, { x: lower.x + lower.w / 2, y: lower.y - 5, vy: 10 });
+  e.step();
+  check('긴 낙하 도중 아래쪽 발판에 착지할 수 있다', p.standingOn === lower.id && p.y === lower.y);
+
+  Object.assign(p, { x: 20, y: WORLD_HEIGHT + RESPAWN_WORLD_MARGIN - 15,
+    airborne: true, standingOn: null, vy: 5 });
+  e.step();
+  check('맵 아래 경계를 넘기 전에는 낙하를 계속한다', p.x === 20 && p.airborne);
+  Object.assign(p, { y: WORLD_HEIGHT + RESPAWN_WORLD_MARGIN + 1,
+    knockVX: 3, stunTicks: 8, atkAnim: 5 });
+  e.step();
+  check('맵 아래로 떨어지면 이전 발판이 아닌 시작점에서 다시 시작한다',
+    p.x === START_X && p.y === START_Y && p.standingOn === 'start');
+  check('시작점 복귀 시 낙하·피격·착지 효과를 초기화한다',
+    !p.airborne && p.vy === 0 && p.knockVX === 0 && p.stunTicks === 0 &&
+    p.atkAnim === 0 && p.impact === undefined);
+  e.setInput('a', { ...NO_INPUT, jump: true });
+  e.step();
+  check('시작점에서 다시 점프할 수 있다', p.airborne && p.vy < 0);
 }
 
 // 13. Removing a runner drops them from the snapshot entirely.
@@ -315,7 +374,7 @@ function check(name, cond, extra = '') {
 }
 
 // Every intended hop is tested against the actual engine, including collisions with
-// other platforms. Try several departure phases and air-jump timings: a moving
+// other platforms. Try several departure phases and takeoff positions: a moving
 // platform may require waiting, but no branch should require impossible movement.
 {
   const route = PLATFORMS.filter(p => !p.id.endsWith('-short'));
@@ -333,15 +392,14 @@ function check(name, cond, extra = '') {
   for (const [from, to] of edges) {
     let success = false;
     for (const phase of [0, 40, 80, 120, 160, 200, 240]) {
-      for (const secondJump of [-1, 18, 24, 30]) {
+      for (const takeoff of [0.5, 0.15, 0.85]) {
         const e = new JumpmapEngine();
         for (let i = 0; i < phase; i++) e.step();
         e.ensurePlayer('a', 'A');
         const p = e.players.get('a');
-        const x = movingPlatformX(from, phase) + from.w / 2;
+        const x = movingPlatformX(from, phase) + from.w * takeoff;
         Object.assign(p, {
-          x, y: from.y, standingOn: from.id,
-          checkpointPlatformId: from.id, checkpointX: x, checkpointY: from.y
+          x, y: from.y, standingOn: from.id
         });
         if (from.kind === 'trampoline') {
           Object.assign(p, { y: from.y - 1, vy: 1, airborne: true, standingOn: null });
@@ -350,10 +408,10 @@ function check(name, cond, extra = '') {
           const target = movingPlatformX(to, phase + t + 1) + to.w / 2;
           e.setInput('a', {
             ...NO_INPUT, left: p.x > target + 2, right: p.x < target - 2,
-            jump: (t === 0 && from.kind !== 'trampoline') || t === secondJump
+            jump: t === 0 && from.kind !== 'trampoline'
           });
           e.step();
-          if (p.checkpointPlatformId === to.id) {
+          if (p.impact?.platformId === to.id) {
             success = true;
             break;
           }

@@ -121,7 +121,7 @@ class JumpmapMatch implements GameMatch {
 export const jumpmapModule: GameModule = {
   id: 'jumpmap',
   label: '점프맵',
-  hint: '← → 이동 · Space 점프(공중에서 한 번 더로 에어점프) · ↓로 빠르게 낙하 · X로 짧게 밀쳐내기 · 제한시간 없이 깃발을 먼저 찍으면 1위, 이후 15초 그레이스 타임 동안 나머지 순위 확정 · 발판 밖으로 떨어져도 체크포인트에서 바로 리스폰',
+  hint: '← → 이동 · ↑ 점프(발판 위에서만 가능) · ↓로 빠르게 낙하 · Space 공격 · 제한시간 없이 깃발을 먼저 찍으면 1위, 이후 15초 그레이스 타임 동안 나머지 순위 확정 · 낙하 중 아래 발판에 착지 가능 · 맵 아래로 떨어지면 맨 아래 시작점부터 다시 도전',
   matching: 'room',
   roomCapacity: ROOM_CAPACITY,
   createMatch: (isHost, myId, myName) => new JumpmapMatch(isHost, myId, myName),

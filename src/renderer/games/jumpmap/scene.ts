@@ -4,10 +4,10 @@ import { drawBackgroundDots, drawCourseDecor, drawGoal, drawLandingEffect, drawL
 import type { JumpmapWorld } from './types.js';
 import type { Viewport } from '../types.js';
 
-export const INK = '#14181a';
+export const INK = '#181818';
 
 /** Muted inks for everyone who isn't me, hashed from their id so a colour never swaps mid-race. */
-const OTHER_INKS = ['#7a5433', '#55525f', '#3f5b63', '#6b4f3f', '#4f5a3d'];
+const OTHER_INKS = ['#505050', '#606060', '#707070', '#585858', '#686868'];
 
 const CAMERA_LERP = 0.18;
 
