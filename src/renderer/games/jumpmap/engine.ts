@@ -75,6 +75,7 @@ interface EnginePlayer {
   /** This round's finish order; undefined until the runner touches the goal. */
   finish?: number;
   input: JumpmapInput;
+  impact?: PlayerView['impact'];
 }
 
 /**
@@ -314,6 +315,7 @@ export class JumpmapEngine {
   }
 
   private land(player: EnginePlayer, plat: RuntimePlatform): void {
+    player.impact = { platformId: plat.id, x: Math.round(player.x), tick: this.tick };
     player.y = plat.y;
     player.vy = 0;
     player.airborne = false;
@@ -390,6 +392,7 @@ export class JumpmapEngine {
       player.checkpointY = START_Y;
       player.checkpointPlatformId = 'start';
       player.finish = undefined;
+      player.impact = undefined;
       player.pose = 'idle';
       player.poseTimer = 0;
     }
@@ -412,7 +415,8 @@ export class JumpmapEngine {
         facing: player.facing,
         p: poseIndex(player.pose),
         finish: player.finish,
-        atk: player.atkAnim > 0 ? player.atkAnim : undefined
+        atk: player.atkAnim > 0 ? player.atkAnim : undefined,
+        impact: player.impact && this.tick - player.impact.tick < 45 ? player.impact : undefined
       }))
     };
   }

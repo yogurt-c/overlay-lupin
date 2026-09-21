@@ -21,6 +21,10 @@ export interface PlatformSpec {
   amplitude?: number;
   speed?: number;
   phase?: number;
+  /** Small world-space sign, placed below the landing surface. */
+  label?: string;
+  /** Landing destination for the trampoline direction cue. */
+  launchTargetId?: string;
 }
 
 /** The course is much wider than the camera; the camera tracks each runner across it. */
@@ -34,43 +38,75 @@ function centered(cx: number, w: number): number {
   return cx - w / 2;
 }
 
-/**
- * One hand-laid course, bottom to top, in two acts so the climb has real
- * length: a moving platform to open, a narrow single-file squeeze, forks
- * that let a runner dodge a fight by taking the long way round, and
- * trampolines that turn a flat gap into a big vertical skip — that pattern
- * repeats twice on the way up. The path also zig-zags across the full width
- * of the course rather than climbing a narrow column. No hazards — the only
- * thing that can end a run early is another runner's attack key.
- */
+export type CourseZone = 'desk' | 'workshop' | 'sky';
+
+export const ZONE_STYLE = {
+  desk: { label: '책상 위', ink: '#826348', fill: '#f4e6cb', side: '#dbc5a2' },
+  workshop: { label: '낙서 공사장', ink: '#576f75', fill: '#e7eeea', side: '#b9cbc7' },
+  sky: { label: '종이 하늘', ink: '#747394', fill: '#f6f3ff', side: '#ddd9ef' }
+} as const;
+
+export function zoneAt(y: number): CourseZone {
+  return y >= 2400 ? 'desk' : y >= 1200 ? 'workshop' : 'sky';
+}
+
+function platform(id: string, kind: PlatformKind, cx: number, y: number, w: number,
+  detail: Partial<Pick<PlatformSpec, 'amplitude' | 'speed' | 'phase' | 'label' | 'launchTargetId'>> = {}): PlatformSpec {
+  return { id, kind, x: centered(cx, w), y, w, ...detail };
+}
+
+/** Three hand-laid chapters: learn, choose routes, then race across the clouds.
+ * Forks offer a narrow two-hop shortcut and a wider three-hop detour.
+ * Broad gathering platforms separate the technical sections. */
 export const PLATFORMS: PlatformSpec[] = [
-  { id: 'start', kind: 'start', x: centered(480, 170), y: 1980, w: 170 },
-  { id: 'p1', kind: 'moving', x: centered(480, 120), y: 1902, w: 120, amplitude: 130, speed: 0.03, phase: 0 },
-  { id: 'p2', kind: 'static', x: centered(620, 120), y: 1824, w: 120 },
-  { id: 'p3', kind: 'static', x: centered(750, 80), y: 1746, w: 80 },
-  { id: 'fork1a', kind: 'static', x: centered(650, 110), y: 1668, w: 110 },
-  { id: 'fork1b', kind: 'static', x: centered(870, 110), y: 1668, w: 110 },
-  { id: 'p4', kind: 'moving', x: centered(760, 130), y: 1590, w: 130, amplitude: 130, speed: 0.028, phase: 1.2 },
-  { id: 'trampoline1', kind: 'trampoline', x: centered(560, 120), y: 1512, w: 120 },
-  { id: 'p5', kind: 'static', x: centered(300, 100), y: 1352, w: 100 },
-  { id: 'fork2a', kind: 'static', x: centered(180, 100), y: 1274, w: 100 },
-  { id: 'fork2b', kind: 'static', x: centered(420, 100), y: 1274, w: 100 },
-  { id: 'p6', kind: 'moving', x: centered(300, 130), y: 1196, w: 130, amplitude: 150, speed: 0.031, phase: 0.4 },
-  { id: 'p7', kind: 'static', x: centered(560, 110), y: 1118, w: 110 },
-  { id: 'p8', kind: 'static', x: centered(690, 110), y: 1040, w: 110 },
-  { id: 'trampoline2', kind: 'trampoline', x: centered(620, 120), y: 962, w: 120 },
-  { id: 'bridge', kind: 'static', x: centered(480, 140), y: 802, w: 140 },
-  // Second act: the same repertoire of devices again, higher up.
-  { id: 'p9', kind: 'static', x: centered(600, 110), y: 724, w: 110 },
-  { id: 'p10', kind: 'moving', x: centered(480, 120), y: 646, w: 120, amplitude: 140, speed: 0.029, phase: 2.1 },
-  { id: 'fork3a', kind: 'static', x: centered(420, 110), y: 568, w: 110 },
-  { id: 'fork3b', kind: 'static', x: centered(660, 110), y: 568, w: 110 },
-  { id: 'p11', kind: 'static', x: centered(540, 70), y: 490, w: 70 },
-  { id: 'trampoline3', kind: 'trampoline', x: centered(420, 120), y: 412, w: 120 },
-  { id: 'p12', kind: 'static', x: centered(680, 110), y: 252, w: 110 },
-  { id: 'p13', kind: 'moving', x: centered(480, 120), y: 174, w: 120, amplitude: 140, speed: 0.032, phase: 0.8 },
-  { id: 'p14', kind: 'static', x: centered(650, 140), y: 96, w: 140 },
-  { id: 'goal', kind: 'goal', x: centered(650, 90), y: 18, w: 90 }
+  platform('start', 'start', 480, 3600, 190),
+  platform('p1', 'static', 570, 3530, 140),
+  platform('p2', 'static', 680, 3460, 130),
+  platform('p3', 'moving', 720, 3382, 120, { amplitude: 75, speed: 0.022 }),
+  platform('desk-plaza', 'static', 600, 3304, 180, { label: '01 · 책상 위' }),
+  platform('desk-wide1', 'static', 460, 3244, 125, { label: '돌아가기 ←' }),
+  platform('desk-short', 'static', 650, 3204, 58, { label: '↑ 지름길' }),
+  platform('desk-wide2', 'static', 430, 3184, 125),
+  platform('desk-merge', 'static', 540, 3124, 180),
+  platform('desk-step1', 'static', 420, 3058, 100),
+  platform('desk-step2', 'static', 310, 2992, 100),
+  platform('trampoline1', 'trampoline', 240, 2914, 110, { launchTargetId: 'desk-landing' }),
+  platform('desk-landing', 'static', 440, 2754, 155),
+  platform('p6', 'moving', 560, 2676, 125, { amplitude: 85, speed: 0.023, phase: 0.4 }),
+  platform('desk-last', 'static', 680, 2598, 130),
+  platform('desk-exit', 'static', 580, 2518, 170),
+  platform('work-entry', 'static', 460, 2438, 150),
+  platform('work-plaza', 'static', 350, 2358, 185, { label: '02 · 낙서 공사장' }),
+  platform('work-lift1', 'moving', 280, 2280, 115, { amplitude: 100, speed: 0.024, phase: 1.2 }),
+  platform('work-rest', 'static', 410, 2202, 150),
+  platform('work-wide1', 'static', 560, 2142, 125, { label: '돌아가기 →' }),
+  platform('work-short', 'static', 350, 2102, 55, { label: '↑ 지름길' }),
+  platform('work-wide2', 'static', 590, 2082, 125),
+  platform('work-merge', 'static', 470, 2022, 190),
+  platform('work-beam1', 'static', 600, 1948, 85),
+  platform('work-beam2', 'static', 730, 1874, 80),
+  platform('trampoline2', 'trampoline', 790, 1796, 110, { launchTargetId: 'work-landing' }),
+  platform('work-landing', 'static', 580, 1636, 155),
+  platform('work-lift2', 'moving', 440, 1558, 115, { amplitude: 100, speed: 0.026, phase: 2.1 }),
+  platform('work-beam3', 'static', 290, 1480, 95),
+  platform('work-exit', 'static', 400, 1402, 175),
+  platform('trampoline3', 'trampoline', 480, 1324, 120, { launchTargetId: 'sky-plaza' }),
+  platform('sky-plaza', 'static', 680, 1164, 180, { label: '03 · 종이 하늘' }),
+  platform('sky-step1', 'static', 790, 1086, 115),
+  platform('sky-lift1', 'moving', 690, 1008, 115, { amplitude: 95, speed: 0.025, phase: 0.8 }),
+  platform('sky-rest', 'static', 550, 930, 165),
+  platform('sky-wide1', 'static', 400, 870, 120, { label: '돌아가기 ←' }),
+  platform('sky-short', 'static', 600, 830, 52, { label: '↑ 지름길' }),
+  platform('sky-wide2', 'static', 370, 810, 120),
+  platform('sky-merge', 'static', 490, 750, 185),
+  platform('sky-step2', 'static', 340, 672, 100),
+  platform('sky-lift2', 'moving', 250, 594, 110, { amplitude: 90, speed: 0.026, phase: 0.4 }),
+  platform('sky-rest2', 'static', 380, 516, 145),
+  platform('trampoline4', 'trampoline', 480, 438, 110, { launchTargetId: 'sky-landing' }),
+  platform('sky-landing', 'static', 690, 278, 155),
+  platform('final-plaza', 'static', 790, 200, 190, { label: '마지막 한 걸음!' }),
+  platform('final-step', 'static', 680, 122, 140),
+  platform('goal', 'goal', 570, 44, 140)
 ];
 
 /** A moving platform's left edge at a given tick — a pure function of the tick count, so the host (for collision) and every member (for rendering) compute the identical position without the host ever having to broadcast it. */

@@ -37,6 +37,8 @@ export interface PlayerView {
   finish?: number;
   /** Frames left in the shove swing's visual, omitted when there isn't one. */
   atk?: number;
+  /** Short-lived authoritative landing event, also used for spring and finish effects. */
+  impact?: { platformId: string; x: number; tick: number };
 }
 
 export interface JumpmapWorld {

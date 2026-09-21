@@ -10,6 +10,7 @@ import {
   RESPAWN_FALL_MARGIN,
   START_X,
   START_Y,
+  WORLD_WIDTH,
   movingPlatformX
 } from '../dist/renderer/games/jumpmap/field.js';
 
@@ -311,6 +312,82 @@ function check(name, cond, extra = '') {
 {
   const match = jumpmapModule.createMatch(true, 'a', 'A');
   check('라운드가 반복돼도 방 자체는 끝나지 않는다', match.isOver() === false);
+}
+
+// Every intended hop is tested against the actual engine, including collisions with
+// other platforms. Try several departure phases and air-jump timings: a moving
+// platform may require waiting, but no branch should require impossible movement.
+{
+  const route = PLATFORMS.filter(p => !p.id.endsWith('-short'));
+  const edges = route.slice(1).map((p, i) => [route[i], p]);
+  const shortcuts = [
+    ['desk-plaza', 'desk-short', 'desk-merge'],
+    ['work-rest', 'work-short', 'work-merge'],
+    ['sky-rest', 'sky-short', 'sky-merge']
+  ];
+  for (const ids of shortcuts) {
+    const [from, shortcut, to] = ids.map(id => PLATFORMS.find(p => p.id === id));
+    edges.push([from, shortcut], [shortcut, to]);
+  }
+  const unreachable = [];
+  for (const [from, to] of edges) {
+    let success = false;
+    for (const phase of [0, 40, 80, 120, 160, 200, 240]) {
+      for (const secondJump of [-1, 18, 24, 30]) {
+        const e = new JumpmapEngine();
+        for (let i = 0; i < phase; i++) e.step();
+        e.ensurePlayer('a', 'A');
+        const p = e.players.get('a');
+        const x = movingPlatformX(from, phase) + from.w / 2;
+        Object.assign(p, {
+          x, y: from.y, standingOn: from.id,
+          checkpointPlatformId: from.id, checkpointX: x, checkpointY: from.y
+        });
+        if (from.kind === 'trampoline') {
+          Object.assign(p, { y: from.y - 1, vy: 1, airborne: true, standingOn: null });
+        }
+        for (let t = 0; t < 150; t++) {
+          const target = movingPlatformX(to, phase + t + 1) + to.w / 2;
+          e.setInput('a', {
+            ...NO_INPUT, left: p.x > target + 2, right: p.x < target - 2,
+            jump: (t === 0 && from.kind !== 'trampoline') || t === secondJump
+          });
+          e.step();
+          if (p.checkpointPlatformId === to.id) {
+            success = true;
+            break;
+          }
+          if (t > 4 && !p.airborne) break;
+        }
+        if (success) break;
+      }
+      if (success) break;
+    }
+    if (!success) unreachable.push(`${from.id} → ${to.id}`);
+  }
+  check('우회로·지름길을 포함한 모든 연결 구간을 실제 점프로 통과할 수 있다', unreachable.length === 0,
+    unreachable.length ? unreachable.join(', ') : `${edges.length}개 연결`);
+  check('움직이는 발판도 이동 범위 전체가 월드 안에 있다', PLATFORMS.every(p =>
+    p.x - (p.amplitude ?? 0) >= 0 && p.x + p.w + (p.amplitude ?? 0) <= WORLD_WIDTH));
+}
+
+// Landing effects must reach guests, expire, and clear on round reset.
+{
+  const e = new JumpmapEngine();
+  e.ensurePlayer('a', 'A');
+  const p = e.players.get('a');
+  const platform = PLATFORMS.find(p => p.id === 'p2');
+  Object.assign(p, { x: platform.x + platform.w / 2, y: platform.y - 1, vy: 1, airborne: true, standingOn: null });
+  e.step();
+  const snapshot = JSON.parse(JSON.stringify(e.snapshot()));
+  check('착지 이벤트가 게스트에 전송할 스냅샷에 담긴다',
+    snapshot.players[0].impact?.platformId === 'p2' && snapshot.players[0].impact?.tick === snapshot.tick);
+  for (let i = 0; i < 45; i++) e.step();
+  check('지난 착지 효과는 스냅샷에서 사라진다', e.snapshot().players[0].impact === undefined);
+  Object.assign(p, { y: platform.y - 1, vy: 1, airborne: true, standingOn: null });
+  e.step();
+  e.phase = 'intermission'; e.timerMs = 1; e.step();
+  check('다음 라운드에는 이전 착지 효과가 남지 않는다', p.impact === undefined);
 }
 
 console.log(`\n${failures === 0 ? '모든 테스트 통과' : `${failures}개 실패`}`);

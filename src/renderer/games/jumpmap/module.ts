@@ -2,7 +2,7 @@ import { JumpmapEngine } from './engine.js';
 import { cameraTarget, followCamera, renderJumpmapScene } from './scene.js';
 import type { Camera } from './scene.js';
 import { createInputSource } from './input.js';
-import { GOAL_Y, ROOM_CAPACITY, START_Y } from './field.js';
+import { GOAL_Y, ROOM_CAPACITY, START_Y, ZONE_STYLE, zoneAt } from './field.js';
 import type { JumpmapInput, JumpmapMemberPacket, JumpmapMemberPacketTagged, JumpmapWorld, PlayerView } from './types.js';
 import type { GameMatch, GameModule, MatchHud, Viewport } from '../types.js';
 
@@ -27,7 +27,7 @@ function statusFor(world: JumpmapWorld, myId: string): string {
   if (!me) return '';
   const rank = ranked(world).findIndex((p) => p.id === myId) + 1;
   if (me.finish !== undefined) return `${rank}위 도착 · ${world.players.length}명`;
-  return `${rank}위 · ${progressOf(me)}% 등반`;
+  return `${rank}위 · ${ZONE_STYLE[zoneAt(me.y)].label} · ${progressOf(me)}%`;
 }
 
 function bannerFor(world: JumpmapWorld, myId: string): { banner: string; bannerKind: string } {

@@ -1,6 +1,6 @@
 import { beginSketchFrame } from '../../lib/sketch.js';
-import { movingPlatformX, PLATFORMS, VIEW_HEIGHT, VIEW_WIDTH, WORLD_HEIGHT, WORLD_TOP, WORLD_WIDTH } from './field.js';
-import { drawBackgroundDots, drawGoal, drawPlatform, drawRunner } from './draw.js';
+import { movingPlatformX, PLATFORMS, VIEW_HEIGHT, VIEW_WIDTH, WORLD_HEIGHT, WORLD_TOP, WORLD_WIDTH, ZONE_STYLE, zoneAt } from './field.js';
+import { drawBackgroundDots, drawCourseDecor, drawGoal, drawLandingEffect, drawLaunchCue, drawPlatform, drawRunner, drawSign, drawTravelRail } from './draw.js';
 import type { JumpmapWorld } from './types.js';
 import type { Viewport } from '../types.js';
 
@@ -65,15 +65,31 @@ export function renderJumpmapScene(
   ctx.save();
   ctx.translate(offsetX, offsetY);
   ctx.scale(scale, scale);
+  ctx.beginPath();
+  ctx.rect(0, 0, VIEW_WIDTH, VIEW_HEIGHT);
+  ctx.clip();
   ctx.translate(-camera.camX, -camera.camY);
 
   beginSketchFrame();
-  drawBackgroundDots(ctx, camera.camX, camera.camY, VIEW_WIDTH, VIEW_HEIGHT, 24, 'rgba(20,24,26,0.14)');
+  ctx.save();
+  ctx.globalAlpha = 0.18;
+  drawBackgroundDots(ctx, camera.camX, camera.camY, VIEW_WIDTH, VIEW_HEIGHT, 28, ZONE_STYLE[zoneAt(camera.camY + VIEW_HEIGHT / 2)].ink);
+  ctx.restore();
+  drawCourseDecor(ctx, camera.camX, camera.camY, VIEW_WIDTH, VIEW_HEIGHT);
 
   for (const spec of PLATFORMS) {
+    if (spec.y < camera.camY - 60 || spec.y > camera.camY + VIEW_HEIGHT + 90) continue;
     const x = movingPlatformX(spec, world.tick);
+    drawTravelRail(ctx, spec);
+    if (spec.launchTargetId) {
+      const target = PLATFORMS.find((p) => p.id === spec.launchTargetId);
+      if (target) drawLaunchCue(ctx, spec, target);
+    }
+    const impactAge = world.players.reduce((age, player) => player.impact?.platformId === spec.id
+      ? Math.min(age, world.tick - player.impact.tick) : age, Infinity);
     if (spec.kind === 'goal') drawGoal(ctx, x, spec.y, spec.w, INK);
-    else drawPlatform(ctx, spec.kind, x, spec.y, spec.w, INK);
+    else drawPlatform(ctx, spec.kind, x, spec.y, spec.w, INK, impactAge);
+    if (spec.label) drawSign(ctx, x + spec.w / 2, spec.y + 36, spec.label);
   }
 
   // Finished runners stand still at the goal — drawing them first keeps an
@@ -81,6 +97,10 @@ export function renderJumpmapScene(
   const ordered = [...world.players].sort((a, b) => Number(a.finish !== undefined) - Number(b.finish !== undefined));
   for (const player of ordered) {
     drawRunner(ctx, player, colorFor(player.id, myId), anim);
+    if (player.impact) {
+      const spec = PLATFORMS.find((p) => p.id === player.impact?.platformId);
+      if (spec) drawLandingEffect(ctx, player.impact.x, spec.y, world.tick - player.impact.tick, spec.kind === 'goal');
+    }
   }
 
   ctx.restore();
