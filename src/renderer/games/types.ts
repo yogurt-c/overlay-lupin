@@ -45,6 +45,8 @@ export interface GameMatch {
   applyOpponentPacket(packet: unknown): void;
   /** Room games only: another member disconnected — drop their entity instead of leaving a frozen ghost. */
   removePeer?(peerId: string): void;
+  /** Initial room roster, before any member input packets arrive. */
+  setMembers?(members: { id: string; name: string }[]): void;
 }
 
 export interface GameModule {

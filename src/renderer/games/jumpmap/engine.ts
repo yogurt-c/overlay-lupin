@@ -64,7 +64,7 @@ export class JumpmapEngine {
   private tick = 0;
   private remote = new Map<string, { ack: number; frames: InputFrame[] }>();
 
-  constructor(private predicting = false) {}
+  constructor(private predicting = false, readonly platforms = PLATFORMS) {}
 
   /** One sequenced sample represents one 60Hz input tick. Duplicates are harmless. */
   queueInputs(id: string, frames: InputFrame[]): void {
@@ -177,7 +177,7 @@ export class JumpmapEngine {
 
   /** Moving platforms swing sinusoidally; everything else just holds still. */
   private updatePlatforms(): void {
-    for (const spec of PLATFORMS) {
+    for (const spec of this.platforms) {
       const prevX = movingPlatformX(spec, this.tick - 1);
       const nextX = movingPlatformX(spec, this.tick);
       this.platformRuntime.set(spec.id, { id: spec.id, kind: spec.kind, x: nextX, y: spec.y, w: spec.w, deltaX: nextX - prevX });

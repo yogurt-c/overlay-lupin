@@ -152,8 +152,10 @@ function beginMatch(isHost: boolean, gameId: string, variant?: string): void {
 }
 
 function beginRoomMatch(isHost: boolean, gameId: string): void {
+  const members = currentRoster?.members;
   currentRoster = null;
   startMatch('room', isHost, gameId);
+  if (members) activeMatch?.setMembers?.(members);
 }
 
 function startMatch(mode: 'duel' | 'room', isHost: boolean, gameId: string, variant?: string): void {

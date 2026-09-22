@@ -8,16 +8,31 @@ import { PLATFORMS, START_Y, movingPlatformX, WORLD_HEIGHT, RESPAWN_WORLD_MARGIN
 const idle = { left: false, right: false, jump: false, down: false, attack: false };
 const right = { ...idle, right: true };
 const clone = value => JSON.parse(JSON.stringify(value));
-const makePair = () => ({ host: jumpmapModule.createMatch(true, 'host', 'Host'), guest: jumpmapModule.createMatch(false, 'guest', 'Guest') });
+function readyPair(host, guest) {
+  for (let i = 0; i < 2000; i++) {
+    sendInput(host, guest);
+    if (host.loading) host.step(idle);
+    guest.applyOpponentPacket(clone(host.buildOutgoingPacket()));
+    if (!host.loading && !guest.loading) return;
+  }
+  throw Error('map preparation did not finish');
+}
+function makePair() {
+  const host = jumpmapModule.createMatch(true, 'host', 'Host');
+  const guest = jumpmapModule.createMatch(false, 'guest', 'Guest');
+  host.setMembers([{ id: 'guest', name: 'Guest' }]);
+  readyPair(host, guest);
+  return { host, guest };
+}
 const sendInput = (host, guest) => host.applyOpponentPacket({ from: 'guest', ...clone(guest.buildOutgoingPacket()) });
-const view = (host, id = 'guest') => decodeWorld(host.buildOutgoingPacket()).players.find(p => p.id === id);
+const view = (host, id = 'guest') => decodeWorld(host.buildOutgoingPacket(), host.platforms).players.find(p => p.id === id);
 
-// No host response is necessary for local motion, including a complete short tap.
+// Once the map is ready, local motion needs no further host response, including a complete short tap.
 {
   const { host, guest } = makePair();
-  const before = guest.renderWorld().players[0];
+  const before = guest.renderWorld().players.find(p => p.id === 'guest');
   guest.step({ ...right, jump: true });
-  const after = guest.renderWorld().players[0];
+  const after = guest.renderWorld().players.find(p => p.id === 'guest');
   assert(after.x > before.x && after.y < before.y);
   guest.step(idle);
   sendInput(host, guest);
@@ -113,7 +128,7 @@ console.log('PASS shared movement replay: moving platform, jump/landing, knockba
 // Interpolation fills the intermediate position, and stale worlds cannot rewind it.
 {
   const { guest } = makePair();
-  const world = tick => ({ phase: 'race', timerMs: 0, tick, players: [{ id: 'other', x: tick * 3, y: 100, facing: 1, p: 1 }] });
+  const world = tick => ({ v: 1, courseId: guest.courseId, phase: 'race', timerMs: 0, tick, runners: [['other', [tick * 3, 100, 0, 1, 0, 0, 0, 0, 0, 0, 0, -1, 1, 0, 0, 0, -1, 0, 0]]] });
   guest.applyOpponentPacket(world(10)); guest.applyOpponentPacket(world(12));
   guest.displayTick = 11;
   assert.equal(guest.renderWorld().players.find(p => p.id === 'other').x, 33);
@@ -173,9 +188,9 @@ console.log('PASS 30Hz send cadence at 60/120/144Hz');
   guest.step(right); sendInput(host, guest); host.step(idle);
   guest.step({ ...right, jump: true }); guest.step(idle);
   const packet = clone(host.buildOutgoingPacket());
-  const world = decodeWorld(packet);
+  const world = decodeWorld(packet, host.platforms);
   const me = world.players.find(p => p.id === 'guest');
-  const expected = new JumpmapEngine(true);
+  const expected = new JumpmapEngine(true, host.platforms);
   expected.restore('guest', me.state, world.tick, world.phase);
   for (const frame of guest.pending.filter(f => f.seq > me.ack)) {
     expected.setInput('guest', frame.input); expected.step();
@@ -189,6 +204,8 @@ console.log('PASS 30Hz send cadence at 60/120/144Hz');
   assert.equal(guest.prediction.phase, 'intermission');
   host.engine.timerMs = 1; host.step(idle);
   guest.applyOpponentPacket(clone(host.buildOutgoingPacket()));
+  assert(host.loading && guest.loading, 'next round generates a fresh map');
+  readyPair(host, guest);
   assert.equal(guest.prediction.phase, 'race');
   assert.deepEqual(guest.correction, { x: 0, y: 0 });
   console.log('PASS authoritative reconciliation, pending replay, and round transition');

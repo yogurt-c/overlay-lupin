@@ -56,7 +56,8 @@ export function renderJumpmapScene(
   myId: string,
   camera: Camera,
   viewport: Viewport,
-  anim: number
+  anim: number,
+  platforms = PLATFORMS
 ): void {
   ctx.setTransform(viewport.pixelRatio, 0, 0, viewport.pixelRatio, 0, 0);
   ctx.clearRect(0, 0, viewport.width, viewport.height);
@@ -77,12 +78,12 @@ export function renderJumpmapScene(
   ctx.restore();
   drawCourseDecor(ctx, camera.camX, camera.camY, VIEW_WIDTH, VIEW_HEIGHT);
 
-  for (const spec of PLATFORMS) {
+  for (const spec of platforms) {
     if (spec.y < camera.camY - 60 || spec.y > camera.camY + VIEW_HEIGHT + 90) continue;
     const x = movingPlatformX(spec, world.tick);
     drawTravelRail(ctx, spec);
     if (spec.launchTargetId) {
-      const target = PLATFORMS.find((p) => p.id === spec.launchTargetId);
+      const target = platforms.find((p) => p.id === spec.launchTargetId);
       if (target) drawLaunchCue(ctx, spec, target);
     }
     const impactAge = world.players.reduce((age, player) => player.impact?.platformId === spec.id
@@ -98,7 +99,7 @@ export function renderJumpmapScene(
   for (const player of ordered) {
     drawRunner(ctx, player, colorFor(player.id, myId), anim);
     if (player.impact) {
-      const spec = PLATFORMS.find((p) => p.id === player.impact?.platformId);
+      const spec = platforms.find((p) => p.id === player.impact?.platformId);
       if (spec) drawLandingEffect(ctx, player.impact.x, spec.y, world.tick - player.impact.tick, spec.kind === 'goal');
     }
   }

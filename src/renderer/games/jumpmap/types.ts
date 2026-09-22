@@ -60,6 +60,8 @@ export interface JumpmapWorld {
 
 /** What a member sends the host each tick — intent only, plus enough to spawn them. */
 export interface JumpmapMemberPacket {
+  courseId?: number;
+  ready?: number | null;
   name: string;
   input: JumpmapInput;
   /** Oldest unacknowledged frames are repeated until confirmed. */

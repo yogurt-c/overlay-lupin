@@ -2,6 +2,9 @@ import { encodeWorld, decodeWorld, inputBits, inputFromBits } from './wire.js';
 import type { WorldPacket } from './wire.js';
 import type { InputFrame } from './types.js';
 import { movingPlatformX, PLATFORMS } from './field.js';
+import type { PlatformSpec } from './field.js';
+import { generateCourse } from './generator.js';
+import type { Course, GenerationProgress } from './generator.js';
 import { JumpmapEngine } from './engine.js';
 import { cameraTarget, followCamera, renderJumpmapScene } from './scene.js';
 import type { Camera } from './scene.js';
@@ -47,7 +50,26 @@ function bannerFor(world: JumpmapWorld, myId: string): { banner: string; bannerK
   return { banner: '', bannerKind: '' };
 }
 
+interface CoursePacket {
+  kind: 'course'; courseId: number; progress: number;
+  chunk?: { index: number; total: number; platforms: PlatformSpec[] };
+}
+type RacePacket = WorldPacket & { courseId: number };
+const CHUNK_SIZE = 4;
+
 class JumpmapMatch implements GameMatch {
+  private platforms = PLATFORMS;
+  private courseId = 0;
+  private loading = true;
+  private progress = 0;
+  private generator: Generator<GenerationProgress, Course> | null = null;
+  private courseReady = false;
+  private chunkCursor = 0;
+  private chunks = new Map<number, PlatformSpec[]>();
+  private chunkTotal = 0;
+  private members = new Map<string, { name: string; ready: number | null }>();
+  private outgoing = 0;
+
   /** Only set for the host — the authoritative simulation. */
   private engine: JumpmapEngine | null;
   /** Only meaningful for a member: the latest snapshot the host sent. */
@@ -74,9 +96,74 @@ class JumpmapMatch implements GameMatch {
     this.engine = isHost ? new JumpmapEngine() : null;
     this.engine?.ensurePlayer(myId, myName);
     this.prediction.ensurePlayer(myId, myName);
+    if (isHost) this.beginGeneration();
+  }
+
+  setMembers(members: { id: string; name: string }[]): void {
+    for (const member of members) if (member.id !== this.myId && !this.members.has(member.id)) {
+      this.members.set(member.id, { name: member.name, ready: null });
+    }
+  }
+
+  private beginGeneration(): void {
+    this.courseId++;
+    this.loading = true;
+    this.progress = 0;
+    this.courseReady = false;
+    this.chunkCursor = 0;
+    this.generator = generateCourse(Math.floor(Math.random() * 0x100000000));
+    for (const member of this.members.values()) member.ready = null;
+    this.resetPrediction();
+  }
+
+  private resetPrediction(): void {
+    this.pending = []; this.sequence = 0; this.receivedTick = -1;
+    this.snapshots = []; this.displayTick = 0; this.correction = { x: 0, y: 0 };
+    this.snapCamera = true;
+    this.world = EMPTY_WORLD;
+    this.lastInput = NO_INPUT;
+    this.prediction = new JumpmapEngine(true, this.platforms);
+    this.prediction.ensurePlayer(this.myId, this.myName);
+  }
+
+  private advanceGeneration(): void {
+    const deadline = performance.now() + 4;
+    for (let work = 0; this.generator && work < 24 && performance.now() < deadline; work++) {
+      let next: IteratorResult<GenerationProgress, Course>;
+      try {
+        next = this.generator.next();
+      } catch (error) {
+        // A failed generator must not leave a room permanently stuck loading.
+        console.error('Jumpmap generation failed; using the reference course', error);
+        next = { done: true, value: { seed: 0, platforms: PLATFORMS, route: [], patterns: [] } };
+      }
+      if (!next.done) this.progress = next.value.percent;
+      const course = next.done ? next.value : next.value.course;
+      if (course) {
+        this.platforms = course.platforms;
+        this.generator = null;
+        this.courseReady = true;
+        this.engine = new JumpmapEngine(false, this.platforms);
+        this.engine.ensurePlayer(this.myId, this.myName);
+        for (const [id, member] of this.members) this.engine.ensurePlayer(id, member.name);
+      }
+    }
+    if (!this.courseReady) return;
+    const members = [...this.members.values()];
+    const ready = members.filter(m => m.ready === this.courseId).length;
+    this.progress = members.length ? 90 + Math.floor(10 * ready / members.length) : 100;
+    if (ready === members.length) this.loading = false;
   }
 
   step(input: unknown): void {
+    if (this.loading) {
+      if (this.isHost) this.advanceGeneration();
+      return;
+    }
+    if (this.engine?.phase === 'intermission' && this.engine.timerMs <= 1000 / 60) {
+      this.beginGeneration();
+      return;
+    }
     this.lastInput = (input as JumpmapInput) ?? NO_INPUT;
     this.anim += 0.16;
     if (!this.engine) {
@@ -99,16 +186,35 @@ class JumpmapMatch implements GameMatch {
   }
 
   render(ctx: CanvasRenderingContext2D, viewport: Viewport): void {
+    if (this.loading) {
+      ctx.setTransform(viewport.pixelRatio, 0, 0, viewport.pixelRatio, 0, 0);
+      ctx.clearRect(0, 0, viewport.width, viewport.height);
+      const width = Math.min(190, viewport.width * 0.7);
+      const x = (viewport.width - width) / 2;
+      const y = viewport.height / 2;
+      ctx.save();
+      ctx.fillStyle = '#414141';
+      ctx.textAlign = 'center';
+      ctx.font = '600 16px sans-serif';
+      ctx.fillText(`맵 생성 중 ${this.progress}%`, viewport.width / 2, y - 16);
+      ctx.fillStyle = '#e3e3e3'; ctx.fillRect(x, y, width, 6);
+      ctx.fillStyle = '#414141'; ctx.fillRect(x, y, width * this.progress / 100, 6);
+      ctx.font = '12px sans-serif';
+      ctx.fillText(this.progress < 90 ? '점프 경로를 확인하고 있어요' : '참가자 준비를 기다리고 있어요', viewport.width / 2, y + 30);
+      ctx.restore();
+      return;
+    }
     const world = this.renderWorld();
     const me = world.players.find((p) => p.id === this.myId);
     const target = cameraTarget(me);
     this.camera = this.snapCamera ? target : followCamera(this.camera, target);
     this.snapCamera = false;
 
-    renderJumpmapScene(ctx, world, this.myId, this.camera, viewport, this.anim);
+    renderJumpmapScene(ctx, world, this.myId, this.camera, viewport, this.anim, this.platforms);
   }
 
   hud(): MatchHud {
+    if (this.loading) return { status: `맵 생성 중 ${this.progress}%`, banner: '', bannerKind: '' };
     const world = this.currentWorld();
     if (!world.players.some((p) => p.id === this.myId)) return { status: '', banner: '', bannerKind: '' };
     return { status: statusFor(world, this.myId), ...bannerFor(world, this.myId) };
@@ -120,8 +226,21 @@ class JumpmapMatch implements GameMatch {
   }
 
   buildOutgoingPacket(): unknown {
-    if (this.engine) return encodeWorld(this.engine.snapshot(true));
-    return { name: this.myName, input: this.lastInput,
+    if (this.engine) {
+      const unready = [...this.members.values()].some(m => m.ready !== this.courseId);
+      if (this.loading || (unready && this.outgoing++ % 2 === 0)) {
+        const packet: CoursePacket = { kind: 'course', courseId: this.courseId, progress: this.progress };
+        if (this.courseReady) {
+          const total = Math.ceil(this.platforms.length / CHUNK_SIZE);
+          const index = this.chunkCursor++ % total;
+          packet.chunk = { index, total, platforms: this.platforms.slice(index * CHUNK_SIZE, (index + 1) * CHUNK_SIZE) };
+        }
+        return packet;
+      }
+      return { ...encodeWorld(this.engine.snapshot(true), this.platforms), courseId: this.courseId };
+    }
+    return { name: this.myName, input: this.loading ? NO_INPUT : this.lastInput,
+      courseId: this.courseId, ready: this.courseReady ? this.courseId : null,
       // Repeat the oldest samples first so a lost packet cannot leave a sequence hole.
       frames: this.pending.slice(0, 30).map(f => [f.seq, inputBits(f.input)]) };
   }
@@ -130,12 +249,48 @@ class JumpmapMatch implements GameMatch {
     if (this.engine) {
       const data = packet as JumpmapMemberPacketTagged;
       const { from, name, input } = data;
+      if (!from) return;
+      let member = this.members.get(from);
+      if (!member) { member = { name, ready: null }; this.members.set(from, member); }
+      if (data.courseId !== this.courseId) return;
+      if (data.ready === this.courseId) member.ready = this.courseId;
+      if (this.loading || member.ready !== this.courseId) return;
       this.engine.ensurePlayer(from, name);
       if (data.frames) this.engine.queueInputs(from, data.frames.map(([seq, bits]) => ({ seq, input: inputFromBits(bits) })));
       else this.engine.setInput(from, input);
       return;
     }
-    const world = 'runners' in (packet as WorldPacket) ? decodeWorld(packet as WorldPacket) : packet as JumpmapWorld;
+    if (!packet || typeof packet !== 'object') return;
+    const incoming = packet as CoursePacket | RacePacket;
+    if (!Number.isInteger(incoming.courseId) || incoming.courseId < this.courseId) return;
+    if (incoming.courseId > this.courseId) {
+      this.courseId = incoming.courseId;
+      this.loading = true; this.courseReady = false; this.progress = 0;
+      this.chunks.clear(); this.chunkTotal = 0;
+      this.resetPrediction();
+    }
+    if ('kind' in incoming && incoming.kind === 'course') {
+      if (this.courseReady) return;
+      this.progress = Math.max(this.progress, Math.min(90, incoming.progress));
+      const chunk = incoming.chunk;
+      if (chunk && Number.isInteger(chunk.total) && chunk.total > 0 && chunk.total <= 100 &&
+        Number.isInteger(chunk.index) && chunk.index >= 0 && chunk.index < chunk.total &&
+        Array.isArray(chunk.platforms) && chunk.platforms.length > 0 && chunk.platforms.length <= CHUNK_SIZE) {
+        if (this.chunkTotal && this.chunkTotal !== chunk.total) return;
+        this.chunkTotal = chunk.total;
+        this.chunks.set(chunk.index, chunk.platforms);
+        this.progress = 90 + Math.floor(10 * this.chunks.size / chunk.total);
+        if (this.chunks.size === chunk.total) {
+          this.platforms = Array.from({ length: chunk.total }, (_, i) => this.chunks.get(i)!).flat();
+          this.courseReady = true;
+          this.resetPrediction();
+        }
+      }
+      return;
+    }
+    if (!this.courseReady || !('runners' in incoming)) return;
+    const world = decodeWorld(incoming, this.platforms);
+    this.loading = false;
     if (world.tick <= this.receivedTick) return;
     const first = this.receivedTick < 0;
     this.receivedTick = world.tick;
@@ -179,7 +334,7 @@ class JumpmapMatch implements GameMatch {
       if (!a || a.finish !== b.finish || Math.hypot(a.x - b.x, a.y - b.y) > 100) return b;
       let x = a.x + (b.x - a.x) * alpha;
       // Grounded remote riders stay attached to the platform drawn on our clock.
-      const platform = PLATFORMS.find(spec => spec.id === b.state?.standingOn && spec.kind === 'moving');
+      const platform = this.platforms.find(spec => spec.id === b.state?.standingOn && spec.kind === 'moving');
       if (platform && a.state?.standingOn === platform.id) {
         const offsetA = a.x - movingPlatformX(platform, older.tick);
         const offsetB = b.x - movingPlatformX(platform, newer.tick);
@@ -192,6 +347,7 @@ class JumpmapMatch implements GameMatch {
   }
 
   removePeer(peerId: string): void {
+    this.members.delete(peerId);
     this.engine?.removePlayer(peerId);
   }
 
