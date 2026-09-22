@@ -26,6 +26,7 @@ async function loadRelease() {
       // Only link to this repository's published assets.
       if (url && url.origin === 'https://github.com' && url.pathname.startsWith(`/${repository}/releases/download/`)) {
         link.href = url.href;
+        link.dataset.version = typeof release.tag_name === 'string' ? release.tag_name : '';
       } else {
         link.href = releasePage;
         link.querySelector('small').textContent = '릴리스에서 설치 파일 확인';
@@ -57,6 +58,32 @@ const commentsConfig = window.OVERLAY_LUPIN_COMMENTS || {
   anonKey: 'sb_publishable_5zxeux70gYwvKeh03hw3LA_ENLcTu5K'
 };
 const commentsApiUrl = commentsConfig.url.replace(/\/+$/, '');
+
+// Count button clicks, including fallback links; this does not measure completed downloads.
+for (const [id, platform] of [['download-mac', 'mac'], ['download-win', 'windows']]) {
+  const link = document.getElementById(id);
+  const recordDownload = async event => {
+    if (event.type === 'auxclick' && event.button !== 1) return;
+    if (!commentsConfig.url || !commentsConfig.anonKey) return;
+    try {
+      await fetch(`${commentsApiUrl}/download_events`, {
+        method: 'POST',
+        keepalive: true,
+        headers: {
+          apikey: commentsConfig.anonKey,
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify({ platform, version: link.dataset.version || null }),
+      });
+    } catch {
+      // Analytics must never interrupt navigation or produce an unhandled rejection.
+    }
+  };
+  link.addEventListener('click', recordDownload);
+  link.addEventListener('auxclick', recordDownload);
+}
+
 const commentStoreKey = 'overlay-lupin-anonymous-comments';
 const form = document.getElementById('anonymous-comment-form');
 const list = document.getElementById('comment-list');
