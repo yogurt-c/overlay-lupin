@@ -28,3 +28,7 @@
 .install-note-body li::marker{font:italic 16px Georgia,serif;color:#688057}
 .install-note-body a{text-decoration:underline;text-underline-offset:3px;color:#526c43}
 .install-note-body .install-note-help{margin:16px 0 0;font-size:11px}
+.comment-pagination{display:flex;justify-content:center;align-items:center;gap:18px;margin-top:20px;font-size:11px;color:#6f7963}
+.comment-pagination button{padding:8px 12px;border:1px solid #d8dfcd;border-radius:5px;background:#f0f2e8;color:#526c43;font-size:11px}
+.comment-pagination button:hover:not(:disabled){background:#e4eadb}
+.comment-pagination button:disabled{cursor:default;opacity:.4}

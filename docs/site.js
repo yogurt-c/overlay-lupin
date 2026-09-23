@@ -88,6 +88,14 @@ const commentStoreKey = 'overlay-lupin-anonymous-comments';
 const form = document.getElementById('anonymous-comment-form');
 const list = document.getElementById('comment-list');
 const status = document.getElementById('comment-status');
+const pagination = document.getElementById('comment-pagination');
+const previousPage = document.getElementById('comment-prev');
+const nextPage = document.getElementById('comment-next');
+const pageLabel = document.getElementById('comment-page');
+const commentPageSize = 10;
+let commentPage = 0;
+let hasNextPage = false;
+let commentRequest = 0;
 const safeComments = value => Array.isArray(value) ? value.filter(item => item && typeof item.name === 'string' && typeof item.body === 'string').slice(0, 50) : [];
 const localComments = () => safeComments(JSON.parse(localStorage.getItem(commentStoreKey) || '[]'));
 const renderComments = comments => {
@@ -102,19 +110,49 @@ const renderComments = comments => {
     list.append(item);
   });
 };
-const loadComments = async () => {
-  if (!commentsConfig.url || !commentsConfig.anonKey) {
-    renderComments(localComments());
-    status.textContent = '미리보기 모드: 이 브라우저에만 저장돼요. 공개 댓글은 WEBSITE.md의 Supabase 설정을 추가하면 연결됩니다.';
-    return;
-  }
-  try {
-    const response = await fetch(`${commentsApiUrl}/comments?select=name,body,created_at&order=created_at.desc&limit=50`, { headers: { apikey: commentsConfig.anonKey, Authorization: `Bearer ${commentsConfig.anonKey}` } });
-    if (!response.ok) throw new Error('comments request failed');
-    renderComments(await response.json());
-    status.textContent = '';
-  } catch { status.textContent = '댓글을 불러오지 못했어요. 잠시 후 다시 시도해주세요.'; }
+const updatePagination = () => {
+  pagination.hidden = commentPage === 0 && !hasNextPage;
+  previousPage.disabled = commentPage === 0;
+  nextPage.disabled = !hasNextPage;
+  pageLabel.textContent = `${commentPage + 1} 페이지`;
 };
+const loadComments = async (requestedPage = 0) => {
+  const request = ++commentRequest;
+  previousPage.disabled = true;
+  nextPage.disabled = true;
+  list.setAttribute('aria-busy', 'true');
+  const local = !commentsConfig.url || !commentsConfig.anonKey;
+  try {
+    const offset = requestedPage * commentPageSize;
+    let comments;
+    if (local) {
+      comments = localComments().slice(offset, offset + commentPageSize + 1);
+    } else {
+      const response = await fetch(`${commentsApiUrl}/comments?select=name,body,created_at&order=created_at.desc&limit=${commentPageSize + 1}&offset=${offset}`, { headers: { apikey: commentsConfig.anonKey, Authorization: `Bearer ${commentsConfig.anonKey}` } });
+      if (!response.ok) throw new Error('comments request failed');
+      comments = safeComments(await response.json());
+    }
+    if (request !== commentRequest) return;
+    if (!comments.length && requestedPage > 0) return await loadComments(requestedPage - 1);
+    commentPage = requestedPage;
+    hasNextPage = comments.length > commentPageSize;
+    renderComments(comments.slice(0, commentPageSize));
+    status.textContent = local ? '미리보기 모드: 이 브라우저에만 저장돼요.' : '';
+  } catch {
+    if (request === commentRequest) status.textContent = '댓글을 불러오지 못했어요. 잠시 후 다시 시도해주세요.';
+  } finally {
+    if (request === commentRequest) {
+      list.setAttribute('aria-busy', 'false');
+      updatePagination();
+    }
+  }
+};
+previousPage.addEventListener('click', () => {
+  if (!previousPage.disabled) return loadComments(commentPage - 1);
+});
+nextPage.addEventListener('click', () => {
+  if (!nextPage.disabled) return loadComments(commentPage + 1);
+});
 form.addEventListener('submit', async event => {
   event.preventDefault();
   const button = form.querySelector('button');

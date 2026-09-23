@@ -13,7 +13,7 @@ async function page({ releaseFails = false, storageFails = false, configured = t
       if (!elements.has(id)) elements.set(id, {
         dataset: {}, listeners: {}, href: 'https://github.com/yogurt-c/overlay-lupin/releases/latest',
         addEventListener(type, handler) { this.listeners[type] = handler; },
-        querySelector() { return {}; }, replaceChildren() {},
+        querySelector() { return {}; }, replaceChildren() {}, setAttribute() {},
       });
       return elements.get(id);
     },
