@@ -12,3 +12,19 @@
 .image-label{top:13px;color:#879080}
 .anonymous-comment-form{display:grid;grid-template-columns:180px 1fr auto;align-items:end;gap:12px;margin-top:23px;padding-top:20px;border-top:1px solid #eceee4}.anonymous-comment-form label{display:flex;flex-direction:column;gap:7px;font-size:10px;color:#7d8775}.anonymous-comment-form input,.anonymous-comment-form textarea{width:100%;border:1px solid #d8ded0;border-radius:5px;background:#fff;padding:11px;font:12px inherit;color:var(--ink);resize:vertical}.anonymous-comment-form input:focus,.anonymous-comment-form textarea:focus{outline:2px solid #b8ceb0;outline-offset:1px}.anonymous-comment-form .button{padding:12px 16px;white-space:nowrap}.comment-list{display:grid;gap:10px;margin-top:18px}.comment-item{border:1px solid #eceee4;border-radius:6px;background:#fcfcf7;padding:13px 15px}.comment-item strong{font-size:11px;color:#607153}.comment-item p{font-size:12px;line-height:1.7;color:#687263;margin:7px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
 @media(max-width:760px){.anonymous-comment-form{grid-template-columns:1fr}.anonymous-comment-form .button{width:100%}}
+.install-note{min-width:0;border:1px dashed #cbd2bc;border-radius:6px;background:#eff1e6;color:#6f7963;font-size:12px;line-height:1.8}
+.install-note summary{display:flex;align-items:center;gap:10px;padding:12px 16px;cursor:pointer;list-style:none;color:#4c5b43;font-size:11px}
+.install-note summary::-webkit-details-marker{display:none}
+.install-note summary::before{content:"+";font:16px ui-monospace,Menlo,monospace;color:var(--green)}
+.install-note[open] summary::before{content:"−"}
+.install-note summary:hover{color:var(--green)}
+.install-note summary:focus-visible{outline:3px solid #a67537;outline-offset:3px;border-radius:6px}
+.install-note-body{margin:0 16px;padding:16px 0;border-top:1px dashed #cbd2bc}
+.install-note-body h3{font-size:14px;color:#4c5b43}
+.install-note-body p{margin:12px 0}
+.install-note-body h4{margin:18px 0 10px;font-size:12px;font-weight:650;color:#4c5b43}
+.install-note-body ol{margin:0;padding-left:23px}
+.install-note-body li{padding-left:3px;margin:6px 0}
+.install-note-body li::marker{font:italic 16px Georgia,serif;color:#688057}
+.install-note-body a{text-decoration:underline;text-underline-offset:3px;color:#526c43}
+.install-note-body .install-note-help{margin:16px 0 0;font-size:11px}
