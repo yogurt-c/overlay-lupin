@@ -7,7 +7,7 @@
  * at a small one, and gravity adds to `vy` rather than subtracting from it.
  */
 
-export type PlatformKind = 'start' | 'static' | 'moving' | 'trampoline' | 'goal';
+export type PlatformKind = 'start' | 'static' | 'moving' | 'trampoline' | 'goal' | 'ice';
 
 export interface PlatformSpec {
   id: string;
@@ -78,7 +78,7 @@ export const PLATFORMS: PlatformSpec[] = [
   platform('desk-plaza', 'static', 600, 4904, 180, { label: '01 · 통나무 숲' }),
   platform('desk-wide1', 'static', 460, 4844, 90, { label: '돌아가기 ←' }),
   platform('desk-short', 'static', 650, 4804, 41, { label: '↑ 지름길' }),
-  platform('desk-wide2', 'static', 430, 4784, 90),
+  platform('desk-wide2', 'ice', 430, 4784, 90),
   platform('desk-merge', 'static', 540, 4724, 180),
   platform('desk-step1', 'static', 420, 4658, 72),
   platform('desk-step2', 'static', 310, 4592, 72),
@@ -113,7 +113,7 @@ export const PLATFORMS: PlatformSpec[] = [
   platform('sky-merge', 'static', 490, 2350, 185),
   platform('sky-step2', 'static', 340, 2272, 61),
   platform('sky-lift2', 'moving', 250, 2194, 68, { amplitude: 90, speed: 0.0299, phase: 0.4 }),
-  platform('sky-rest2', 'static', 380, 2116, 89),
+  platform('sky-rest2', 'ice', 380, 2116, 89),
   platform('trampoline4', 'trampoline', 480, 2038, 110, { launchTargetId: 'sky-landing' }),
   platform('sky-landing', 'static', 690, 1878, 155),
   platform('final-plaza', 'static', 790, 1800, 190, { label: '정상 구간으로 ↑' }),
@@ -165,6 +165,12 @@ export const WORLD_TOP = GOAL.y - 80;
 
 export const PLAYER_HALF_W = 9;
 export const MOVE_SPEED = 3;
+/** Low traction: build speed and brake gradually on ice. */
+export const ICE_ACCEL = 0.18;
+export const ICE_FRICTION = 0.975;
+export const ICE_REST_SPEED = 0.04;
+/** Small air drag prevents a released jump from keeping full running speed. */
+export const AIR_FRICTION = 0.9;
 /** Softened slightly below a "realistic" fall so an ordinary jump clears every hand-placed gap with room to spare. */
 export const GRAVITY = 0.42;
 export const JUMP_VELOCITY = -9.6;

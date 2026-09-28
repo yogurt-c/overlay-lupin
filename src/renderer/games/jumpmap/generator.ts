@@ -95,7 +95,8 @@ export function* generateCourse(seed: number): Generator<GenerationProgress, Cou
   const platforms = [at('start', START_X, START_Y, 190, 'start')];
   const route: string[] = [];
   const patterns: Pattern[] = [];
-  let witnesses = [0, 60, 137, 279].map(tick => ({ ...startTrace(), tick }));
+  // Track main-route and shortcut-route arrivals separately across sections.
+  let witnesses = [0, 60, 137, 279, 0, 60, 137, 279].map(tick => ({ ...startTrace(), tick }));
   // A shuffled bag guarantees different challenges, instead of letting rejection
   // sampling quietly replace the interesting sections with easy stairs.
   const bag = [...PATTERNS];
@@ -177,6 +178,12 @@ export function* generateCourse(seed: number): Generator<GenerationProgress, Cou
         }
         if (pattern === 'spring' && i === count - 3) Object.assign(p,
           { kind: 'trampoline', x: Math.round(cx - 35), w: 70, launchTargetId: `s${section}p${i + 1}` });
+        // Spread ice through the climb; include it in route validation and repairs.
+        if (section % 3 === 1 && i === 0 && p.kind === 'static') {
+          p.kind = 'ice';
+          p.w = Math.max(60, p.w);
+          p.x = Math.round(cx - p.w / 2);
+        }
         candidate.push(p);
       }
       const main = candidate.map(p => p.id);
@@ -193,17 +200,11 @@ export function* generateCourse(seed: number): Generator<GenerationProgress, Cou
       const combined = [...platforms, ...candidate].sort((a, b) => b.y - a.y);
       const progress = Math.floor(90 * section / SECTIONS);
       const verified: Trace[] = [];
-      for (const witness of witnesses) {
-        const check = traceRoute(combined, main, witness);
+      for (const [index, witness] of witnesses.entries()) {
+        const check = traceRoute(combined, shortcut && index >= 4 ? shortcut : main, witness);
         let result = check.next();
         while (!result.done) { yield { percent: progress }; result = check.next(); }
         if (!result.value) break;
-        if (shortcut) {
-          const branch = traceRoute(combined, shortcut, witness);
-          let checked = branch.next();
-          while (!checked.done) { yield { percent: progress }; checked = branch.next(); }
-          if (!checked.value) break;
-        }
         verified.push(result.value);
       }
       if (verified.length === witnesses.length) {

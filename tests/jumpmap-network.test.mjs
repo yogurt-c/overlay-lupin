@@ -143,7 +143,7 @@ console.log('PASS shared movement replay: moving platform, jump/landing, knockba
   for (let i = 0; i < 6; i++) {
     const id = `12345678-1234-1234-1234-12345678901${i}`;
     engine.ensurePlayer(id, 'Long player name that should not ride in the world');
-    Object.assign(engine.players.get(id), { x: 912.123456789, y: -2500.123456789, vy: -10.123456789, knockVX: 8.123456789,
+    Object.assign(engine.players.get(id), { x: 912.123456789, y: -2500.123456789, vy: -10.123456789, knockVX: 8.123456789, vx: 2.123456789,
       attackCooldown: 30, stunTicks: 12, atkAnim: 10, impact: { platformId: PLATFORMS[20].id, x: 912, tick: 12345678 } });
   }
   const world = engine.snapshot(true); world.tick = 12345678;
@@ -225,4 +225,29 @@ console.log('PASS 30Hz send cadence at 60/120/144Hz');
   guest.step(right); sendInput(host, guest); host.step(idle);
   assert.equal(view(host).ack, 181);
   console.log('PASS bounded disconnect history and sequence recovery');
+}
+
+// Reconciliation must transmit the ice drift speed, including on key release/reversal.
+{
+  const platforms = [{ id: 'ice', kind: 'ice', x: 100, y: 500, w: 700 }];
+  const host = new JumpmapEngine(false, platforms);
+  host.ensurePlayer('guest', 'Guest');
+  Object.assign(host.players.get('guest'), { x: 400, y: 500, standingOn: 'ice', vx: 3 });
+  const guest = new JumpmapEngine(true, platforms);
+  for (let tick = 0; tick < 80; tick++) {
+    if (tick % 8 === 0) {
+      const world = decodeWorld(clone(encodeWorld(host.snapshot(true), platforms)), platforms);
+      assert(Math.abs(world.players[0].state.vx - host.players.get('guest').vx) < 0.0001);
+      guest.restore('guest', world.players[0].state, world.tick, world.phase);
+    }
+    const input = tick < 20 ? idle : tick < 45 ? { ...idle, left: true } : right;
+    host.setInput('guest', input); guest.setInput('guest', input);
+    host.step(); guest.step();
+    assert(Math.abs(host.players.get('guest').x - guest.players.get('guest').x) < 0.001);
+    assert.equal(host.players.get('guest').standingOn, guest.players.get('guest').standingOn);
+  }
+  const oldPacket = encodeWorld(host.snapshot(true), platforms);
+  oldPacket.runners[0][1].pop();
+  assert.equal(decodeWorld(oldPacket, platforms).players[0].state.vx, 0);
+  console.log('PASS ice momentum wire roundtrip and prediction replay');
 }

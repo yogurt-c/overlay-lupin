@@ -46,6 +46,7 @@ for (let seed = 0; seed < 100; seed++) {
     assert(p.x - (p.amplitude ?? 0) >= 0 && p.x + p.w + (p.amplitude ?? 0) <= WORLD_WIDTH);
     if (p.launchTargetId) assert(course.platforms.some(target => target.id === p.launchTargetId));
   }
+  assert(course.platforms.filter(p => p.kind === 'ice').length >= 2, 'ice challenges throughout each generated course');
   course.patterns.forEach(p => patterns.add(p));
   assert.equal(new Set(course.patterns).size, 9, `seed ${seed} must retain each challenge type`);
   const technical = course.platforms.filter(p => p.w < 74 && p.kind !== 'trampoline');

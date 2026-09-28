@@ -16,6 +16,10 @@ import {
   KNOCKBACK_VY,
   MAX_FALL_SPEED,
   MOVE_SPEED,
+  ICE_ACCEL,
+  ICE_FRICTION,
+  ICE_REST_SPEED,
+  AIR_FRICTION,
   movingPlatformX,
   PLATFORMS,
   PLAYER_HALF_W,
@@ -100,7 +104,9 @@ export class JumpmapEngine {
       name,
       x: START_X,
       y: START_Y,
+      vx: 0,
       vy: 0,
+      iceMomentum: false,
       facing: 1,
       airborne: false,
       knockVX: 0,
@@ -230,9 +236,27 @@ export class JumpmapEngine {
 
   private applyWalk(player: EnginePlayer): void {
     const direction = player.input.left === player.input.right ? 0 : player.input.left ? -1 : 1;
-    if (direction === 0) return;
-    player.facing = direction as 1 | -1;
-    player.x += direction * MOVE_SPEED;
+    const onIce = !player.airborne && player.standingOn !== null &&
+      this.platformRuntime.get(player.standingOn)?.kind === 'ice';
+    const iceSlide = onIce || (player.airborne && player.iceMomentum);
+    if (direction !== 0) player.facing = direction as 1 | -1;
+    if (iceSlide) {
+      player.vx = direction === 0 ? player.vx * ICE_FRICTION :
+        Math.max(-MOVE_SPEED, Math.min(MOVE_SPEED, player.vx + direction * ICE_ACCEL));
+      if (Math.abs(player.vx) < ICE_REST_SPEED) player.vx = 0;
+    } else {
+      if (direction !== 0) {
+        player.vx = direction * MOVE_SPEED;
+      } else if (player.airborne) {
+        // Keep a little approach momentum through the jump, but bleed it away
+        // after the key is released instead of gliding at full running speed.
+        player.vx *= AIR_FRICTION;
+        if (Math.abs(player.vx) < ICE_REST_SPEED) player.vx = 0;
+      } else {
+        player.vx = 0;
+      }
+    }
+    player.x += player.vx;
   }
 
   /**
@@ -335,6 +359,7 @@ export class JumpmapEngine {
     player.vy = 0;
     player.airborne = false;
     player.standingOn = plat.id;
+    player.iceMomentum = plat.kind === 'ice';
 
     if (plat.kind === 'trampoline') {
       player.vy = TRAMPOLINE_VELOCITY;
@@ -356,6 +381,8 @@ export class JumpmapEngine {
       player.standingOn = 'start';
       player.impact = undefined;
       player.atkAnim = 0;
+      player.vx = 0;
+      player.iceMomentum = false;
       player.vy = 0;
       player.airborne = false;
       player.knockVX = 0;
@@ -391,6 +418,8 @@ export class JumpmapEngine {
     for (const player of this.players.values()) {
       player.x = START_X;
       player.y = START_Y;
+      player.vx = 0;
+      player.iceMomentum = false;
       player.vy = 0;
       player.facing = 1;
       player.airborne = false;

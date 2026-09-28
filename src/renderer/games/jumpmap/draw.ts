@@ -206,7 +206,28 @@ export function drawLaunchCue(ctx: CanvasRenderingContext2D, from: PlatformSpec,
 /** Platform-specific silhouettes. Compression only changes decoration below y. */
 export function drawPlatform(ctx: CanvasRenderingContext2D, kind: PlatformKind, x: number, y: number, w: number,
   color: string, impactAge = Infinity): void {
-  if (kind !== 'trampoline') {
+  if (kind === 'ice') {
+    ctx.save(); ctx.translate(x, y);
+    const block = new Path2D();
+    block.moveTo(0, 0); block.lineTo(w, 0); block.lineTo(w - 3, 17);
+    block.lineTo(5, 20); block.lineTo(0, 14); block.closePath();
+    outlined(ctx, block, INK_STYLE.paper, INK_STYLE.graphite);
+    ctx.strokeStyle = INK_STYLE.shade; ctx.lineWidth = 2;
+    for (let sx = 8; sx < w - 8; sx += 22) line(ctx, sx, 14, sx + 8, 5);
+    // A snowflake and icicles distinguish ice within the monochrome sketch style.
+    ctx.strokeStyle = INK_STYLE.graphite; ctx.lineWidth = 1;
+    const cx = w / 2;
+    line(ctx, cx, 5, cx, 15);
+    line(ctx, cx - 4, 7, cx + 4, 13);
+    line(ctx, cx - 4, 13, cx + 4, 7);
+    for (const sx of [w * 0.23, w * 0.77]) {
+      ctx.beginPath(); ctx.moveTo(sx - 2, 20); ctx.lineTo(sx, 26);
+      ctx.lineTo(sx + 2, 20); ctx.stroke();
+    }
+    ctx.strokeStyle = color; ctx.lineWidth = 1.3;
+    line(ctx, 0, 0, w, 0);
+    ctx.restore();
+  } else if (kind !== 'trampoline') {
     drawBlock(ctx, kind, x, y, w, color);
   } else {
     const compression = impactAge < 18 ? Math.sin(impactAge / 18 * Math.PI) * 6 : 0;

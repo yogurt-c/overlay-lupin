@@ -75,7 +75,9 @@ export interface JumpmapMemberPacketTagged extends JumpmapMemberPacket {
 
 /** Shared by authoritative simulation and local prediction. */
 export interface RunnerState {
-  x: number; y: number; vy: number; facing: 1 | -1; airborne: boolean;
+  x: number; y: number; vx: number; vy: number; facing: 1 | -1; airborne: boolean;
+  /** Retains low-traction momentum while airborne after leaving an ice block. */
+  iceMomentum: boolean;
   knockVX: number; stunTicks: number; attackCooldown: number; atkAnim: number;
   jumpHeld: boolean; attackHeld: boolean; standingOn: string | null;
   pose: Pose; poseTimer: number; finish?: number; impact?: PlayerView['impact'];

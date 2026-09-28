@@ -448,5 +448,46 @@ for (const direction of [-1, 1]) {
   check('다음 라운드에는 이전 착지 효과가 남지 않는다', p.impact === undefined);
 }
 
+// Ice keeps horizontal momentum, brakes gradually, and can carry a runner off an edge.
+{
+  const ice = { id: 'ice', kind: 'ice', x: 100, y: 500, w: 700 };
+  const e = new JumpmapEngine(false, [ice]);
+  e.ensurePlayer('a', 'A');
+  const p = e.players.get('a');
+  Object.assign(p, { x: 300, y: 499, vy: 1, airborne: true, standingOn: null });
+  e.setInput('a', { ...NO_INPUT, right: true }); e.step();
+  check('빙판에 착지하면 이동 속도가 유지된다', p.standingOn === 'ice' && p.vx === 3);
+  const x = p.x;
+  e.setInput('a', NO_INPUT);
+  for (let i = 0; i < 10; i++) e.step();
+  check('빙판에서는 키를 놓아도 감속하며 미끄러진다', p.x > x + 20 && p.vx > 0 && p.vx < 3);
+  const drifting = p.x;
+  e.setInput('a', { ...NO_INPUT, left: true }); e.step();
+  check('반대 방향 입력은 즉시 반전하지 않고 제동한다', p.x > drifting && p.facing === -1);
+  for (let i = 0; i < 20; i++) e.step();
+  check('충분히 제동하면 반대 방향으로 이동한다', p.vx < 0);
+  e.setInput('a', NO_INPUT);
+  for (let i = 0; i < 200; i++) e.step();
+  check('입력 없이 기다리면 빙판에서도 정지한다', p.vx === 0 && !p.airborne);
+  Object.assign(p, { x: ice.x + ice.w + 8, vx: 3 }); e.step();
+  check('빙판 끝으로 미끄러지면 낙하한다', p.airborne && p.standingOn === null);
+  Object.assign(p, { x: 400, y: ice.y, airborne: false, standingOn: ice.id, vx: 2, iceMomentum: true });
+  e.setInput('a', { ...NO_INPUT, jump: true }); e.step();
+  check('빙판에서 미끄러지는 도중 점프할 수 있다', p.airborne && p.vy < 0 && p.x > 400);
+  Object.assign(p, { y: WORLD_HEIGHT + RESPAWN_WORLD_MARGIN + 1, vy: 5 }); e.step();
+  check('시작점 복귀 시 빙판 관성이 초기화된다', p.vx === 0);
+  p.vx = 2; e.phase = 'intermission'; e.timerMs = 1; e.step();
+  check('새 라운드 시작 시 빙판 관성이 초기화된다', p.vx === 0);
+
+  const ground = new JumpmapEngine(false, [{ ...ice, kind: 'static' }]);
+  ground.ensurePlayer('a', 'A');
+  const runner = ground.players.get('a');
+  Object.assign(runner, { x: 300, y: 500, standingOn: ice.id });
+  ground.setInput('a', { ...NO_INPUT, right: true }); ground.step();
+  const stopped = runner.x;
+  ground.setInput('a', NO_INPUT); ground.step();
+  check('일반 발판에서는 키를 놓으면 즉시 정지한다', runner.x === stopped && runner.vx === 0);
+}
+
 console.log(`\n${failures === 0 ? '모든 테스트 통과' : `${failures}개 실패`}`);
 process.exit(failures === 0 ? 0 : 1);
