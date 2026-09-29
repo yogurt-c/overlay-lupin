@@ -14,6 +14,8 @@
 
 ### [오버레이 루팡 다운로드](https://github.com/yogurt-c/overlay-lupin/releases/latest)
 
+[오버레이 루팡 공식 홈페이지 — 게임 소개와 무료 다운로드](https://yogurt-c.github.io/overlay-lupin/)
+
 <br/>
 
 <img src="assets/screenshot-invite.png" alt="대전 신청 알림 화면" width="23%" />&nbsp;&nbsp;
