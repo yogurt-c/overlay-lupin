@@ -107,7 +107,7 @@ export const GEOMETRY = ANIMALS.map((animal) => {
  * position correction out of the velocity state, so a high `friction` buys grip
  * without the stored impulse that would later fire a piece off the tower.
  */
-export const SURFACE = { friction: 0.8, restitution: 0 } as const;
+export const SURFACE = { friction: 0.9, restitution: 0 } as const;
 const DENSITY = 1;
 /** Matches the old engine's air drag, which kept a dropped piece from skating. */
 const LINEAR_DAMPING = 2.5;
