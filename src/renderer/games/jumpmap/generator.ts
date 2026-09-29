@@ -119,12 +119,14 @@ export function* generateCourse(seed: number): Generator<GenerationProgress, Cou
     const height = entry.y - Math.round(top);
     const difficulty = section / (SECTIONS - 1);
     let accepted = false;
-    for (let attempt = 0; attempt < 17 && !accepted; attempt++) {
-      const repair = attempt === 16;
+    // Ice and shortcut arrivals carry different momentum; allow more candidates
+    // before replacing the planned challenge with a static repair.
+    for (let attempt = 0; attempt < 65 && !accepted; attempt++) {
+      const repair = attempt === 64;
       const pattern = repair ? 'zigzag' as Pattern : plan[section];
-      // Only the final few attempts soften spacing. Keep platform kinds, narrow
-      // landings and the section's direction changes when repairing a challenge.
-      const relief = Math.max(0, attempt - 11) * 4;
+      // Later attempts soften spacing by at most 16 pixels. Keep platform kinds,
+      // narrow landings and the section's direction changes while retrying.
+      const relief = Math.min(16, Math.max(0, attempt - 11) * 4);
       const count = pattern === 'fork' ? 6 : pattern === 'spring' ? (height < 355 ? 3 : 4) :
         Math.ceil(height / (pattern === 'traverse' ? 67 : 88));
       const rises: number[] = [];
