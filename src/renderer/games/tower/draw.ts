@@ -71,11 +71,16 @@ function drawFuse(ctx: CanvasRenderingContext2D, fuse: number): void {
   if (width > 0) roughStroke(ctx, left, 114, left + width, 114, 2.2, ink, HALO);
 }
 
-/** World-space viewport offset: pan upward without shrinking animal artwork. */
+export const CAMERA_SCALE = 0.8;
+const CAMERA_FLOOR_Y = PLATFORM_Y - 4;
+const CAMERA_TOP_Y = 64;
+
+/** Keep the platform anchored until the tower fills the wider view. */
 export function cameraTargetY(world: TowerWorld): number {
   const top = Math.min(world.y - GEOMETRY[world.kind].radius - 5,
     ...world.bodies.map(([kind, , , y]) => y - GEOMETRY[kind].radius));
-  return Math.min(0, top - 64);
+  const visibleTop = PLATFORM_Y - (CAMERA_FLOOR_Y - CAMERA_TOP_Y) / CAMERA_SCALE;
+  return Math.min(0, top - visibleTop);
 }
 
 export function renderTower(ctx: CanvasRenderingContext2D, world: TowerWorld | null, viewport: Viewport, side: Side,
@@ -86,11 +91,12 @@ export function renderTower(ctx: CanvasRenderingContext2D, world: TowerWorld | n
   const unit = Math.min(viewport.width / 320, viewport.height / 280);
   ctx.save(); ctx.translate((viewport.width - 320 * unit) / 2, (viewport.height - 280 * unit) / 2); ctx.scale(unit, unit);
   beginSketchFrame();
-  // Keep animals at the same readable size. Follow the upper tower, as specified in the design README.
+  // Zoom out around the platform; HUD and next-piece preview keep their original size.
   const targetY = cameraTargetY(world);
   // Immediately reveal a new preview above the frame; ease back down after a collapse.
   visual.cameraY = targetY < visual.cameraY ? targetY : visual.cameraY + (targetY - visual.cameraY) * 0.1;
-  ctx.save(); ctx.translate(0, -4 - visual.cameraY);
+  ctx.save(); ctx.translate(160, CAMERA_FLOOR_Y); ctx.scale(CAMERA_SCALE, CAMERA_SCALE);
+  ctx.translate(-160, -PLATFORM_Y - visual.cameraY);
   roughStroke(ctx, 160 - PLATFORM_WIDTH / 2, PLATFORM_Y, 160 + PLATFORM_WIDTH / 2, PLATFORM_Y, 2.4, INK, HALO);
   roughStroke(ctx, 164 - PLATFORM_WIDTH / 2, PLATFORM_Y + 5, 156 + PLATFORM_WIDTH / 2, PLATFORM_Y + 5, 1.1, INK, HALO);
   world.bodies.forEach(([kind, owner, x, y, a], i) => {
@@ -108,7 +114,7 @@ export function renderTower(ctx: CanvasRenderingContext2D, world: TowerWorld | n
     drawAnimal(ctx, world.kind, x, world.y, a, side === world.side ? INK : OTHER);
   }
   ctx.restore();
-  if (visual.cameraY < -20) text(ctx, `받침대 ↓ ${Math.round(-visual.cameraY)}`, 153, 248, 8);
+  if (visual.cameraY * CAMERA_SCALE < -20) text(ctx, `받침대 ↓ ${Math.round(-visual.cameraY)}`, 153, 248, 8);
   text(ctx, '다음', 282, 42, 8);
   drawAnimal(ctx, world.next, 282, 65, 0, INK, 24 / GEOMETRY[world.next].extent);
   if (world.phase !== 'over') {

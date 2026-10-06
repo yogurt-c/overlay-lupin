@@ -9,7 +9,7 @@ import { TowerEngine } from '../dist/renderer/games/tower/engine.js';
 import { TowerMatch, towerModule } from '../dist/renderer/games/tower/module.js';
 import { NO_INPUT, PLATFORM_Y, MAX_ANIMALS, EXTREME_TICKS } from '../dist/renderer/games/tower/types.js';
 import { WorldAssembler, encodeWorld } from '../dist/renderer/games/tower/wire.js';
-import { cameraTargetY } from '../dist/renderer/games/tower/draw.js';
+import { CAMERA_SCALE, cameraTargetY } from '../dist/renderer/games/tower/draw.js';
 import { createInputSource } from '../dist/renderer/games/tower/input.js';
 
 const command = (turn = 0, seq = 1, x = 160, angle = 0) => ({ seq, turn, x, angle, drop: true, swap: false });
@@ -461,13 +461,16 @@ test('panel offers 일반 and 극한, and only the chosen rule fuses the turn', 
   assert.match(guest.hud().status, /극한/);
 });
 
-test('camera pans upward as tower grows while keeping a fixed world scale', () => {
+test('wider camera keeps the platform visible longer and follows tall towers', () => {
   const world = new TowerEngine().snapshot();
   assert.equal(cameraTargetY(world), 0);
+  world.y = 30 + GEOMETRY[world.kind].radius + 5;
+  assert.equal(cameraTargetY(world), 0, 'a tower reaching world y=30 still fits above the platform');
   world.y = -300;
   const high = cameraTargetY(world);
-  assert.ok(high < -300);
-  assert.ok(world.y - GEOMETRY[world.kind].radius - high >= 64);
+  assert.ok(high < 0);
+  const previewTop = PLATFORM_Y - 4 + (world.y - GEOMETRY[world.kind].radius - high - PLATFORM_Y) * CAMERA_SCALE;
+  assert.ok(previewTop >= 64, 'the animal in hand stays below the HUD');
   world.y -= 100;
   assert.equal(cameraTargetY(world), high - 100);
 });
