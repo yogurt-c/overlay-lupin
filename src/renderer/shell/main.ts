@@ -171,7 +171,7 @@ function startMatch(mode: 'duel' | 'room', isHost: boolean, gameId: string, vari
   setUiState('play');
 }
 
-/** No networking involved at all — the game's own bot stands in for the opponent. */
+/** Local play with no networking — alone or against the game's own bot. */
 function beginSoloMatch(): void {
   const module = currentModule();
   if (!module.createSoloMatch) return;

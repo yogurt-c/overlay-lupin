@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { generateCourse, traceRoute, startTrace } from '../dist/renderer/games/jumpmap/generator.js';
-import { WORLD_WIDTH, START_Y, GOAL_Y } from '../dist/renderer/games/jumpmap/field.js';
+import { WORLD_WIDTH, WORLD_HEIGHT, RESPAWN_WORLD_MARGIN, START_Y, GOAL_Y } from '../dist/renderer/games/jumpmap/field.js';
 import { jumpmapModule } from '../dist/renderer/games/jumpmap/module.js';
 
 const idle = { left: false, right: false, jump: false, down: false, attack: false };
@@ -22,6 +22,49 @@ function finish(generator) {
   return result.value;
 }
 const send = (host, guest, id = 'guest') => host.applyOpponentPacket({ from: id, ...clone(guest.buildOutgoingPacket()) });
+
+// Solo completes the entire round locally, without a roster or any packet exchange.
+{
+  const solo = jumpmapModule.createSoloMatch('solo', 'Solo');
+  function prepareSolo() {
+    for (let i = 0; i < 2000 && solo.loading; i++) solo.step(active);
+    assert.equal(solo.loading, false, 'solo must not wait for network readiness');
+    assert.equal(solo.engine.snapshot().tick, 0, 'loading input must not move the player');
+    assert.equal(solo.engine.players.size, 1);
+  }
+  prepareSolo();
+  assert.match(solo.hud().status, /혼자하기.*0%/);
+  const player = solo.engine.players.get('solo');
+  const startX = player.x;
+  solo.step({ ...idle, right: true, jump: true });
+  assert(player.x > startX && player.y < START_Y);
+
+  Object.assign(player, { y: WORLD_HEIGHT + RESPAWN_WORLD_MARGIN + 1, vy: 5 });
+  solo.step(idle);
+  assert.equal(player.y, START_Y, 'falling restarts from the bottom');
+  assert.equal(solo.engine.phase, 'race');
+
+  const goal = solo.platforms.find(p => p.id === 'goal');
+  Object.assign(player, { x: goal.x + goal.w / 2, y: goal.y - 20,
+    vx: 0, vy: 0, airborne: true, standingOn: null });
+  for (let i = 0; i < 60 && player.finish === undefined; i++) solo.step(idle);
+  assert.equal(player.finish, 1);
+  assert.equal(solo.engine.phase, 'intermission', 'solo skips the multiplayer grace period');
+  assert.match(solo.hud().banner, /완주!.*새 맵/);
+  assert.doesNotMatch(solo.hud().status, /위|명/);
+  assert.equal(solo.isOver(), false);
+
+  const previousCourse = solo.courseId;
+  for (let i = 0; i < 600 && !solo.loading; i++) solo.step(idle);
+  assert(solo.loading, 'completion must start generating the next course');
+  assert.equal(solo.courseId, previousCourse + 1);
+  prepareSolo();
+  assert.equal(solo.engine.players.get('solo').finish, undefined);
+  assert.equal(solo.hud().banner, '');
+  assert.match(solo.hud().status, /혼자하기.*0%/);
+  console.log('PASS solo loading, movement, respawn, completion and next course without networking');
+}
+
 function prepare(host, guest) {
   for (let i = 0; i < 2000; i++) {
     send(host, guest);

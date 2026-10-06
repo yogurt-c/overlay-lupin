@@ -91,7 +91,8 @@ class JumpmapMatch implements GameMatch {
   constructor(
     private isHost: boolean,
     private myId: string,
-    private myName: string
+    private myName: string,
+    private solo = false
   ) {
     this.engine = isHost ? new JumpmapEngine() : null;
     this.engine?.ensurePlayer(myId, myName);
@@ -200,7 +201,7 @@ class JumpmapMatch implements GameMatch {
       ctx.fillStyle = '#e3e3e3'; ctx.fillRect(x, y, width, 6);
       ctx.fillStyle = '#414141'; ctx.fillRect(x, y, width * this.progress / 100, 6);
       ctx.font = '12px sans-serif';
-      ctx.fillText(this.progress < 90 ? '점프 경로를 확인하고 있어요' : '참가자 준비를 기다리고 있어요', viewport.width / 2, y + 30);
+      ctx.fillText(this.solo || this.progress < 90 ? '점프 경로를 확인하고 있어요' : '참가자 준비를 기다리고 있어요', viewport.width / 2, y + 30);
       ctx.restore();
       return;
     }
@@ -216,7 +217,16 @@ class JumpmapMatch implements GameMatch {
   hud(): MatchHud {
     if (this.loading) return { status: `맵 생성 중 ${this.progress}%`, banner: '', bannerKind: '' };
     const world = this.currentWorld();
-    if (!world.players.some((p) => p.id === this.myId)) return { status: '', banner: '', bannerKind: '' };
+    const me = world.players.find((p) => p.id === this.myId);
+    if (!me) return { status: '', banner: '', bannerKind: '' };
+    if (this.solo) {
+      const finished = me.finish !== undefined;
+      return {
+        status: finished ? '혼자하기 · 완주!' : `혼자하기 · ${ZONE_STYLE[zoneAt(me.y)].label} · ${progressOf(me)}%`,
+        banner: finished ? `완주! ${Math.ceil(world.timerMs / 1000)}초 뒤 새 맵에 도전` : '',
+        bannerKind: finished ? 'over' : ''
+      };
+    }
     return { status: statusFor(world, this.myId), ...bannerFor(world, this.myId) };
   }
 
@@ -359,9 +369,10 @@ class JumpmapMatch implements GameMatch {
 export const jumpmapModule: GameModule = {
   id: 'jumpmap',
   label: '점프맵',
-  hint: '← → 이동 · ↑ 점프(발판 위에서만 가능) · ↓로 빠르게 낙하 · Space 공격 · 빙판에서는 미끄러짐(반대 방향으로 제동) · 제한시간 없이 깃발을 먼저 찍으면 1위, 이후 15초 그레이스 타임 동안 나머지 순위 확정 · 낙하 중 아래 발판에 착지 가능 · 맵 아래로 떨어지면 맨 아래 시작점부터 다시 도전',
+  hint: '← → 이동 · ↑ 점프(발판 위에서만 가능) · ↓로 빠르게 낙하 · Space 공격 · 빙판에서는 미끄러짐(반대 방향으로 제동) · 혼자하기: 제한시간 없이 완주 도전, 완주 후 새 맵 시작 · 같이하기: 깃발을 먼저 찍으면 1위, 이후 15초 그레이스 타임 동안 나머지 순위 확정 · 낙하 중 아래 발판에 착지 가능 · 맵 아래로 떨어지면 맨 아래 시작점부터 다시 도전',
   matching: 'room',
   roomCapacity: ROOM_CAPACITY,
   createMatch: (isHost, myId, myName) => new JumpmapMatch(isHost, myId, myName),
+  createSoloMatch: (myId, myName) => new JumpmapMatch(true, myId, myName, true),
   createInputSource: (target) => createInputSource(target)
 };

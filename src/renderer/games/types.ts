@@ -66,7 +66,7 @@ export interface GameModule {
   variants?: GameVariant[];
   /** `myId`/`myName` are this machine's network identity — only games that need to tell "me" apart in an N-player snapshot use them. */
   createMatch(isHost: boolean, myId: string, myName: string, variant?: string): GameMatch;
-  /** Present only for games with a bot opponent — lets the matching panel offer "혼자하기" with no networking involved. */
+  /** Offers "혼자하기" with no networking, either alone or against a game's bot. */
   createSoloMatch?(myId: string, myName: string, variant?: string): GameMatch;
   createInputSource(target: Window): { read(): unknown; clear(): void };
 }
