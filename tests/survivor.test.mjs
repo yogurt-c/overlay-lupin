@@ -16,6 +16,7 @@ import {
   RUN_TICKS,
   TICKS_PER_SECOND,
   createRng,
+  mixSeed,
   xpForLevel
 } from '../dist/renderer/games/survivor/arena.js';
 import { REAPER_REACH, SurvivorEngine } from '../dist/renderer/games/survivor/engine.js';
@@ -123,9 +124,13 @@ function playImmortal(engine, ticks, { targets = [], id = 'me', immortalUntil = 
     if (immortalUntil(world) && i % 20 === 0) engine.reconcile(id, me.x, me.y, me.maxHp, true);
 
     if (world.phase === 'levelup') {
-      let choice = 0;
+      const cards = world.offers.find((set) => set.id === id)?.cards ?? [];
+      // Anything already owned reads level 2 or more. Preferring those keeps the
+      // six passive slots free, or the card being waited for drops out of the
+      // pool for good once they fill with things nobody asked for.
+      let choice = Math.max(0, cards.findIndex((o) => o.level > 1));
       for (const want of wanted()) {
-        const found = world.offers.findIndex((o) => o.weapon === want);
+        const found = cards.findIndex((o) => o.weapon === want);
         if (found >= 0) { choice = found; break; }
       }
       engine.setInput(id, { ...NO_INPUT, pick1: choice === 0, pick2: choice === 1, pick3: choice === 2 });
@@ -795,9 +800,11 @@ function fresh(seed = 7, timedPicks = false) {
 {
   // The whip everyone starts with, taken to max, plus 공허의 문장 at level 3.
   const targets = [['passive:crest', '공허의 문장', EVOLVE_PASSIVE_LEVEL], ['whip', '채찍', 8]];
-  const engine = fresh(13);
+  const engine = fresh(5);
   const { evolved, longestShout, world } =
-    playImmortal(engine, 9 * 60 * TICKS_PER_SECOND, { targets });
+    // Just under the ten-minute mark: past it the reaper arrives and ends the
+    // run, and a level-up pause spends an attempt without advancing the clock.
+    playImmortal(engine, 9.5 * 60 * TICKS_PER_SECOND, { targets });
 
   // A null here means the bot died, never drew the cards, or never reached a
   // chest — so say which, or the next person debugs a one-word failure.
@@ -806,6 +813,9 @@ function fresh(seed = 7, timedPicks = false) {
     + `${JSON.stringify(engine.loadout('me'))})`);
   // It used to be cleared on the very next tick, which is one frame of banner.
   assert.ok(longestShout >= 2 * TICKS_PER_SECOND, `진화 외침이 2초 이상 떠 있다 (${longestShout}틱)`);
+  // And it does come down again — a banner that never cleared would also pass
+  // the line above, and would then sit on top of '사신이 왔다'.
+  assert.ok(longestShout <= 3 * TICKS_PER_SECOND, `외침이 3초 안에 걷힌다 (${longestShout}틱)`);
 }
 
 // --- surviving to the end summons the reaper, and the reaper finishes it ------
@@ -1019,12 +1029,22 @@ function fresh(seed = 7, timedPicks = false) {
   }
 
   assert.ok(reaper, '10분을 넘기면 사신이 필드에 있다');
-  // The swarm is wall-to-wall at this point, so the figure is almost certainly
-  // mid-blink — which is the half of the rule that says the reaper ignores it.
-  assert.ok(me.invuln > 0, '떼에 맞은 직후라 무적 상태다');
 
-  const gap = (PLAYER_RADIUS + ENEMY_RADIUS + REAPER_REACH) / 2;   // between the two reaches
-  engine.reconcile('me', reaper.x + gap, reaper.y, me.maxHp, true);
+  // Take a bite on purpose, so the figure is provably mid-blink: the other half
+  // of the rule is that the reaper ignores the blink, and waiting around hoping
+  // to be hit makes that half depend on the seed.
+  const bystander = engine.snapshot().enemies.find((e) => e.kind !== REAPER_KIND);
+  assert.ok(bystander, '떼가 남아 있다');
+  engine.reconcile('me', bystander.x, bystander.y, me.maxHp, true);
+  engine.setInput('me', NO_INPUT);
+  engine.step();
+  const bitten = engine.snapshot().players[0];
+  assert.ok(bitten.invuln > 0, `한 대 맞으면 잠깐 무적이 된다 (${bitten.invuln}틱)`);
+
+  // Now stand inside the reaper's ink but outside an ordinary enemy's reach.
+  const gap = (PLAYER_RADIUS + ENEMY_RADIUS + REAPER_REACH) / 2;
+  const far = engine.snapshot().enemies.find((e) => e.kind === REAPER_KIND);
+  engine.reconcile('me', far.x + gap, far.y, bitten.maxHp, true);
   engine.setInput('me', NO_INPUT);
   engine.step();
 
@@ -1100,6 +1120,203 @@ function fresh(seed = 7, timedPicks = false) {
       `${w}x${h}: 모든 글자가 패널 폭에 묶인다`);
     assert.ok(ctx.texts.every((t) => t.y > 0 && t.y < h), `${w}x${h}: 글자가 화면 안에 있다`);
   }
+}
+
+// --- everyone's cards are their own ------------------------------------------
+{
+  // The cards used to be rolled from the first living player's shelf, one list
+  // for the room. So a member was shown somebody else's upgrades, and taking
+  // one installed that player's weapon at that player's level — which read, on
+  // the other screens, as "my teammate's weapons are shared with me" and as
+  // "my weapon level doesn't go up".
+  const engine = new SurvivorEngine(777, true);
+  engine.ensurePlayer('a', '김대리');
+  engine.ensurePlayer('b', '이대리');
+
+  const cardsFor = (id) => engine.snapshot().offers.find((set) => set.id === id)?.cards ?? [];
+  const levels = (id) => new Map([...engine.loadout(id).weapons, ...engine.loadout(id).passives]
+    .map((item) => [item.label, item.level]));
+
+  // Walk until the room levels, then send the two of them down different paths.
+  let guard = 0;
+  const toLevelUp = () => {
+    while (engine.snapshot().phase === 'run' && guard < 5 * 60 * TICKS_PER_SECOND) {
+      const world = engine.snapshot();
+      const leg = Math.floor(guard / 300) % 4;
+      const move = { ...NO_INPUT, right: leg === 0, down: leg === 1, left: leg === 2, up: leg === 3 };
+      for (const p of world.players) {
+        if (guard % 20 === 0) engine.reconcile(p.id, p.x, p.y, p.maxHp, true);
+        engine.setInput(p.id, move);
+      }
+      engine.step();
+      guard += 1;
+    }
+    assert.equal(engine.snapshot().phase, 'levelup', `아직 도는 판이다 (${guard}틱)`);
+  };
+
+  toLevelUp();
+  assert.ok(cardsFor('a').length > 0 && cardsFor('b').length > 0, '둘 다 자기 카드를 받는다');
+  assert.deepEqual([...levels('a')], [...levels('b')], '첫 레벨업 전에는 둘의 보유가 같다');
+
+  // A takes card 1, B takes card 2, twice over. Their shelves diverge.
+  for (let round = 0; round < 2; round++) {
+    engine.setInput('a', { ...NO_INPUT, pick1: true });
+    engine.setInput('b', { ...NO_INPUT, pick2: true });
+    engine.step();
+    toLevelUp();
+  }
+
+  const mine = cardsFor('a');
+  const theirs = cardsFor('b');
+  assert.notDeepEqual(mine, theirs, '보유가 갈리면 카드도 갈린다');
+
+  // Every card has to describe the shelf of the player it is offered to: a card
+  // reading "Lv.3" means that player owns 2, nobody else.
+  for (const [id, cards] of [['a', mine], ['b', theirs]]) {
+    const owned = levels(id);
+    for (const card of cards) {
+      const label = card.label.replace(/ Lv\.\d+$/, '');
+      assert.equal(card.level, (owned.get(label) ?? 0) + 1,
+        `${id}의 카드 "${card.label}"는 ${id}의 보유 기준이다 (보유 ${owned.get(label) ?? 0})`);
+    }
+  }
+
+  // And taking one raises that player's own level by exactly one.
+  const beforeA = levels('a');
+  const beforeB = levels('b');
+  const takenA = mine[0];
+  const takenB = theirs[0];
+  engine.setInput('a', { ...NO_INPUT, pick1: true });
+  engine.setInput('b', { ...NO_INPUT, pick1: true });
+  engine.step();
+
+  const bump = (id, card, before) => {
+    const label = card.label.replace(/ Lv\.\d+$/, '');
+    const was = before.get(label) ?? 0;
+    assert.equal(levels(id).get(label), was + 1,
+      `${id}의 "${label}"가 ${was} -> ${was + 1}로 한 단계 오른다`);
+  };
+  bump('a', takenA, beforeA);
+  bump('b', takenB, beforeB);
+}
+
+// --- card draws cost the shared stream nothing -------------------------------
+{
+  // Offers are drawn per player from a forked stream. If they came out of the
+  // shared one, the number of draws would depend on how many people were in the
+  // room at that instant — and a member adopts the host's roster a tick or two
+  // before it replays the frame that used it. One extra draw parts the two
+  // swarms for good, which no amount of body reconciliation repairs.
+  assert.equal(mixSeed(7, 1, 'a'), mixSeed(7, 1, 'a'), '같은 재료는 같은 값');
+  assert.notEqual(mixSeed(7, 1, 'a'), mixSeed(7, 1, 'b'), '사람이 다르면 다른 값');
+  assert.notEqual(mixSeed(7, 1, 'a'), mixSeed(7, 2, 'a'), '화면이 다르면 다른 값');
+  assert.notEqual(mixSeed(7, 1, 'a'), mixSeed(8, 1, 'a'), '시드가 다르면 다른 값');
+  assert.notEqual(mixSeed(7, 1, 'ab'), mixSeed(7, 'ab', 1), '재료 경계가 섞이지 않는다');
+
+  // What the fork buys, seen from the game: two people at one screen get
+  // different hands, and one person's next screen is not a repeat of this one.
+  const engine = new SurvivorEngine(31337, true);
+  engine.ensurePlayer('a', '김대리');
+  engine.ensurePlayer('b', '이대리');
+
+  const handsAt = [];
+  for (let tick = 0; tick < 4 * 60 * TICKS_PER_SECOND && handsAt.length < 2; tick++) {
+    const world = engine.snapshot();
+    for (const p of world.players) {
+      if (tick % 20 === 0) engine.reconcile(p.id, p.x, p.y, p.maxHp, true);
+    }
+    if (world.phase === 'levelup') {
+      handsAt.push(new Map(world.offers.map((set) => [set.id, set.cards.map((c) => c.weapon).join('|')])));
+      for (const p of world.players) engine.setInput(p.id, { ...NO_INPUT, pick1: true });
+      engine.step();
+      continue;
+    }
+    const leg = Math.floor(tick / 300) % 4;
+    for (const p of world.players) {
+      engine.setInput(p.id, { ...NO_INPUT, right: leg === 0, down: leg === 1, left: leg === 2, up: leg === 3 });
+    }
+    engine.step();
+  }
+
+  assert.equal(handsAt.length, 2, '카드 화면을 두 번 봤다');
+  assert.notEqual(handsAt[0].get('a'), handsAt[0].get('b'), '같은 화면에서 둘은 다른 패를 받는다');
+  assert.notEqual(handsAt[0].get('a'), handsAt[1].get('a'), '다음 화면은 같은 패의 반복이 아니다');
+
+  // The discriminator: the same person's first hand must not depend on how many
+  // people were drawn before them. Out of the shared stream it would, because
+  // their draw would start wherever the others left off — which is exactly the
+  // coupling that makes a mid-run join part the two swarms.
+  const firstHandOf = (roster, who) => {
+    const engine = new SurvivorEngine(31337, true);
+    roster.forEach((id) => engine.ensurePlayer(id, id));
+    for (let tick = 0; tick < 4 * 60 * TICKS_PER_SECOND; tick++) {
+      const world = engine.snapshot();
+      for (const p of world.players) {
+        if (tick % 20 === 0) engine.reconcile(p.id, p.x, p.y, p.maxHp, true);
+      }
+      if (world.phase === 'levelup') {
+        return (world.offers.find((set) => set.id === who)?.cards ?? []).map((c) => c.weapon).join('|');
+      }
+      const leg = Math.floor(tick / 300) % 4;
+      for (const p of world.players) {
+        engine.setInput(p.id, { ...NO_INPUT, right: leg === 0, down: leg === 1, left: leg === 2, up: leg === 3 });
+      }
+      engine.step();
+    }
+    return null;
+  };
+
+  const second = firstHandOf(['a', 'b'], 'b');
+  const third = firstHandOf(['z', 'a', 'b'], 'b');
+  assert.ok(second, '첫 화면에서 b의 패를 받았다');
+  assert.equal(third, second, '앞사람이 몇 명이든 b의 패는 같다');
+}
+
+// --- a shelf with nothing left on it offers nothing ---------------------------
+{
+  // Where an empty hand comes from. The engine must not leave such a player
+  // `pending`: they would have no overlay to answer on and no card to answer
+  // with, and in solo there is no timeout to rescue them.
+  const maxedWeapons = new Map(WEAPONS.slice(0, WEAPON_SLOTS).map((w) => [w.id, w.maxLevel]));
+  const maxedPassives = new Map(PASSIVES.slice(0, PASSIVE_SLOTS).map((p) => [p.id, p.maxLevel]));
+
+  assert.equal(rollOffers(maxedWeapons, maxedPassives, 3, createRng(1)).length, 0,
+    '칸이 다 차고 전부 만렙이면 내놓을 카드가 없다');
+  assert.ok(rollOffers(maxedWeapons, new Map(), 3, createRng(1)).length > 0,
+    '아이템 칸이 비어 있으면 아직 줄 게 있다');
+  const oneShort = new Map(maxedWeapons);
+  oneShort.set(WEAPONS[0].id, WEAPONS[0].maxLevel - 1);
+  assert.ok(rollOffers(oneShort, maxedPassives, 3, createRng(1)).length > 0,
+    '하나라도 덜 올랐으면 그게 나온다');
+}
+
+// --- nobody with an empty hand can hold the room up --------------------------
+{
+  // A maxed-out build has nothing left to be offered. That player used to be
+  // left `pending` with no cards — so no overlay on their screen, and everyone
+  // else waiting on a choice they had no way to make.
+  const engine = new SurvivorEngine(99, false);
+  engine.ensurePlayer('me', '나');
+
+  // Hand them every weapon and passive at its ceiling, through the only door
+  // the engine has: take cards until there is nothing left to take.
+  for (let tick = 0; tick < 12 * 60 * TICKS_PER_SECOND; tick++) {
+    const world = engine.snapshot();
+    const me = world.players[0];
+    if (!me) break;
+    if (tick % 20 === 0) engine.reconcile('me', me.x, me.y, me.maxHp, true);
+    const cards = world.offers.find((set) => set.id === 'me')?.cards ?? [];
+    if (world.phase === 'levelup' && cards.length === 0) {
+      assert.ok(false, '카드가 없는데 레벨업에서 멈춰 있다');
+    }
+    engine.setInput('me', world.phase === 'levelup'
+      ? { ...NO_INPUT, pick1: true }
+      : { ...NO_INPUT, right: Math.floor(tick / 50) % 2 === 0, down: Math.floor(tick / 50) % 2 === 1 });
+    engine.step();
+  }
+  // Getting here at all is the assertion: a levelup phase with no cards would
+  // have tripped above, or hung the loop at a screen nobody can answer.
+  assert.ok(engine.snapshot().tick > 0, '판이 끝까지 돈다');
 }
 
 // --- the module wires itself into the shell the way the panel expects ---------

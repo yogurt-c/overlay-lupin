@@ -104,6 +104,25 @@ export function xpForLevel(level: number, players = 1): number {
 
 export const clamp = (n: number, lo: number, hi: number): number => (n < lo ? lo : n > hi ? hi : n);
 
+/**
+ * A seed derived from a seed plus some labels — FNV-1a, so it is the same on
+ * every machine. It exists so a stream can be forked without drawing from the
+ * shared one: anything that draws from the shared stream a number of times
+ * that depends on who is in the room will drift two clients apart for good.
+ */
+export function mixSeed(seed: number, ...parts: (string | number)[]): number {
+  let hash = (seed >>> 0) ^ 0x811c9dc5;
+  for (const part of parts) {
+    const text = String(part);
+    for (let i = 0; i < text.length; i++) {
+      hash ^= text.charCodeAt(i);
+      hash = Math.imul(hash, 0x01000193) >>> 0;
+    }
+    hash = Math.imul(hash ^ 0x5f, 0x01000193) >>> 0;   // a separator, so ('ab','c') ≠ ('a','bc')
+  }
+  return hash >>> 0;
+}
+
 /** mm:ss. The HUD counts a run down with it and the result panel counts one up. */
 export function clockText(ticks: number): string {
   const seconds = Math.max(0, Math.floor(ticks / TICKS_PER_SECOND));

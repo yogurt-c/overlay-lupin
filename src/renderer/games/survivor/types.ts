@@ -147,6 +147,16 @@ export interface RunResult {
   readonly passives: readonly OwnedItem[];
 }
 
+/**
+ * One player's three cards. Everyone levels at the same moment, but the cards
+ * are each player's own: they are drawn from that player's shelf, so a card
+ * reading "마늘 Lv.3" means the holder's 마늘 is at 2 — not somebody else's.
+ */
+export interface OfferSet {
+  id: string;
+  cards: CardOffer[];
+}
+
 /** One level-up offer. `weapon` is the id in WEAPONS; `level` is what it becomes. */
 export interface CardOffer {
   weapon: string;
@@ -173,8 +183,8 @@ export interface SurvivorWorld {
   xp: number;
   level: number;
   kills: number;
-  /** Only set while `phase === 'levelup'`. */
-  offers: CardOffer[];
+  /** Only set while `phase === 'levelup'` — one entry per player, not one list. */
+  offers: OfferSet[];
   /** Ids still owing a card choice, so the UI can say who everyone is waiting on. */
   pendingIds: string[];
   /** What each player already took this level-up: card index, or -1 for a skip. */

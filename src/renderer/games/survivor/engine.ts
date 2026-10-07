@@ -29,6 +29,7 @@ import {
   WORLD_W,
   clamp,
   createRng,
+  mixSeed,
   xpForLevel
 } from './arena.js';
 import {
@@ -67,6 +68,7 @@ import type {
   EnemyKind,
   EnemyView,
   GemView,
+  OfferSet,
   OwnedItem,
   Phase,
   PlayerView,
@@ -155,11 +157,14 @@ export class SurvivorEngine {
   private spawnTimer = 0;
   private bossesSpawned = 0;
   private reaperOut = false;
+  /** Card screens shown so far — the only thing that makes each one's draw differ. */
+  private screens = 0;
 
   private xp = 0;
   private level = 1;
   private kills = 0;
-  private offers: CardOffer[] = [];
+  /** Cards on the table, per player. Each set is rolled from its own shelf. */
+  private offers = new Map<string, CardOffer[]>();
   private pickDeadline = -1;
   private survived = false;
   private evolved: string | null = null;
@@ -196,6 +201,7 @@ export class SurvivorEngine {
 
   removePlayer(id: string): void {
     this.players.delete(id);
+    this.offers.delete(id);
     this.shots = this.shots.filter((s) => s.owner !== id);
     if (this.phase === 'levelup' && !this.anyPending()) this.resume();
   }
@@ -730,18 +736,33 @@ export class SurvivorEngine {
     if (alive.length === 0) return;
     this.phase = 'levelup';
     this.pickDeadline = this.timedPicks ? PICK_TIMEOUT_TICKS : -1;
-    for (const p of alive) { p.pending = true; p.pickIndex = null; }
-    // Offers follow the first living player's shelf; phase 3 gives each member its own.
-    this.offers = rollOffers(alive[0].weapons, alive[0].passives, CARD_COUNT, this.rng);
-    if (this.offers.length === 0) this.resume();
+    this.offers.clear();
+    this.screens += 1;
+    for (const p of alive) {
+      // Each hand is drawn from its own forked stream rather than the shared
+      // one. Drawing per player from the shared stream would tie the number of
+      // draws to how many people are in the room at that instant — and a member
+      // adopts the host's roster a tick or two before it replays the frame that
+      // used it, so a join or a leave during a level-up would part the two
+      // streams permanently. This way a level-up costs the shared stream nothing.
+      const hand = createRng(mixSeed(this.seed, this.screens, p.id));
+      const cards = rollOffers(p.weapons, p.passives, CARD_COUNT, hand);
+      this.offers.set(p.id, cards);
+      // Someone with nothing left to take must not hold the room hostage: they
+      // have no cards to answer with, and no overlay to answer them on.
+      p.pending = cards.length > 0;
+      p.pickIndex = cards.length > 0 ? null : -1;
+    }
+    if (!this.anyPending()) this.resume();
   }
 
   private stepLevelUp(): void {
     for (const p of this.players.values()) {
       if (!p.pending || !p.alive) continue;
+      const cards = this.offers.get(p.id) ?? [];
       const choice = p.input.pick1 ? 0 : p.input.pick2 ? 1 : p.input.pick3 ? 2 : p.input.skip ? -1 : null;
-      if (choice === null) continue;
-      if (choice >= 0) this.applyOffer(p, this.offers[choice]);
+      if (choice === null || choice >= cards.length) continue;
+      if (choice >= 0) this.applyOffer(p, cards[choice]);
       p.pending = false;
       p.pickIndex = choice;
     }
@@ -750,7 +771,7 @@ export class SurvivorEngine {
       this.pickDeadline -= 1;
       if (this.pickDeadline === 0) {
         for (const p of this.players.values()) {
-          if (p.pending && p.alive) { this.applyOffer(p, this.offers[0]); p.pickIndex = 0; }
+          if (p.pending && p.alive) { this.applyOffer(p, this.offers.get(p.id)?.[0]); p.pickIndex = 0; }
           p.pending = false;
         }
       }
@@ -780,7 +801,7 @@ export class SurvivorEngine {
   }
 
   private resume(): void {
-    this.offers = [];
+    this.offers.clear();
     this.pickDeadline = -1;
     for (const p of this.players.values()) p.pending = false;
 
@@ -819,7 +840,8 @@ export class SurvivorEngine {
       xp: this.xp,
       level: this.level,
       kills: this.kills,
-      offers: this.offers.map((o) => ({ ...o })),
+      offers: [...this.offers].map(([id, cards]): OfferSet =>
+        ({ id, cards: cards.map((card) => ({ ...card })) })),
       pendingIds: [...this.players.values()].filter((p) => p.pending && p.alive).map((p) => p.id),
       picks: [...this.players.values()]
         .filter((p) => p.pickIndex !== null && p.alive)

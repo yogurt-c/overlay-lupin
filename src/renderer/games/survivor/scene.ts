@@ -121,16 +121,18 @@ function drawXpBar(ctx: CanvasRenderingContext2D, width: number, world: Survivor
 }
 
 function drawCards(ctx: CanvasRenderingContext2D, width: number, height: number, world: SurvivorWorld, meId: string): void {
-  if (world.offers.length === 0) return;
+  // My cards, not the room's: everyone levels together but each shelf differs.
+  const cards = world.offers.find((set) => set.id === meId)?.cards ?? [];
+  if (cards.length === 0) return;
 
   ctx.save();
   ctx.fillStyle = 'rgba(251,250,247,0.55)';
   ctx.fillRect(0, 0, width, height);
 
   const gap = 10;
-  const cardW = Math.min(150, (width - gap * (world.offers.length + 1)) / world.offers.length);
+  const cardW = Math.min(150, (width - gap * (cards.length + 1)) / cards.length);
   const cardH = 86;
-  const totalW = cardW * world.offers.length + gap * (world.offers.length - 1);
+  const totalW = cardW * cards.length + gap * (cards.length - 1);
   const x0 = (width - totalW) / 2;
   const y = height - cardH - 28;
 
@@ -154,7 +156,7 @@ function drawCards(ctx: CanvasRenderingContext2D, width: number, height: number,
     ctx.fillText(`${Math.ceil(world.pickDeadline / TICKS_PER_SECOND)}초 뒤 자동 선택`, width / 2, y - 10);
   }
 
-  world.offers.forEach((offer, i) => {
+  cards.forEach((offer, i) => {
     const x = x0 + i * (cardW + gap);
     const chosen = mine?.[1] === i;
     const dimmed = mine !== undefined && !chosen;
