@@ -13,11 +13,29 @@ import {
 import { installAutoUpdater } from './updater';
 import { loadVisibilityShortcuts, saveVisibilityShortcuts, DEFAULT_VISIBILITY_SHORTCUTS } from './settings';
 import type { VisibilityShortcuts } from '../shared/shortcuts.js';
+import { GameAnalytics } from './analytics';
+import type { AnalyticsStart } from '../shared/analytics';
 
 let win: BrowserWindow | null = null;
 const net = new GameNetwork();
 
 app.whenReady().then(() => {
+  const analytics = new GameAnalytics({
+    directory: app.getPath('userData'), version: app.getVersion(),
+    platform: process.platform, packaged: app.isPackaged
+  });
+  const analyticsTimer = setInterval(() => { void analytics.flush(); }, 60_000);
+  analyticsTimer.unref();
+  app.once('before-quit', () => clearInterval(analyticsTimer));
+  ipcMain.on('analytics:start', (event, input: AnalyticsStart) => {
+    if (event.sender === win?.webContents) analytics.recordStart(input);
+  });
+  ipcMain.handle('analytics:get', () => analytics.getEnabled());
+  ipcMain.handle('analytics:set', async (_event, enabled: unknown) => {
+    if (typeof enabled !== 'boolean') return { ok: false, enabled: await analytics.getEnabled() };
+    const ok = await analytics.setEnabled(enabled);
+    return { ok, enabled: await analytics.getEnabled() };
+  });
   win = createGameWindow();
   net.start();
 

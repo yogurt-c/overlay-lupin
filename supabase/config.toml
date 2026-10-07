@@ -1,0 +1,2 @@
+[functions.game-telemetry]
+verify_jwt = false

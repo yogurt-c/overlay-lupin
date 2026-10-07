@@ -169,6 +169,7 @@ function startMatch(mode: 'duel' | 'room', isHost: boolean, gameId: string, vari
   lastScoreText = null;
   lastBannerText = null;
   setUiState('play');
+  recordGameStart(module.id, mode);
 }
 
 /** Local play with no networking — alone or against the game's own bot. */
@@ -183,6 +184,12 @@ function beginSoloMatch(): void {
   lastScoreText = null;
   lastBannerText = null;
   setUiState('play');
+  recordGameStart(module.id, 'solo');
+}
+
+function recordGameStart(gameId: string, mode: 'solo' | 'duel' | 'room'): void {
+  try { window.overlayLupin.recordGameStart({ gameId, mode }); }
+  catch { /* Optional analytics must never prevent play. */ }
 }
 
 function endMatch(): void {
@@ -334,6 +341,22 @@ function renderLobby(roster: RoomRoster): void {
 quitBtn.addEventListener('click', () => window.overlayLupin.quit());
 
 /* ------------------------------------------------------------- Shortcuts panel */
+
+const analyticsToggle = document.getElementById('analytics-enabled') as HTMLInputElement;
+const analyticsMessage = document.getElementById('analytics-msg') as HTMLParagraphElement;
+window.overlayLupin.getAnalyticsEnabled().then((enabled) => {
+  analyticsToggle.checked = enabled;
+  analyticsToggle.disabled = false;
+}).catch(() => { analyticsMessage.textContent = '설정을 불러오지 못했습니다.'; });
+analyticsToggle.addEventListener('change', async () => {
+  analyticsToggle.disabled = true;
+  try {
+    const result = await window.overlayLupin.setAnalyticsEnabled(analyticsToggle.checked);
+    analyticsToggle.checked = result.enabled;
+    analyticsMessage.textContent = result.ok ? '' : '설정을 저장하지 못했습니다. 다음 실행 때 다시 확인해주세요.';
+  } catch { analyticsMessage.textContent = '설정을 변경하지 못했습니다.'; }
+  finally { analyticsToggle.disabled = false; }
+});
 
 let shortcuts: VisibilityShortcuts = { hide: 'PageDown', show: 'PageUp' };
 /** Which of the two accelerators is currently waiting for its next keypress, if any. */

@@ -1,9 +1,13 @@
 import type { PeerInfo, RoomInfo, RoomRoster } from '../shared/protocol.js';
 import type { VisibilityShortcuts } from '../shared/shortcuts.js';
+import type { AnalyticsStart } from '../shared/analytics.js';
 
 export type { PeerInfo, RoomInfo, RoomRoster, VisibilityShortcuts };
 
 export interface OverlayLupinApi {
+  recordGameStart(input: AnalyticsStart): void;
+  getAnalyticsEnabled(): Promise<boolean>;
+  setAnalyticsEnabled(enabled: boolean): Promise<{ ok: boolean; enabled: boolean }>;
   whoAmI(): Promise<{ id: string; name: string }>;
   onPeers(cb: (peers: PeerInfo[]) => void): void;
   onInviteSent(cb: (peer: PeerInfo) => void): void;
