@@ -58,7 +58,14 @@ export class GameAnalytics {
           Number.isFinite(Date.parse(e.played_at)));
       }
       this.prune();
-    } catch { /* Analytics storage failure must never prevent startup. */ }
+    } catch (error) {
+      // First launch defaults on. Unreadable/corrupt settings stay off so a saved
+      // opt-out is never accidentally overridden by a storage error.
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        this.enabled = true;
+        await this.persist();
+      }
+    }
     finally { this.loaded = true; }
   }
 

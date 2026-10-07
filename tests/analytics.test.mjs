@@ -24,12 +24,10 @@ async function fixture(t, options = {}) {
   return { analytics, directory, requests, settings, advance: ms => { time += ms; } };
 }
 
-test('opt-in only, start is synchronous and does not send, development is excluded', async t => {
+test('fresh installs default on, start does not send, development is excluded', async t => {
   const f = await fixture(t);
-  f.analytics.recordStart({ gameId: 'soccer', mode: 'solo' });
-  await f.analytics.flush();
+  assert.equal(await f.analytics.getEnabled(), true);
   assert.equal(f.requests.length, 0);
-  await f.analytics.setEnabled(true);
   assert.equal(f.analytics.recordStart({ gameId: 'soccer', mode: 'solo' }), undefined);
   f.analytics.recordStart({ gameId: 'tower', mode: 'room' });
   assert.equal(f.requests.length, 0);
@@ -39,10 +37,20 @@ test('opt-in only, start is synchronous and does not send, development is exclud
   assert.notEqual(f.requests[0].events[0].event_id, f.requests[0].events[1].event_id);
   assert.equal(f.requests[0].events[0].installation_id, f.requests[0].events[1].installation_id);
   const dev = await fixture(t, { packaged: false });
-  await dev.analytics.setEnabled(true);
+  assert.equal(await dev.analytics.getEnabled(), true);
   dev.analytics.recordStart({ gameId: 'soccer', mode: 'solo' });
   await dev.analytics.flush();
   assert.equal(dev.requests.length, 0);
+});
+
+test('saved opt-out survives restart and prevents collection', async t => {
+  const f = await fixture(t);
+  await f.analytics.setEnabled(false);
+  const restarted = new GameAnalytics(f.settings);
+  assert.equal(await restarted.getEnabled(), false);
+  restarted.recordStart({ gameId: 'soccer', mode: 'solo' });
+  await restarted.flush();
+  assert.equal(f.requests.length, 0);
 });
 
 test('offline retries persist IDs, back off, and survive a restart', async t => {
