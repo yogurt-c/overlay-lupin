@@ -47,6 +47,7 @@ import {
 } from '../dist/renderer/games/survivor/spawn.js';
 import { ELITE, REAPER_KIND, baseKind, isElite } from '../dist/renderer/games/survivor/types.js';
 import { layoutResult, renderScene } from '../dist/renderer/games/survivor/scene.js';
+import { createInputSource } from '../dist/renderer/games/survivor/input.js';
 import {
   FRAME_WINDOW,
   FrameQueue,
@@ -1198,6 +1199,34 @@ function fresh(seed = 7, timedPicks = false) {
   };
   bump('a', takenA, beforeA);
   bump('b', takenB, beforeB);
+}
+
+// --- a card key answers once per press, however long it is held --------------
+{
+  // A real press lasts five to ten frames. Reading the held state meant one
+  // press answered every screen inside that window — so a chest's extra level
+  // flashed up and was taken for you, which looked like the list changing by
+  // itself the moment you chose.
+  const listeners = {};
+  const target = { addEventListener: (type, cb) => { (listeners[type] ??= []).push(cb); } };
+  const fire = (type, code) => listeners[type].forEach((cb) => cb({ code, preventDefault() {} }));
+  const input = createInputSource(target);
+
+  assert.equal(input.read().pick1, false, '누르지 않았으면 false');
+  fire('keydown', 'Digit1');
+  const held = Array.from({ length: 8 }, () => input.read().pick1);
+  assert.deepEqual(held, [true, false, false, false, false, false, false, false],
+    `한 번 누르면 한 프레임만 답한다 (${held.join(',')})`);
+
+  fire('keyup', 'Digit1');
+  fire('keydown', 'Digit1');
+  assert.equal(input.read().pick1, true, '다시 누르면 다시 답한다');
+
+  // Movement is the opposite: it is a hold, and has to stay true while down.
+  fire('keydown', 'ArrowRight');
+  assert.deepEqual([input.read().right, input.read().right], [true, true], '이동은 누르는 동안 계속 true');
+  fire('keyup', 'ArrowRight');
+  assert.equal(input.read().right, false, '떼면 멈춘다');
 }
 
 // --- card draws cost the shared stream nothing -------------------------------

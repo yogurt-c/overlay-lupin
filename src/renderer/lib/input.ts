@@ -16,8 +16,15 @@ export interface InputSource<T> {
 /** Maps each field of a game's input shape to the key codes that trigger it. */
 export type KeyBindings<T> = { [K in keyof T]: readonly string[] };
 
+/**
+ * `buffered` fields are taps, not holds: each one reads true exactly once per
+ * key press, however long the key stays down. A normal press lasts five to ten
+ * frames, so reading the held state instead would answer a menu five to ten
+ * times — and quietly consume whatever screen came next.
+ */
 export function createKeyInputSource<T>(target: Window, bindings: KeyBindings<T>, buffered: readonly (keyof T)[] = []): InputSource<T> {
   const fields = Object.keys(bindings) as (keyof T)[];
+  const bufferedFields = new Set(buffered);
   const watched = new Set<string>();
   for (const field of fields) for (const code of bindings[field]) watched.add(code);
 
@@ -42,7 +49,10 @@ export function createKeyInputSource<T>(target: Window, bindings: KeyBindings<T>
     read: () => {
       const out: Record<string, boolean> = {};
       for (const field of fields) {
-        out[field as string] = bindings[field].some((code) => held.has(code) || pressed.has(code));
+        const codes = bindings[field];
+        out[field as string] = bufferedFields.has(field)
+          ? codes.some((code) => pressed.has(code))
+          : codes.some((code) => held.has(code));
       }
       pressed.clear();
       return out as T;
