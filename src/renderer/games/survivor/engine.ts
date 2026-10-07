@@ -22,6 +22,8 @@ import {
   PLAYER_RADIUS,
   PLAYER_SPEED,
   RUN_TICKS,
+  SPAWN_HALF_H,
+  SPAWN_HALF_W,
   TICKS_PER_SECOND,
   WORLD_H,
   WORLD_W,
@@ -56,7 +58,7 @@ import {
   rollOffers,
   weaponById
 } from './weapons.js';
-import { NO_INPUT, baseKind, isElite } from './types.js';
+import { NO_INPUT, REAPER_KIND, baseKind, isElite } from './types.js';
 import type {
   CardOffer,
   ChestView,
@@ -73,7 +75,8 @@ import type {
   SurvivorWorld
 } from './types.js';
 
-interface Camera { x: number; y: number; halfW: number; halfH: number; }
+/** The rectangle enemies arrive just outside of. See `spawnFrame`. */
+interface SpawnFrame { x: number; y: number; halfW: number; halfH: number; }
 
 interface Player extends PlayerView {
   input: SurvivorInput;
@@ -115,6 +118,8 @@ const CHICKEN_CHANCE = 0.012;
 const CHICKEN_HEAL = 0.3;
 /** The reaper outruns everyone — it is the end of the run, not a fight. */
 const REAPER_SPEED = 2.4;
+/** How far outside the spawn frame a closing ring starts. */
+const WAVE_RING_MARGIN = 60;
 const CHEST_PICKUP_RADIUS = 20;
 /** Opening a chest with nothing to evolve hands out this many levels instead. */
 const CHEST_LEVELS = 2;
@@ -148,8 +153,6 @@ export class SurvivorEngine {
   constructor(private readonly seed: number, private readonly timedPicks: boolean) {
     this.rng = createRng(seed);
   }
-
-  camera: Camera = { x: WORLD_W / 2, y: WORLD_H / 2, halfW: 320, halfH: 240 };
 
   ensurePlayer(id: string, name: string): void {
     if (this.players.has(id)) return;
@@ -241,14 +244,34 @@ export class SurvivorEngine {
     });
   }
 
+  /**
+   * The rectangle the spawner works just outside of: the midpoint of everyone
+   * still standing, plus fixed extents. Built from simulation state only, so
+   * every client in a run computes exactly the same one — which is the whole
+   * point, since the seed alone cannot save a spawn that rings a local camera.
+   */
+  private spawnFrame(): SpawnFrame {
+    const everyone = [...this.players.values()];
+    const alive = everyone.filter((p) => p.alive);
+    const crowd = alive.length > 0 ? alive : everyone;
+    const centre = crowd.length > 0
+      ? {
+        x: crowd.reduce((sum, p) => sum + p.x, 0) / crowd.length,
+        y: crowd.reduce((sum, p) => sum + p.y, 0) / crowd.length
+      }
+      : { x: WORLD_W / 2, y: WORLD_H / 2 };
+    return { ...centre, halfW: SPAWN_HALF_W, halfH: SPAWN_HALF_H };
+  }
+
   private spawnEnemies(): void {
     this.spawnWave();
     if (this.spawnTimer > 0) { this.spawnTimer -= 1; return; }
     const crowd = this.livingCount();
     this.spawnTimer = spawnInterval(this.tick, crowd);
 
+    const frame = this.spawnFrame();
     for (let i = 0; i < spawnBatch(this.tick); i++) {
-      const { x, y } = spawnPoint(this.rng, this.camera.x, this.camera.y, this.camera.halfW, this.camera.halfH);
+      const { x, y } = spawnPoint(this.rng, frame.x, frame.y, frame.halfW, frame.halfH);
       const kind = rollKind(this.tick, this.rng);
       const { hp, speed } = statsFor(kind, this.tick);
       this.pushEnemy(x, y, hp, speed, kind);
@@ -269,9 +292,10 @@ export class SurvivorEngine {
     const kind = rollKind(this.tick, this.rng);
     const { hp, speed } = statsFor(kind, this.tick);
     const count = waveCount(wave.count, this.livingCount());
+    const frame = this.spawnFrame();
     const points = wave.shape === 'ring'
-      ? ringPoints(focus.x, focus.y, Math.max(this.camera.halfW, this.camera.halfH) + 60, count)
-      : linePoints(this.rng, this.camera.x, this.camera.y, this.camera.halfW, this.camera.halfH, count);
+      ? ringPoints(focus.x, focus.y, Math.max(frame.halfW, frame.halfH) + WAVE_RING_MARGIN, count)
+      : linePoints(this.rng, frame.x, frame.y, frame.halfW, frame.halfH, count);
     for (const point of points) this.pushEnemy(point.x, point.y, hp, speed, kind);
   }
 
@@ -279,7 +303,8 @@ export class SurvivorEngine {
     const due = Math.floor(this.tick / MINIBOSS_EVERY_TICKS);
     if (due <= this.bossesSpawned || this.tick === 0) return;
     this.bossesSpawned = due;
-    const { x, y } = spawnPoint(this.rng, this.camera.x, this.camera.y, this.camera.halfW, this.camera.halfH);
+    const frame = this.spawnFrame();
+    const { x, y } = spawnPoint(this.rng, frame.x, frame.y, frame.halfW, frame.halfH);
     // Each miniboss is an elite of whatever is already in the swarm, so the
     // second one looks nothing like the first.
     const kind = eliteKind(this.tick, this.rng);
@@ -292,8 +317,9 @@ export class SurvivorEngine {
     if (this.reaperOut || this.tick < RUN_TICKS) return;
     this.reaperOut = true;
     this.survived = true;
-    const { x, y } = spawnPoint(this.rng, this.camera.x, this.camera.y, this.camera.halfW, this.camera.halfH);
-    this.pushEnemy(x, y, Number.POSITIVE_INFINITY, REAPER_SPEED, 3);
+    const frame = this.spawnFrame();
+    const { x, y } = spawnPoint(this.rng, frame.x, frame.y, frame.halfW, frame.halfH);
+    this.pushEnemy(x, y, Number.POSITIVE_INFINITY, REAPER_SPEED, REAPER_KIND);
   }
 
   /** Everyone still standing — the swarm scales to this, not to the room's size. */
@@ -378,10 +404,12 @@ export class SurvivorEngine {
         this.damageCircle(p.x, p.y, w.radius, w.damage);
         break;
       case 'bolt': {
+        // A screen's worth of ground around the caster — the same fixed box the
+        // spawner uses, and for the same reason: the real screen is per-client.
         const inView = this.enemies.filter((e) =>
-          baseKind(e.kind) !== 3 &&
-          Math.abs(e.x - this.camera.x) < this.camera.halfW &&
-          Math.abs(e.y - this.camera.y) < this.camera.halfH);
+          baseKind(e.kind) !== REAPER_KIND &&
+          Math.abs(e.x - p.x) < SPAWN_HALF_W &&
+          Math.abs(e.y - p.y) < SPAWN_HALF_H);
         for (let i = 0; i < w.count && inView.length > 0; i++) {
           const target = inView[Math.floor(this.rng() * inView.length)];
           this.strikes.push({ x: target.x, y: target.y, radius: w.radius, facing: 1, age: 0, life: 10, kind: 'bolt' });

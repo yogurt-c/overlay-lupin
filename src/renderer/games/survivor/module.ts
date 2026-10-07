@@ -11,7 +11,7 @@
  * as one player dying on someone else's screen.
  */
 
-import { ROOM_CAPACITY, RUN_TICKS, TICKS_PER_SECOND, VIEW_SCALE } from './arena.js';
+import { ROOM_CAPACITY, RUN_TICKS, TICKS_PER_SECOND } from './arena.js';
 import { SurvivorEngine } from './engine.js';
 import { createInputSource } from './input.js';
 import {
@@ -177,17 +177,9 @@ class SurvivorMatch implements GameMatch {
 
   render(ctx: CanvasRenderingContext2D, viewport: Viewport): void {
     const world = this.world();
-    if (this.engine) {
-      // The spawner rings the camera, so every client has to ring the same one.
-      // Lockstep gets that for free: identical inputs put identical figures in
-      // identical places, and the camera follows those.
-      this.engine.camera = {
-        x: this.camera.x,
-        y: this.camera.y,
-        halfW: viewport.width / 2 / VIEW_SCALE,
-        halfH: viewport.height / 2 / VIEW_SCALE
-      };
-    }
+    // Nothing about this camera reaches the simulation. It eases toward the
+    // local figure and carries the local window's size, so the engine rings its
+    // own fixed frame instead — see `SPAWN_HALF_W`.
     followCamera(this.camera, world, this.myId, this.snapCamera);
     this.snapCamera = false;
     renderScene(ctx, viewport, world, this.camera, this.myId, this.phase, this.need());

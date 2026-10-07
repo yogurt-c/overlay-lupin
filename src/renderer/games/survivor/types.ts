@@ -43,6 +43,8 @@ export type EnemyKind = number;
 
 /** Added to a kind to mark the elite (miniboss) version of it. */
 export const ELITE = 8;
+/** The reaper, which the spawner and the damage rules both have to name. */
+export const REAPER_KIND = 3;
 export const isElite = (kind: EnemyKind): boolean => kind >= ELITE;
 export const baseKind = (kind: EnemyKind): EnemyKind => (kind >= ELITE ? kind - ELITE : kind);
 

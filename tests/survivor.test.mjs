@@ -39,6 +39,7 @@ import {
   waveAt
 } from '../dist/renderer/games/survivor/spawn.js';
 import { ELITE, baseKind, isElite } from '../dist/renderer/games/survivor/types.js';
+import { renderScene } from '../dist/renderer/games/survivor/scene.js';
 import {
   FRAME_WINDOW,
   FrameQueue,
@@ -83,6 +84,18 @@ function runKiting(engine, ticks, id = 'me') {
     engine.step();
   }
   return engine.snapshot();
+}
+
+/** Stands in for a canvas: it only has to be callable and to count the calls. */
+const CANVAS_METHODS = [
+  'arc', 'beginPath', 'clearRect', 'closePath', 'ellipse', 'fill', 'fillRect', 'fillText',
+  'lineTo', 'moveTo', 'quadraticCurveTo', 'rect', 'restore', 'rotate', 'roundRect',
+  'save', 'scale', 'setLineDash', 'setTransform', 'stroke', 'strokeRect', 'translate'
+];
+function countingCtx() {
+  const ctx = { calls: 0 };
+  for (const name of CANVAS_METHODS) ctx[name] = () => { ctx.calls += 1; };
+  return ctx;
 }
 
 function fresh(seed = 7, timedPicks = false) {
@@ -691,6 +704,42 @@ function fresh(seed = 7, timedPicks = false) {
   for (let tick = 0; tick < 200; tick++) host.step(NO_INPUT);
   const size = JSON.stringify(host.buildOutgoingPacket()).length;
   assert.ok(size <= 1400, `4인 방 패킷도 한 프레임에 들어간다 (${size}B)`);
+}
+
+// --- rendering can never reach the simulation --------------------------------
+{
+  // The spawner used to ring `engine.camera`, and the match overwrote that every
+  // frame in `render()` — from the local figure's position and the local window's
+  // size. So two clients in one run grew different swarms from the same seed.
+  // This drives the real path: both sides lockstep normally, and both draw, at
+  // the two window sizes the overlay actually allows.
+  const host = survivorModule.createMatch(true, 'h', '호스트');
+  const member = survivorModule.createMatch(false, 'm', '멤버');
+  host.setMembers([{ id: 'm', name: '멤버' }]);
+
+  const ctx = countingCtx();
+  const smallest = { width: 160, height: 120, pixelRatio: 1 };
+  const biggest = { width: 900, height: 700, pixelRatio: 2 };
+
+  for (let tick = 1; tick <= 1800; tick++) {
+    // They walk away from each other, so each client's camera ends up somewhere
+    // different — which is what made the two swarms differ.
+    host.step({ ...NO_INPUT, right: tick % 160 < 80, up: tick % 160 >= 80, pick1: true });
+    member.step({ ...NO_INPUT, left: tick % 120 < 60, down: tick % 120 >= 60, pick1: true });
+    host.render(ctx, smallest, 0);
+    member.render(ctx, biggest, 0);
+    if (tick % 2 !== 0) continue;
+    host.applyOpponentPacket({ ...member.buildOutgoingPacket(), from: 'm' });
+    member.applyOpponentPacket(host.buildOutgoingPacket());
+  }
+
+  const status = (match) => match.hud().status;
+  assert.ok(!status(member).includes('동기화 어긋남'),
+    `창 크기가 달라도 떼가 갈라지지 않는다 (${status(member)})`);
+  assert.equal(
+    status(member).replace(/^HP \S+/, ''),
+    status(host).replace(/^HP \S+/, ''),
+    '시계와 레벨과 처치 수가 같다');
 }
 
 // --- the module wires itself into the shell the way the panel expects ---------

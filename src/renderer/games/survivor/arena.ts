@@ -33,6 +33,23 @@ export const CONTACT_DAMAGE = 2.4;
 /** After taking a hit the figure is briefly untouchable, so a crowd can't delete it instantly. */
 export const HURT_INVULN_TICKS = 24;
 
+/** The overlay's default size in CSS pixels — see src/main/window.ts. */
+const DEFAULT_VIEW_W = 320;
+const DEFAULT_VIEW_H = 280;
+
+/**
+ * Half the rectangle the spawner works just outside of, in world units.
+ *
+ * Deliberately NOT the local window. The camera is render state: it eases
+ * toward whichever figure is the local player, and its size is that player's
+ * overlay. Spawning off it meant two clients in one run grew different swarms
+ * from the same seed — a desync by construction, invisible to any test that
+ * runs a single client. These are the default window's extents, so the
+ * distance enemies walk in from is what it has always been by default.
+ */
+export const SPAWN_HALF_W = DEFAULT_VIEW_W / 2 / VIEW_SCALE;
+export const SPAWN_HALF_H = DEFAULT_VIEW_H / 2 / VIEW_SCALE;
+
 export const ENEMY_RADIUS = 10;
 /** Hard ceiling on live enemies — the swarm is the point, but the frame budget isn't infinite. */
 export const MAX_ENEMIES = 200;
