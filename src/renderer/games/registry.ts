@@ -7,6 +7,7 @@ import { wormModule } from './worm/module.js';
 import { merandiModule } from './merandi/module.js';
 import { jumpmapModule } from './jumpmap/module.js';
 import { survivorModule } from './survivor/module.js';
+import { mergeModule } from './merge/module.js';
 import type { GameModule } from './types.js';
 
 /** Every game exposed in the matching panel. Add a new module here to expose it. */
@@ -19,5 +20,6 @@ export const GAME_MODULES: GameModule[] = [
   merandiModule,
   towerModule,
   jumpmapModule,
-  survivorModule
+  survivorModule,
+  mergeModule
 ];

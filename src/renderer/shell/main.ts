@@ -249,6 +249,7 @@ function renderPanelBody(): void {
   if (showMode) {
     panelTitle.textContent = currentModule().label;
     soloBtn.disabled = !currentModule().createSoloMatch;
+    versusBtn.disabled = !!currentModule().soloOnly;
   } else {
     renderMatchingList();
   }
@@ -478,6 +479,7 @@ soloBtn.addEventListener('click', () => {
 });
 
 versusBtn.addEventListener('click', () => {
+  if (versusBtn.disabled) return;
   panelStep = 'match';
   renderPanelBody();
 });
