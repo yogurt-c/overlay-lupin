@@ -7,9 +7,9 @@
  */
 
 import { beginSketchFrame } from '../../lib/sketch.js';
-import { TICKS_PER_SECOND, VIEW_SCALE, WORLD_H, WORLD_W } from './arena.js';
+import { TICKS_PER_SECOND, VIEW_SCALE, WORLD_H, WORLD_W, clockText } from './arena.js';
 import { drawChest, drawEnemy, drawGem, drawItem, drawPlayer, drawPool, drawShot, drawStrike } from './draw.js';
-import type { SurvivorWorld } from './types.js';
+import type { RunResult, SurvivorWorld } from './types.js';
 import type { Viewport } from '../types.js';
 
 const INK = '#14181a';
@@ -18,6 +18,12 @@ const RED = '#ff4a2b';
 const FONT = '"Apple SD Gothic Neo", sans-serif';
 
 export interface Camera { x: number; y: number; }
+
+/** Set once the run is over: what to show, and how long until the shell leaves. */
+export interface Ending {
+  result: RunResult | null;
+  framesLeft: number;
+}
 
 /** Eases the camera toward the midpoint of everyone still standing. */
 export function followCamera(camera: Camera, world: SurvivorWorld, meId: string, snap: boolean): void {
@@ -45,7 +51,8 @@ export function renderScene(
   camera: Camera,
   meId: string,
   phase: number,
-  xpNeeded: number
+  xpNeeded: number,
+  ending: Ending
 ): void {
   const { width, height } = viewport;
   // Reset the jitter generator so every frame inside one boil tick redraws the
@@ -83,7 +90,8 @@ export function renderScene(
   ctx.restore();
 
   drawXpBar(ctx, width, world, xpNeeded);
-  if (world.phase === 'levelup') drawCards(ctx, width, height, world, meId);
+  if (ending.result) drawResult(ctx, width, height, ending.result, ending.framesLeft);
+  else if (world.phase === 'levelup') drawCards(ctx, width, height, world, meId);
 }
 
 const clampCam = (value: number, half: number, span: number): number =>
@@ -188,4 +196,168 @@ function drawCards(ctx: CanvasRenderingContext2D, width: number, height: number,
   });
 
   ctx.restore();
+}
+
+/** The result panel's metrics. The overlay is 320x280 by default — and can be
+ * dragged down to 160x120 — so every number here is small on purpose, and
+ * anything that doesn't fit is dropped rather than drawn past the edge. */
+const PANEL_MARGIN = 8;
+const PANEL_MAX_W = 304;
+const PANEL_PAD_TOP = 12;
+const TITLE_H = 30;
+const STATS_H = 18;
+const DIVIDER_H = 13;
+const CAPTION_H = 13;
+const ITEM_H = 15;
+const FOOTER_H = 20;
+const PANEL_RADIUS = 12;
+/** Side padding inside the panel — the divider's inset and the text's limit. */
+const PANEL_INSET = 22;
+/** Panel width a two-item line needs; below it the shelf goes one per line. */
+const TWO_PER_ROW_W = 284;
+
+/**
+ * The end of a run, which is the only screen in this game that is allowed to
+ * be a screen. Ten minutes of picks end up as a list of what the build became,
+ * because that list — not the banner — is what a player wants to see.
+ *
+ * Drawn as a card rather than a full-screen wash: this is still an overlay, and
+ * whatever is behind it stays readable the same way it does mid-run.
+ */
+function drawResult(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  result: RunResult,
+  framesLeft: number
+): void {
+  const panel = layoutResult(width, height, result);
+
+  ctx.save();
+  ctx.fillStyle = PAPER;
+  ctx.strokeStyle = result.survived ? INK : RED;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.roundRect(panel.x, panel.y, panel.w, panel.h, PANEL_RADIUS);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.textAlign = 'center';
+  drawResultHead(ctx, panel, result);
+  drawResultBody(ctx, panel);
+
+  // Nobody has to press anything — the shell leaves on its own, so say when.
+  ctx.fillStyle = 'rgba(20,24,26,0.55)';
+  ctx.font = `600 10px ${FONT}`;
+  text(ctx, `${Math.ceil(framesLeft / TICKS_PER_SECOND)}초 뒤 돌아갑니다`, panel, panel.y + panel.h - 8);
+  ctx.restore();
+}
+
+function drawResultHead(ctx: CanvasRenderingContext2D, panel: ResultPanel, result: RunResult): void {
+  let y = panel.y + PANEL_PAD_TOP + TITLE_H - 8;
+
+  ctx.fillStyle = result.survived ? INK : RED;
+  ctx.font = `800 26px ${FONT}`;
+  text(ctx, result.survived ? '버텼다' : '전멸', panel, y);
+
+  y += STATS_H;
+  ctx.fillStyle = INK;
+  ctx.font = `700 12px ${FONT}`;
+  text(ctx, `${clockText(result.ticks)} 생존 · Lv.${result.level} · ${result.kills}킬`, panel, y);
+
+  y += 8;
+  ctx.strokeStyle = 'rgba(20,24,26,0.25)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(panel.x + PANEL_INSET, y);
+  ctx.lineTo(panel.x + panel.w - PANEL_INSET, y);
+  ctx.stroke();
+}
+
+function drawResultBody(ctx: CanvasRenderingContext2D, panel: ResultPanel): void {
+  let y = panel.y + PANEL_PAD_TOP + TITLE_H - 8 + STATS_H + 8 + 14;
+  for (const line of panel.lines) {
+    if (line.caption) {
+      ctx.fillStyle = 'rgba(20,24,26,0.5)';
+      ctx.font = `700 9px ${FONT}`;
+    } else {
+      ctx.fillStyle = INK;
+      ctx.font = `600 12px ${FONT}`;
+    }
+    text(ctx, line.text, panel, y);
+    y += line.height;
+  }
+}
+
+/**
+ * Centred in the panel, and never wider than it. The `maxWidth` argument is the
+ * point: these strings are Korean labels of unknown width in whatever font the
+ * machine has, and the panel can be 144px wide. Without it a long line runs
+ * straight through the border.
+ */
+function text(ctx: CanvasRenderingContext2D, value: string, panel: ResultPanel, y: number): void {
+  ctx.fillText(value, panel.x + panel.w / 2, y, panel.w - PANEL_INSET * 2);
+}
+
+export interface ResultPanel {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  lines: PanelLine[];
+}
+
+/**
+ * Where the panel sits and what fits inside it. Separate from the drawing so a
+ * test can check the geometry at every window size the overlay allows without
+ * a canvas.
+ */
+export function layoutResult(width: number, height: number, result: RunResult): ResultPanel {
+  const head = PANEL_PAD_TOP + TITLE_H + STATS_H + DIVIDER_H;
+  const w = Math.min(width - PANEL_MARGIN * 2, PANEL_MAX_W);
+  const room = height - PANEL_MARGIN * 2 - head - FOOTER_H;
+  const lines = fitLines(shelfLines(result, w >= TWO_PER_ROW_W ? 2 : 1), room);
+  const h = head + lines.reduce((sum, line) => sum + line.height, 0) + FOOTER_H;
+  return {
+    x: (width - w) / 2,
+    y: Math.max(PANEL_MARGIN, (height - h) / 2),
+    w,
+    h,
+    lines
+  };
+}
+
+export interface PanelLine { text: string; caption: boolean; height: number; }
+
+/**
+ * The build, as lines: a small caption per shelf then its contents, wrapped by
+ * count rather than by measured width. The labels here are all short, and a
+ * count kept from the panel's width keeps its height knowable before anything
+ * is drawn.
+ */
+function shelfLines(result: RunResult, perRow: number): PanelLine[] {
+  const lines: PanelLine[] = [];
+  for (const [title, items] of [['무기', result.weapons], ['아이템', result.passives]] as const) {
+    if (items.length === 0) continue;
+    lines.push({ text: title, caption: true, height: CAPTION_H });
+    for (let i = 0; i < items.length; i += perRow) {
+      // Levels ride along as plain numbers — "Lv." six times over is noise.
+      const text = items.slice(i, i + perRow).map((it) => `${it.label} ${it.level}`).join(' · ');
+      lines.push({ text, caption: false, height: ITEM_H });
+    }
+  }
+  return lines;
+}
+
+/** Keeps what fits in `room` pixels, and never leaves a caption with nothing under it. */
+function fitLines(lines: PanelLine[], room: number): PanelLine[] {
+  const kept: PanelLine[] = [];
+  let used = 0;
+  for (const line of lines) {
+    if (used + line.height > room) break;
+    kept.push(line);
+    used += line.height;
+  }
+  while (kept.length > 0 && kept[kept.length - 1].caption) kept.pop();
+  return kept;
 }

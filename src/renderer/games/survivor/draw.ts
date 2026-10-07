@@ -8,7 +8,7 @@
 
 import { jitter, roughSegment } from '../../lib/sketch.js';
 import { ENEMY_RADIUS, PLAYER_MAX_HP, PLAYER_RADIUS } from './arena.js';
-import { baseKind, isElite } from './types.js';
+import { baseKind, isElite, kindScale } from './types.js';
 import type { ChestView, EnemyView, GemView, ItemView, PlayerView, PoolView, ProjectileView, StrikeView } from './types.js';
 
 const INK = '#14181a';
@@ -25,7 +25,7 @@ const gemTone = (worth: number): string => (worth >= 25 ? GEM_INK[2] : worth >= 
 export function drawEnemy(ctx: CanvasRenderingContext2D, e: EnemyView, phase: number): void {
   const base = baseKind(e.kind);
   const elite = isElite(e.kind);
-  const scale = elite ? 2.4 : base === 3 ? 2.8 : base === 4 ? 1.25 : 1;
+  const scale = kindScale(e.kind);
   const bob = Math.sin(phase * 0.25 + e.id * 1.7);
 
   ctx.save();

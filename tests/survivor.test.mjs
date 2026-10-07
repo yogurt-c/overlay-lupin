@@ -6,14 +6,19 @@
  */
 import assert from 'node:assert/strict';
 import {
+  ENEMY_RADIUS,
   MAX_ENEMIES,
   PLAYER_MAX_HP,
+  PLAYER_RADIUS,
+  RESULT_HOLD_FRAMES,
+  WORLD_H,
+  WORLD_W,
   RUN_TICKS,
   TICKS_PER_SECOND,
   createRng,
   xpForLevel
 } from '../dist/renderer/games/survivor/arena.js';
-import { SurvivorEngine } from '../dist/renderer/games/survivor/engine.js';
+import { REAPER_REACH, SurvivorEngine } from '../dist/renderer/games/survivor/engine.js';
 import { survivorModule } from '../dist/renderer/games/survivor/module.js';
 import {
   EVOLVE_PASSIVE_LEVEL,
@@ -33,13 +38,14 @@ import {
   bossHp,
   eliteKind,
   enemyHp,
+  evictionIndex,
   rollKind,
   spawnInterval,
   statsFor,
   waveAt
 } from '../dist/renderer/games/survivor/spawn.js';
-import { ELITE, baseKind, isElite } from '../dist/renderer/games/survivor/types.js';
-import { renderScene } from '../dist/renderer/games/survivor/scene.js';
+import { ELITE, REAPER_KIND, baseKind, isElite } from '../dist/renderer/games/survivor/types.js';
+import { layoutResult, renderScene } from '../dist/renderer/games/survivor/scene.js';
 import {
   FRAME_WINDOW,
   FrameQueue,
@@ -86,15 +92,94 @@ function runKiting(engine, ticks, id = 'me') {
   return engine.snapshot();
 }
 
-/** Stands in for a canvas: it only has to be callable and to count the calls. */
+/**
+ * A bot that cannot die, builds toward a named evolution, and sits on a chest
+ * only once that evolution is ready. The late systems — an evolution, the
+ * ten-minute mark, the reaper — are unreachable headlessly otherwise: a
+ * scripted kite dies long before any of them. `immortalUntil` stops the
+ * top-ups so a run can still end.
+ *
+ * `targets` are [offer id, label, level] in the order the bot wants them, and
+ * it stops taking one the moment that level is reached — otherwise the rarer
+ * card eats the picks the other one needed.
+ */
+function playImmortal(engine, ticks, { targets = [], id = 'me', immortalUntil = () => true } = {}) {
+  const wanted = () => {
+    const have = engine.loadout(id);
+    const owned = [...have.weapons, ...have.passives];
+    return targets
+      .filter(([, label, level]) => (owned.find((item) => item.label === label)?.level ?? 0) < level)
+      .map(([offer]) => offer);
+  };
+
+  let evolved = null;
+  let shout = 0;
+  let longestShout = 0;
+
+  for (let i = 0; i < ticks; i++) {
+    const world = engine.snapshot();
+    const me = world.players.find((p) => p.id === id);
+    if (!me) break;
+    if (immortalUntil(world) && i % 20 === 0) engine.reconcile(id, me.x, me.y, me.maxHp, true);
+
+    if (world.phase === 'levelup') {
+      let choice = 0;
+      for (const want of wanted()) {
+        const found = world.offers.findIndex((o) => o.weapon === want);
+        if (found >= 0) { choice = found; break; }
+      }
+      engine.setInput(id, { ...NO_INPUT, pick1: choice === 0, pick2: choice === 1, pick3: choice === 2 });
+      engine.step();
+      continue;
+    }
+
+    // A chest only opens if someone stands on it — and a chest opened too early
+    // is spent on levels instead of the evolution, so it is left lying there.
+    const chest = engine.evolutionPending(id) ? world.chests[0] : undefined;
+    const leg = Math.floor(i / 50) % 4;
+    engine.setInput(id, chest
+      ? {
+        ...NO_INPUT,
+        right: chest.x - me.x > 6, left: me.x - chest.x > 6,
+        down: chest.y - me.y > 6, up: me.y - chest.y > 6
+      }
+      : { ...NO_INPUT, right: leg === 0, down: leg === 1, left: leg === 2, up: leg === 3 });
+    engine.step();
+
+    const after = engine.snapshot();
+    if (after.evolved) {
+      evolved = after.evolved;
+      shout += 1;
+      longestShout = Math.max(longestShout, shout);
+    } else {
+      shout = 0;
+    }
+    if (after.phase === 'over') break;
+  }
+  return { world: engine.snapshot(), evolved, longestShout };
+}
+
+/** The overlay's default size, which is what the shipped game actually shows. */
+const WINDOW_W = 320;
+const WINDOW_H = 280;
+
+/**
+ * Stands in for a canvas. It counts calls and records text, which is as much as
+ * a headless run can check about drawing: that the code paths execute, that the
+ * work per frame stays bounded, and that every string is bounded by its box.
+ */
 const CANVAS_METHODS = [
-  'arc', 'beginPath', 'clearRect', 'closePath', 'ellipse', 'fill', 'fillRect', 'fillText',
+  'arc', 'beginPath', 'clearRect', 'closePath', 'ellipse', 'fill', 'fillRect',
   'lineTo', 'moveTo', 'quadraticCurveTo', 'rect', 'restore', 'rotate', 'roundRect',
   'save', 'scale', 'setLineDash', 'setTransform', 'stroke', 'strokeRect', 'translate'
 ];
 function countingCtx() {
-  const ctx = { calls: 0 };
+  const ctx = { calls: 0, texts: [] };
   for (const name of CANVAS_METHODS) ctx[name] = () => { ctx.calls += 1; };
+  ctx.fillText = (text, x, y, maxWidth) => {
+    ctx.calls += 1;
+    ctx.texts.push({ text, x, y, maxWidth });
+  };
   return ctx;
 }
 
@@ -706,6 +791,173 @@ function fresh(seed = 7, timedPicks = false) {
   assert.ok(size <= 1400, `4인 방 패킷도 한 프레임에 들어간다 (${size}B)`);
 }
 
+// --- an evolution is announced long enough to read ---------------------------
+{
+  // The whip everyone starts with, taken to max, plus 공허의 문장 at level 3.
+  const targets = [['passive:crest', '공허의 문장', EVOLVE_PASSIVE_LEVEL], ['whip', '채찍', 8]];
+  const engine = fresh(13);
+  const { evolved, longestShout, world } =
+    playImmortal(engine, 9 * 60 * TICKS_PER_SECOND, { targets });
+
+  // A null here means the bot died, never drew the cards, or never reached a
+  // chest — so say which, or the next person debugs a one-word failure.
+  assert.equal(evolved, '혈귀의 채찍',
+    `채찍 + 공허의 문장은 혈귀의 채찍이 된다 (${world.tick}틱, 생존 ${world.players[0]?.alive}, `
+    + `${JSON.stringify(engine.loadout('me'))})`);
+  // It used to be cleared on the very next tick, which is one frame of banner.
+  assert.ok(longestShout >= 2 * TICKS_PER_SECOND, `진화 외침이 2초 이상 떠 있다 (${longestShout}틱)`);
+}
+
+// --- surviving to the end summons the reaper, and the reaper finishes it ------
+{
+  const engine = fresh(29);
+  // Immortal until the clock runs out, then left to the reaper.
+  const { world } = playImmortal(engine, RUN_TICKS + 40 * TICKS_PER_SECOND, {
+    immortalUntil: (w) => !w.survived
+  });
+
+  const where = `${world.tick}틱, 적 ${world.enemies.length}마리, 생존 ${world.players.filter((p) => p.alive).length}명`;
+  assert.ok(world.survived, `10분을 넘기면 버틴 판이 된다 (${where})`);
+  assert.equal(world.phase, 'over', `사신이 판을 끝낸다 (${where})`);
+  assert.ok(world.tick >= RUN_TICKS, `사신은 제한시간 뒤에 온다 (${world.tick}틱)`);
+  // The field is always at its ceiling by the ten-minute mark, and an ordinary
+  // spawn is dropped when it is — the reaper is not, or the run never ends.
+  assert.equal(world.enemies.filter((e) => e.kind === 3).length, 1, '떼가 가득해도 사신은 들어온다');
+  assert.ok(world.tick - RUN_TICKS < 30 * TICKS_PER_SECOND,
+    `사신은 금방 따라잡는다 (${((world.tick - RUN_TICKS) / TICKS_PER_SECOND).toFixed(1)}초)`);
+}
+
+// --- a finished run holds its result instead of vanishing ---------------------
+{
+  const match = survivorModule.createSoloMatch('me', '나');
+  const stand = { ...NO_INPUT, pick1: true };   // standing still is fatal
+
+  let steps = 0;
+  while (!match.hud().banner && steps < 20 * 60 * TICKS_PER_SECOND) { match.step(stand); steps += 1; }
+  assert.equal(match.hud().banner, '전멸', `가만히 서 있으면 전멸한다 (${steps}틱 뒤 ${match.hud().status})`);
+  assert.equal(match.isOver(), false, '결과를 보여주는 동안은 아직 끝이 아니다');
+
+  const status = match.hud().status;
+  // The reported time has to be the time actually survived. A level-up pause
+  // burns a shell step without advancing the run, so it is a little under the
+  // step count — but a line that counted *down* would read 08:38 here, which is
+  // what this catches.
+  const [mm, ss] = status.match(/생존 (\d\d):(\d\d)/).slice(1).map(Number);
+  const reported = mm * 60 + ss;
+  const walked = steps / TICKS_PER_SECOND;
+  assert.ok(reported > 0 && reported <= walked,
+    `버틴 시간은 실제로 돈 시간 안이다 (${reported}초 / ${walked.toFixed(1)}초)`);
+  assert.ok(reported >= walked - 10, `멈춤으로 날린 시간은 10초 안이다 (${status}, ${steps}틱)`);
+  assert.match(status, /킬/, '처치 수도 남는다');
+  assert.ok(!status.includes('HP'), '끝난 뒤에는 체력 줄이 사라진다');
+
+  // The result has to survive the whole hold, or the shell yanks everyone out.
+  for (let i = 0; i < RESULT_HOLD_FRAMES - 2; i++) {
+    match.step(NO_INPUT);
+    assert.equal(match.isOver(), false, `결과가 ${RESULT_HOLD_FRAMES}프레임 동안 유지된다`);
+  }
+  match.step(NO_INPUT);
+  match.step(NO_INPUT);
+  assert.equal(match.isOver(), true, '유지 시간이 지나면 셸이 방을 떠난다');
+}
+
+// --- a dead player in a room keeps watching ----------------------------------
+{
+  const host = survivorModule.createMatch(true, 'h', '호스트');
+  host.setMembers([{ id: 'm', name: '멤버' }]);
+
+  // The host stands still and dies; the member kites and lives, so the run goes
+  // on. Long legs on purpose: a tight circle keeps walking back into the ring
+  // the spawner lays around the crowd, and the member dies first.
+  for (let tick = 1; tick <= 8 * 60 * TICKS_PER_SECOND; tick++) {
+    const leg = Math.floor(tick / 300) % 4;
+    const bits = packInput({
+      ...NO_INPUT,
+      right: leg === 0, down: leg === 1, left: leg === 2, up: leg === 3,
+      pick1: true
+    });
+    host.applyOpponentPacket({ t: 'svi', bits, name: '멤버', from: 'm' });
+    host.step({ ...NO_INPUT, pick1: true });
+    if (host.hud().status.includes('관전')) break;
+  }
+
+  const status = host.hud().status;
+  assert.ok(status.includes('관전'), `죽은 뒤에는 관전이라고 알려준다 (${status})`);
+  assert.ok(status.includes('생존 1/2'), '남은 사람 수는 그대로 보인다');
+  assert.equal(host.isOver(), false, '한 명이라도 살아 있으면 판은 계속된다');
+}
+
+// --- two hundred enemies stay inside one frame's budget ----------------------
+{
+  // The ceiling exists because of the frame budget, so the budget is a test.
+  const engine = new SurvivorEngine(99, false);
+  const ids = ['a', 'b', 'c', 'd'];
+  ids.forEach((id, i) => engine.ensurePlayer(id, `p${i}`));
+
+  let peak = 0;
+  let worstOps = 0;
+  const steps = [];
+  const SAMPLES = 300;
+  for (let tick = 1; tick <= RUN_TICKS && steps.length < SAMPLES; tick++) {
+    const world = engine.snapshot();
+    // Four players who cannot die, because the ceiling is only reached by a
+    // room that is still alive deep into a run.
+    if (tick % 20 === 0) {
+      for (const p of world.players) engine.reconcile(p.id, p.x, p.y, p.maxHp, true);
+    }
+    const leg = Math.floor(tick / 60) % 4;
+    const move = {
+      ...NO_INPUT,
+      right: leg === 0, down: leg === 1, left: leg === 2, up: leg === 3,
+      pick1: world.phase === 'levelup'
+    };
+    for (const id of ids) engine.setInput(id, move);
+
+    const started = process.hrtime.bigint();
+    engine.step();
+    const took = Number(process.hrtime.bigint() - started) / 1e6;
+
+    const after = engine.snapshot();
+    // Every tick spent near the ceiling is a sample, not just the one where the
+    // count peaks — a single measurement is a coin toss against a GC pause.
+    if (after.enemies.length >= MAX_ENEMIES * 0.9) steps.push(took);
+    if (after.enemies.length < peak) continue;
+    peak = after.enemies.length;
+    const ctx = countingCtx();
+    renderScene(ctx, { width: WINDOW_W, height: WINDOW_H, pixelRatio: 2 }, after,
+      { x: WORLD_W / 2, y: WORLD_H / 2 }, 'a', tick, 100, { result: null, framesLeft: 0 });
+    worstOps = ctx.calls;
+  }
+
+  assert.equal(peak, MAX_ENEMIES, `떼가 상한까지 찬다 (${peak})`);
+
+  const sorted = [...steps].sort((a, b) => a - b);
+  const at = (q) => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * q))];
+  const median = at(0.5);
+  const p99 = at(0.99);
+  console.log(`  200마리 기준: 한 틱 중간값 ${median.toFixed(3)}ms · p99 ${p99.toFixed(3)}ms`
+    + ` · 캔버스 호출 ${worstOps}번 (${sorted.length}틱 측정)`);
+
+  assert.equal(sorted.length, SAMPLES, `상한 근처에서 ${SAMPLES}틱을 측정했다 (${sorted.length}틱)`);
+  // One frame is 16.6ms. The median is the regression signal; p99 is loose on
+  // purpose, because a GC pause inside one step is not a performance bug.
+  assert.ok(median < 2, `200마리를 한 틱에 2ms 안에 돈다 (중간값 ${median.toFixed(3)}ms)`);
+  assert.ok(p99 < 8, `튀는 틱도 프레임 예산 안이다 (p99 ${p99.toFixed(3)}ms)`);
+  // This one is deterministic — the same number on every machine and every run.
+  assert.ok(worstOps < 9000, `200마리를 그리는 캔버스 호출이 9000번 아래다 (${worstOps})`);
+}
+
+// --- the reaper takes an ordinary enemy's place, never a miniboss ------------
+{
+  const BAT = 0;
+  const ELITE_BAT = ELITE;
+  assert.equal(evictionIndex([ELITE_BAT, BAT, BAT]), 1, '제일 오래된 놈이 엘리트면 건너뛴다');
+  assert.equal(evictionIndex([BAT, ELITE_BAT, BAT]), 0, '평범한 놈이 앞에 있으면 그놈을 뺀다');
+  assert.equal(evictionIndex([REAPER_KIND, ELITE_BAT, BAT]), 2, '사신도 밀어내지 않는다');
+  assert.equal(evictionIndex([ELITE_BAT, ELITE_BAT]), 0, '전부 엘리트면 어쩔 수 없이 앞을 뺀다');
+  assert.equal(evictionIndex([]), 0, '빈 필드에서도 답을 준다');
+}
+
 // --- rendering can never reach the simulation --------------------------------
 {
   // The spawner used to ring `engine.camera`, and the match overwrote that every
@@ -740,6 +992,114 @@ function fresh(seed = 7, timedPicks = false) {
     status(member).replace(/^HP \S+/, ''),
     status(host).replace(/^HP \S+/, ''),
     '시계와 레벨과 처치 수가 같다');
+}
+
+// --- the reaper reaches as far as it is drawn, blink or no blink --------------
+{
+  // Both halves of this used to pass with the reaper reduced to an ordinary
+  // hitbox: nothing placed a player inside the ink but outside the old reach.
+  assert.ok(REAPER_REACH > PLAYER_RADIUS + ENEMY_RADIUS,
+    '사신 판정은 보통 적보다 넓다');
+
+  const engine = fresh(29);
+  let reaper = null;
+  let me = null;
+  for (let i = 0; i < RUN_TICKS + 10 * TICKS_PER_SECOND; i++) {
+    const world = engine.snapshot();
+    me = world.players[0];
+    if (!me.alive) break;
+    reaper = world.enemies.find((e) => e.kind === REAPER_KIND);
+    // Standing inside the ink, outside an ordinary enemy's reach.
+    if (reaper) break;
+    if (i % 20 === 0) engine.reconcile('me', me.x, me.y, me.maxHp, true);
+    if (world.phase === 'levelup') { engine.setInput('me', { ...NO_INPUT, pick1: true }); engine.step(); continue; }
+    const leg = Math.floor(i / 50) % 4;
+    engine.setInput('me', { ...NO_INPUT, right: leg === 0, down: leg === 1, left: leg === 2, up: leg === 3 });
+    engine.step();
+  }
+
+  assert.ok(reaper, '10분을 넘기면 사신이 필드에 있다');
+  // The swarm is wall-to-wall at this point, so the figure is almost certainly
+  // mid-blink — which is the half of the rule that says the reaper ignores it.
+  assert.ok(me.invuln > 0, '떼에 맞은 직후라 무적 상태다');
+
+  const gap = (PLAYER_RADIUS + ENEMY_RADIUS + REAPER_REACH) / 2;   // between the two reaches
+  engine.reconcile('me', reaper.x + gap, reaper.y, me.maxHp, true);
+  engine.setInput('me', NO_INPUT);
+  engine.step();
+
+  const after = engine.snapshot().players[0];
+  assert.equal(after.alive, false, `사신 몸통 안이면 무적이어도 죽는다 (거리 ${gap.toFixed(1)})`);
+}
+
+// --- a member sees the same result the host does ------------------------------
+{
+  const host = survivorModule.createMatch(true, 'h', '호스트');
+  const member = survivorModule.createMatch(false, 'm', '멤버');
+  host.setMembers([{ id: 'm', name: '멤버' }]);
+
+  // Nobody moves, so the run ends the same way on both clients.
+  const stand = { ...NO_INPUT, pick1: true };
+  for (let tick = 1; tick <= 5 * 60 * TICKS_PER_SECOND; tick++) {
+    host.step(stand);
+    member.step(stand);
+    if (tick % 2 !== 0) continue;
+    host.applyOpponentPacket({ ...member.buildOutgoingPacket(), from: 'm' });
+    member.applyOpponentPacket(host.buildOutgoingPacket());
+    if (member.hud().banner === '전멸') break;
+  }
+
+  assert.equal(host.hud().banner, '전멸', '호스트도 전멸로 끝난다');
+  assert.equal(member.hud().banner, '전멸', '멤버도 자기 엔진에서 끝을 본다');
+  assert.equal(member.hud().status, host.hud().status, '결과 줄이 같다');
+  assert.ok(!member.hud().status.includes('동기화 어긋남'), '끝까지 어긋나지 않는다');
+
+  // And the member holds its own panel rather than ending on the host's clock.
+  assert.equal(member.isOver(), false, '멤버도 결과를 보는 동안은 끝이 아니다');
+  for (let i = 0; i < RESULT_HOLD_FRAMES; i++) member.step(NO_INPUT);
+  assert.equal(member.isOver(), true, '유지 시간이 지나면 멤버도 방을 떠난다');
+}
+
+// --- the result panel fits every window the overlay allows -------------------
+{
+  // A full shelf, the widest this panel ever gets.
+  const owned = (rows) => rows.map(([label, level]) => ({ label, level }));
+  const result = {
+    survived: false,
+    ticks: 7 * 60 * TICKS_PER_SECOND + 42 * TICKS_PER_SECOND,
+    level: 37,
+    kills: 1284,
+    weapons: owned([['혈귀의 채찍', 8], ['번개 반지', 4], ['성수', 3], ['단검', 2], ['성경', 1], ['도끼', 1]]),
+    passives: owned([['쌍둥이 반지', 3], ['자석', 3], ['날개', 4], ['공허의 문장', 5], ['시금치', 3], ['수호 반지', 5]])
+  };
+
+  // 160x120 is the window's minimum, 320x280 its default, and it is resizable.
+  for (const [w, h] of [[160, 120], [220, 180], [WINDOW_W, WINDOW_H], [900, 700]]) {
+    const panel = layoutResult(w, h, result);
+    const where = `${w}x${h}`;
+    assert.ok(panel.x >= 0 && panel.x + panel.w <= w, `${where}: 패널이 좌우로 안 넘친다`);
+    assert.ok(panel.y >= 0 && panel.y + panel.h <= h, `${where}: 패널이 위아래로 안 넘친다`);
+    assert.ok(!panel.lines.some((line, i) => line.caption && i === panel.lines.length - 1),
+      `${where}: 내용 없는 제목만 남지 않는다`);
+    const perRow = panel.lines.filter((line) => !line.caption).map((line) => line.text.split(' · ').length);
+    assert.ok(perRow.every((n) => n <= 2), `${where}: 한 줄에 두 개까지만 적는다`);
+  }
+
+  assert.equal(layoutResult(160, 120, result).lines.length, 0, '최소 창에서는 빌드를 접는다');
+  assert.ok(layoutResult(WINDOW_W, WINDOW_H, result).lines.length > 4, '기본 창에서는 빌드가 다 보인다');
+
+  // And it actually draws, with every string bounded by the panel's width.
+  const ctx = countingCtx();
+  for (const [w, h] of [[160, 120], [WINDOW_W, WINDOW_H]]) {
+    const panel = layoutResult(w, h, result);
+    ctx.texts.length = 0;
+    renderScene(ctx, { width: w, height: h, pixelRatio: 2 }, fresh(1).snapshot(), { x: WORLD_W / 2, y: WORLD_H / 2 },
+      'me', 1, 100, { result, framesLeft: 5 * TICKS_PER_SECOND });
+    assert.ok(ctx.texts.length >= 3, `${w}x${h}: 결과 패널이 그려진다`);
+    assert.ok(ctx.texts.every((t) => t.maxWidth !== undefined && t.maxWidth <= panel.w),
+      `${w}x${h}: 모든 글자가 패널 폭에 묶인다`);
+    assert.ok(ctx.texts.every((t) => t.y > 0 && t.y < h), `${w}x${h}: 글자가 화면 안에 있다`);
+  }
 }
 
 // --- the module wires itself into the shell the way the panel expects ---------

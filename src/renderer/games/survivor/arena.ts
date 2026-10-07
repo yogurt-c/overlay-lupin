@@ -69,6 +69,15 @@ export const PICK_TIMEOUT_TICKS = 10 * TICKS_PER_SECOND;
 export const ROOM_CAPACITY = 4;
 
 /**
+ * How long the result panel stays up after a run ends, in shell frames.
+ *
+ * The shell leaves the room the moment a match reports itself over, so without
+ * a hold a ten-minute run would flash its result for one frame and dump
+ * everyone back to the idle screen — indistinguishable from a disconnect.
+ */
+export const RESULT_HOLD_FRAMES = 7 * TICKS_PER_SECOND;
+
+/**
  * xorshift32. Small, fast and — the reason it exists here — identical on every
  * machine, unlike `Math.random`.
  */
@@ -94,3 +103,9 @@ export function xpForLevel(level: number, players = 1): number {
 }
 
 export const clamp = (n: number, lo: number, hi: number): number => (n < lo ? lo : n > hi ? hi : n);
+
+/** mm:ss. The HUD counts a run down with it and the result panel counts one up. */
+export function clockText(ticks: number): string {
+  const seconds = Math.max(0, Math.floor(ticks / TICKS_PER_SECOND));
+  return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+}

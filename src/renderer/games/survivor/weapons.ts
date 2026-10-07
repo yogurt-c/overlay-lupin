@@ -6,7 +6,7 @@
  * a row here plus one case in `fireWeapons`.
  */
 
-import { PASSIVES, passiveById } from './passives.js';
+import { PASSIVES } from './passives.js';
 import type { CardOffer } from './types.js';
 
 export type WeaponKind =

@@ -11,7 +11,7 @@
  */
 
 import { SPAWN_MARGIN, TICKS_PER_SECOND } from './arena.js';
-import { ELITE, baseKind, isElite } from './types.js';
+import { ELITE, REAPER_KIND, baseKind, isElite } from './types.js';
 import type { EnemyKind } from './types.js';
 
 const SECOND = TICKS_PER_SECOND;
@@ -178,4 +178,17 @@ export function linePoints(
   const top = cy - halfH * 0.8;
   const step = (halfH * 1.6) / Math.max(1, count - 1);
   return Array.from({ length: count }, (_, i) => ({ x, y: top + step * i }));
+}
+
+/**
+ * Which enemy gives up its place when the reaper arrives at a full field.
+ *
+ * The oldest one is the obvious answer and the wrong one: elites live longest
+ * precisely because they have the most health, so "oldest" is usually the one
+ * carrying a chest. This takes the oldest ordinary enemy instead, and falls
+ * back to the front only if the field is somehow nothing but minibosses.
+ */
+export function evictionIndex(kinds: readonly EnemyKind[]): number {
+  const ordinary = kinds.findIndex((kind) => !isElite(kind) && kind !== REAPER_KIND);
+  return ordinary >= 0 ? ordinary : 0;
 }

@@ -43,10 +43,26 @@ export type EnemyKind = number;
 
 /** Added to a kind to mark the elite (miniboss) version of it. */
 export const ELITE = 8;
-/** The reaper, which the spawner and the damage rules both have to name. */
+/** The kinds the engine and the ink both have to name. */
 export const REAPER_KIND = 3;
+export const ZOMBIE_KIND = 4;
 export const isElite = (kind: EnemyKind): boolean => kind >= ELITE;
 export const baseKind = (kind: EnemyKind): EnemyKind => (kind >= ELITE ? kind - ELITE : kind);
+
+/**
+ * How big a kind is drawn, relative to ENEMY_RADIUS. The engine reads it too:
+ * the reaper covers a player long before their centres meet, and a death that
+ * ignores the ink reads as the reaper walking straight through you.
+ */
+export const kindScale = (kind: EnemyKind): number => {
+  if (isElite(kind)) return ELITE_SCALE;
+  const base = baseKind(kind);
+  return base === REAPER_KIND ? REAPER_SCALE : base === ZOMBIE_KIND ? ZOMBIE_SCALE : 1;
+};
+
+const ELITE_SCALE = 2.4;
+const REAPER_SCALE = 2.8;
+const ZOMBIE_SCALE = 1.25;
 
 export interface EnemyView {
   id: number;
@@ -108,6 +124,27 @@ export interface ItemView {
   x: number;
   y: number;
   kind: 0;
+}
+
+/** One owned weapon or passive, as the end-of-run panel lists it. */
+export interface OwnedItem {
+  readonly label: string;
+  readonly level: number;
+}
+
+/**
+ * What a finished run is worth telling the player about. Built once when the
+ * run ends, not every frame — a ten-minute run deserves more than a one-word
+ * banner, and this is everything that panel needs.
+ */
+export interface RunResult {
+  readonly survived: boolean;
+  /** Ticks lasted — the run length if they made it, less if the swarm won. */
+  readonly ticks: number;
+  readonly level: number;
+  readonly kills: number;
+  readonly weapons: readonly OwnedItem[];
+  readonly passives: readonly OwnedItem[];
 }
 
 /** One level-up offer. `weapon` is the id in WEAPONS; `level` is what it becomes. */

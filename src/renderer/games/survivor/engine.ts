@@ -37,6 +37,7 @@ import {
   ringPoints,
   rollKind,
   eliteKind,
+  evictionIndex,
   spawnBatch,
   spawnInterval,
   spawnPoint,
@@ -44,7 +45,7 @@ import {
   waveAt,
   waveCount
 } from './spawn.js';
-import { passiveStats } from './passives.js';
+import { passiveById, passiveStats } from './passives.js';
 import type { Stats } from './passives.js';
 import {
   EVOLVE_PASSIVE_LEVEL,
@@ -58,7 +59,7 @@ import {
   rollOffers,
   weaponById
 } from './weapons.js';
-import { NO_INPUT, REAPER_KIND, baseKind, isElite } from './types.js';
+import { NO_INPUT, REAPER_KIND, baseKind, isElite, kindScale } from './types.js';
 import type {
   CardOffer,
   ChestView,
@@ -66,6 +67,7 @@ import type {
   EnemyKind,
   EnemyView,
   GemView,
+  OwnedItem,
   Phase,
   PlayerView,
   PoolView,
@@ -118,11 +120,23 @@ const CHICKEN_CHANCE = 0.012;
 const CHICKEN_HEAL = 0.3;
 /** The reaper outruns everyone — it is the end of the run, not a fight. */
 const REAPER_SPEED = 2.4;
+/**
+ * How close the reaper has to get. It is drawn at `kindScale` times the usual
+ * enemy, and a judgement that ignored its ink read as the reaper strolling
+ * straight through a player it visibly covered.
+ */
+export const REAPER_REACH = PLAYER_RADIUS + ENEMY_RADIUS * kindScale(REAPER_KIND);
 /** How far outside the spawn frame a closing ring starts. */
 const WAVE_RING_MARGIN = 60;
 const CHEST_PICKUP_RADIUS = 20;
 /** Opening a chest with nothing to evolve hands out this many levels instead. */
 const CHEST_LEVELS = 2;
+/**
+ * How long an evolution stays announced. It used to be cleared on the next
+ * tick, which is one frame of banner — a run's biggest moment, invisible.
+ * Counted in ticks so every client shouts for the same stretch of the run.
+ */
+const EVOLVE_SHOUT_TICKS = Math.round(2.5 * TICKS_PER_SECOND);
 
 export class SurvivorEngine {
   private rng: () => number;
@@ -149,10 +163,12 @@ export class SurvivorEngine {
   private pickDeadline = -1;
   private survived = false;
   private evolved: string | null = null;
+  private evolveShout = 0;
 
   constructor(private readonly seed: number, private readonly timedPicks: boolean) {
     this.rng = createRng(seed);
   }
+
 
   ensurePlayer(id: string, name: string): void {
     if (this.players.has(id)) return;
@@ -194,7 +210,10 @@ export class SurvivorEngine {
     if (this.phase === 'levelup') { this.stepLevelUp(); return; }
 
     this.tick += 1;
-    this.evolved = null;
+    if (this.evolveShout > 0) {
+      this.evolveShout -= 1;
+      if (this.evolveShout === 0) this.evolved = null;
+    }
     this.movePlayers();
     this.spawnEnemies();
     this.spawnBoss();
@@ -319,6 +338,13 @@ export class SurvivorEngine {
     this.survived = true;
     const frame = this.spawnFrame();
     const { x, y } = spawnPoint(this.rng, frame.x, frame.y, frame.halfW, frame.halfH);
+    // An ordinary spawn is simply dropped when the field is full, and at the
+    // ten-minute mark it always is — which left the reaper never arriving and
+    // the run never ending. It takes an ordinary enemy's place instead: the
+    // oldest one that isn't a miniboss, so nobody loses a chest to it.
+    if (this.enemies.length >= MAX_ENEMIES) {
+      this.enemies.splice(evictionIndex(this.enemies.map((e) => e.kind)), 1);
+    }
     this.pushEnemy(x, y, Number.POSITIVE_INFINITY, REAPER_SPEED, REAPER_KIND);
   }
 
@@ -382,12 +408,12 @@ export class SurvivorEngine {
         if (left > 0) { p.timers.set(id, left); continue; }
         const w = resolve(id, level, p.stats);
         p.timers.set(id, w.cooldown);
-        this.activate(p, id, w);
+        this.activate(p, w);
       }
     }
   }
 
-  private activate(p: Player, id: string, w: ReturnType<typeof resolve>): void {
+  private activate(p: Player, w: ReturnType<typeof resolve>): void {
     switch (w.kind) {
       case 'arc': {
         // Extra "count" turns the single swing into a swing on each side.
@@ -540,7 +566,7 @@ export class SurvivorEngine {
   /** Applies damage to the enemy at `index`, and handles what it leaves behind. */
   private wound(index: number, damage: number): void {
     const e = this.enemies[index];
-    if (e.kind === 3) return;                 // the reaper cannot be hurt
+    if (e.kind === REAPER_KIND) return;       // the reaper cannot be hurt
     e.hp -= damage;
     e.flash = 4;
     if (e.hp > 0) return;
@@ -628,6 +654,7 @@ export class SurvivorEngine {
         finder.weapons.set(`${ready}+`, level);
         finder.timers.set(`${ready}+`, 0);
         this.evolved = labelOf(`${ready}+`);
+        this.evolveShout = EVOLVE_SHOUT_TICKS;
         continue;
       }
       finder.bonusLevels += CHEST_LEVELS;
@@ -647,14 +674,26 @@ export class SurvivorEngine {
   // ---------- damage and survival ----------
 
   private applyContactDamage(): void {
+    // The reaper does not negotiate: it ignores the blink after a hit, and it
+    // reaches as far as it is drawn — otherwise it strolls through a player
+    // whose centre it never quite touches.
+    const scythe = REAPER_REACH ** 2;
+
     for (const p of this.players.values()) {
       if (!p.alive) continue;
+
+      if (this.reaperOut
+        && this.enemies.some((e) => e.kind === REAPER_KIND && (e.x - p.x) ** 2 + (e.y - p.y) ** 2 <= scythe)) {
+        p.hp = 0;
+        p.alive = false;
+        continue;
+      }
+
       if (p.invuln > 0) { p.invuln -= 1; continue; }
       const reach = (PLAYER_RADIUS + ENEMY_RADIUS) ** 2;
       const toucher = this.enemies.find((e) => (e.x - p.x) ** 2 + (e.y - p.y) ** 2 <= reach);
       if (!toucher) continue;
 
-      if (toucher.kind === 3) { p.hp = 0; p.alive = false; continue; }   // the reaper does not negotiate
       const bite = CONTACT_DAMAGE * (isElite(toucher.kind) ? 2.5 : 1) * (1 - p.stats.armor);
       p.hp -= bite;
       p.invuln = HURT_INVULN_TICKS;
@@ -811,6 +850,11 @@ export class SurvivorEngine {
     return sum >>> 0;
   }
 
+  /** The simulation's phase, without building a whole snapshot to read it. */
+  runPhase(): Phase {
+    return this.phase;
+  }
+
   /** Players in insertion order — every client must build this list the same way. */
   playerIds(): string[] {
     return [...this.players.keys()];
@@ -838,13 +882,14 @@ export class SurvivorEngine {
     return xpForLevel(this.level, Math.max(1, this.players.size));
   }
 
-  /** What one player is carrying, for the HUD shelf. */
-  loadout(id: string): { weapons: string[]; passives: string[] } {
+  /** One player's shelf, labelled and levelled — what the end-of-run panel reads. */
+  loadout(id: string): { weapons: OwnedItem[]; passives: OwnedItem[] } {
     const p = this.players.get(id);
     if (!p) return { weapons: [], passives: [] };
     return {
-      weapons: [...p.weapons.keys()].map(labelOf),
-      passives: [...p.passives.keys()]
+      weapons: [...p.weapons].map(([weapon, level]) => ({ label: labelOf(weapon), level })),
+      passives: [...p.passives].map(([passive, level]) =>
+        ({ label: passiveById(passive)?.label ?? passive, level }))
     };
   }
 

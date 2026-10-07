@@ -11,7 +11,7 @@
  * as one player dying on someone else's screen.
  */
 
-import { ROOM_CAPACITY, RUN_TICKS, TICKS_PER_SECOND } from './arena.js';
+import { RESULT_HOLD_FRAMES, ROOM_CAPACITY, RUN_TICKS, TICKS_PER_SECOND, clockText } from './arena.js';
 import { SurvivorEngine } from './engine.js';
 import { createInputSource } from './input.js';
 import {
@@ -27,7 +27,7 @@ import type { HostPacket, MemberPacket } from './lockstep.js';
 import { followCamera, renderScene } from './scene.js';
 import type { Camera } from './scene.js';
 import { NO_INPUT } from './types.js';
-import type { SurvivorInput, SurvivorWorld } from './types.js';
+import type { RunResult, SurvivorInput, SurvivorWorld } from './types.js';
 import type { GameMatch, GameModule, MatchHud, Viewport } from '../types.js';
 
 /** A member this far behind can never catch up one tick at a time. */
@@ -49,10 +49,8 @@ const EMPTY_WORLD: SurvivorWorld = {
   pickDeadline: -1, survived: false
 };
 
-const clock = (tick: number): string => {
-  const left = Math.max(0, Math.ceil((RUN_TICKS - tick) / TICKS_PER_SECOND));
-  return `${String(Math.floor(left / 60)).padStart(2, '0')}:${String(left % 60).padStart(2, '0')}`;
-};
+/** Time left in the run — the HUD counts down, the way the original does. */
+const clock = (tick: number): string => clockText(RUN_TICKS - tick);
 
 class SurvivorMatch implements GameMatch {
   /** Every client has one. A member's is built from the host's first packet. */
@@ -62,6 +60,9 @@ class SurvivorMatch implements GameMatch {
   private lastInput: SurvivorInput = NO_INPUT;
   /** Free-running frame counter — the only clock the wing flaps have. */
   private phase = 0;
+  /** Frames since the run ended, and the summary drawn over them. */
+  private overFrames = 0;
+  private result: RunResult | null = null;
 
   // Host side.
   /** Latest input heard from each member, applied until a newer one arrives. */
@@ -116,6 +117,29 @@ class SurvivorMatch implements GameMatch {
     if (!this.engine) return;
     if (this.isHost) this.stepHost();
     else this.stepMember();
+    this.trackEnding(this.engine);
+  }
+
+  /**
+   * The engine freezes on 'over', so the result is read once and then held for
+   * a few seconds of frames — see RESULT_HOLD_FRAMES for why the shell can't
+   * be told immediately.
+   */
+  private trackEnding(engine: SurvivorEngine): void {
+    if (engine.runPhase() !== 'over') return;
+    if (!this.result) {
+      const world = engine.snapshot();
+      const mine = engine.loadout(this.myId);
+      this.result = {
+        survived: world.survived,
+        ticks: world.tick,
+        level: world.level,
+        kills: world.kills,
+        weapons: mine.weapons,
+        passives: mine.passives
+      };
+    }
+    this.overFrames += 1;
   }
 
   /** The host simulates on its own clock and records the frame it just used. */
@@ -182,33 +206,45 @@ class SurvivorMatch implements GameMatch {
     // own fixed frame instead — see `SPAWN_HALF_W`.
     followCamera(this.camera, world, this.myId, this.snapCamera);
     this.snapCamera = false;
-    renderScene(ctx, viewport, world, this.camera, this.myId, this.phase, this.need());
+    renderScene(ctx, viewport, world, this.camera, this.myId, this.phase, this.need(), {
+      result: this.result,
+      framesLeft: Math.max(0, RESULT_HOLD_FRAMES - this.overFrames)
+    });
   }
 
   hud(): MatchHud {
+    const drift = this.desynced ? ' · 동기화 어긋남' : '';
+
+    // Once the run is over the countdown and a 0 HP bar say nothing useful —
+    // what lasted is the only number worth keeping on the line.
+    if (this.result) {
+      const status = `생존 ${clockText(this.result.ticks)} · Lv.${this.result.level} · ${this.result.kills}킬${drift}`;
+      return {
+        status,
+        banner: this.result.survived ? '버텼다' : '전멸',
+        bannerKind: this.result.survived ? 'win' : 'lose'
+      };
+    }
+
     const world = this.world();
     const alive = world.players.filter((p) => p.alive).length;
     const me = world.players.find((p) => p.id === this.myId);
-    const hp = me ? `${Math.ceil(me.hp)}/${Math.round(me.maxHp)}` : '-';
-    const status = `HP ${hp} · ${clock(world.tick)} · Lv.${world.level} · ${world.kills}킬` +
-      (world.players.length > 1 ? ` · 생존 ${alive}/${world.players.length}` : '') +
-      (this.desynced ? ' · 동기화 어긋남' : '');
+    // A dead player in a room keeps watching, so the line says so rather than
+    // sitting on a 0 that looks like a bug.
+    const own = !me ? '-' : me.alive ? `HP ${Math.ceil(me.hp)}/${Math.round(me.maxHp)}` : '관전';
+    const status = `${own} · ${clock(world.tick)} · Lv.${world.level} · ${world.kills}킬` +
+      (world.players.length > 1 ? ` · 생존 ${alive}/${world.players.length}` : '') + drift;
 
-    if (world.phase === 'over') {
-      return {
-        status,
-        banner: world.survived ? '버텼다' : '전멸',
-        bannerKind: world.survived ? 'win' : 'lose'
-      };
-    }
+    // The reaper comes first: it is the only warning that it is over, and an
+    // evolution opened seconds before ten minutes would otherwise bury it.
+    if (world.reaper) return { status, banner: '사신이 왔다', bannerKind: 'lose' };
     // An evolution is the payoff of a whole build — it gets its own shout.
     if (world.evolved) return { status, banner: `${world.evolved} 진화`, bannerKind: 'win' };
-    if (world.reaper) return { status, banner: '사신이 왔다', bannerKind: 'lose' };
     return { status, banner: '', bannerKind: '' };
   }
 
   isOver(): boolean {
-    return this.world().phase === 'over';
+    return this.result !== null && this.overFrames >= RESULT_HOLD_FRAMES;
   }
 
   buildOutgoingPacket(): unknown {
