@@ -151,6 +151,13 @@ class SurvivorMatch implements GameMatch {
       const bits = id === this.myId ? packInput(this.lastInput) : (this.memberBits.get(id) ?? 0);
       engine.setInput(id, unpackInput(bits));
       frame.push(bits);
+      // A member's packet stands in for its input until the next one lands,
+      // which is two host steps away at best. Movement should carry over that
+      // gap; a card choice must not, or a chest's second level-up is answered
+      // by the press that answered the first.
+      if (id !== this.myId && (bits & PICK_MASK) !== 0) {
+        this.memberBits.set(id, bits & ~PICK_MASK);
+      }
     }
     engine.step();
 

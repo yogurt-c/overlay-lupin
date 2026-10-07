@@ -51,6 +51,7 @@ import { createInputSource } from '../dist/renderer/games/survivor/input.js';
 import {
   FRAME_WINDOW,
   FrameQueue,
+  PICK_MASK,
   packInput,
   unpackInput,
   validHostPacket,
@@ -1227,6 +1228,55 @@ function fresh(seed = 7, timedPicks = false) {
   assert.deepEqual([input.read().right, input.read().right], [true, true], '이동은 누르는 동안 계속 true');
   fire('keyup', 'ArrowRight');
   assert.equal(input.read().right, false, '떼면 멈춘다');
+}
+
+// --- a member's card press is consumed once, not until its next packet -------
+{
+  // Fixing the key source only fixed the host's own player. A member's packet
+  // stands in for its input until the next one lands — two host steps at best —
+  // so a press held in `memberBits` answered the next screen too. The engine
+  // replays whatever the host recorded, so every client agreed on the wrong
+  // answer, and the member saw its list change by itself.
+  const host = survivorModule.createMatch(true, 'h', '호스트');
+  host.setMembers([{ id: 'm', name: '멤버' }]);
+
+  // One packet carrying a press, then many host steps with no new packet.
+  host.applyOpponentPacket({ t: 'svi', bits: packInput({ ...NO_INPUT, pick1: true }), name: '멤버', from: 'm' });
+
+  const frames = [];
+  for (let tick = 0; tick < 6; tick++) {
+    host.step(NO_INPUT);
+    const packet = host.buildOutgoingPacket();
+    frames.push(packet.frames[packet.frames.length - 1][packet.ids.indexOf('m')]);
+  }
+
+  const asPicks = frames.map((bits) => (bits & PICK_MASK) !== 0);
+  assert.deepEqual(asPicks, [true, false, false, false, false, false],
+    `멤버의 선택은 한 틱만 쓰인다 (${asPicks.join(',')})`);
+
+  // Movement is the opposite: it has to carry across the gap between packets or
+  // a member walking in a straight line stutters at 30Hz. The two travel in one
+  // packet, so taking the press out must not take the walking out with it.
+  const moving = survivorModule.createMatch(true, 'h2', '호스트');
+  moving.setMembers([{ id: 'm', name: '멤버' }]);
+  moving.applyOpponentPacket({
+    t: 'svi',
+    bits: packInput({ ...NO_INPUT, right: true, pick1: true }),
+    name: '멤버',
+    from: 'm'
+  });
+  const walks = [];
+  const picks = [];
+  for (let tick = 0; tick < 6; tick++) {
+    moving.step(NO_INPUT);
+    const packet = moving.buildOutgoingPacket();
+    const bits = packet.frames[packet.frames.length - 1][packet.ids.indexOf('m')];
+    walks.push(unpackInput(bits).right);
+    picks.push(unpackInput(bits).pick1);
+  }
+  assert.ok(walks.every(Boolean), `같은 패킷에 선택이 실려 있어도 계속 걷는다 (${walks.join(',')})`);
+  assert.deepEqual(picks, [true, false, false, false, false, false],
+    `선택만 한 번 쓰이고 빠진다 (${picks.join(',')})`);
 }
 
 // --- card draws cost the shared stream nothing -------------------------------
