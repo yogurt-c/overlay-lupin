@@ -116,8 +116,18 @@ interface Projectile extends ProjectileView {
 interface Pool extends PoolView { damage: number; }
 
 const PROJECTILE_CAP = 160;
-/** Chance an ordinary kill leaves a chicken. Rare enough to feel like luck. */
-const CHICKEN_CHANCE = 0.012;
+/**
+ * Chance an ordinary kill leaves a chicken, and the shortest gap between two of
+ * them.
+ *
+ * The chance alone cannot balance this: a run kills 240 things in its first
+ * minute and 3,000 in its eighth, so a rate that is rare early is a buffet
+ * late. At 1.2% the late game handed back more than twice the player's maximum
+ * health every minute — there was nothing to be afraid of. The gap is what
+ * actually holds sustain down, and the chance keeps it from being clockwork.
+ */
+const CHICKEN_CHANCE = 0.004;
+const CHICKEN_GAP_TICKS = 35 * TICKS_PER_SECOND;
 /** How much of the ceiling one chicken puts back. */
 const CHICKEN_HEAL = 0.3;
 /** The reaper outruns everyone — it is the end of the run, not a fight. */
@@ -157,6 +167,8 @@ export class SurvivorEngine {
   private spawnTimer = 0;
   private bossesSpawned = 0;
   private reaperOut = false;
+  /** Tick the last chicken fell on — see CHICKEN_GAP_TICKS. */
+  private lastChicken = -CHICKEN_GAP_TICKS;
   /** Card screens shown so far — the only thing that makes each one's draw differ. */
   private screens = 0;
 
@@ -587,13 +599,29 @@ export class SurvivorEngine {
       for (const side of [-1, 1]) this.pushEnemy(e.x + side * 12, e.y, hp * 0.6, speed * 1.1, 0);
     }
     this.dropGem(e.x, e.y, e.kind);
-    if (this.rng() < CHICKEN_CHANCE) this.items.push({ x: e.x, y: e.y, kind: 0 });
+    if (this.tick - this.lastChicken >= CHICKEN_GAP_TICKS && this.rng() < CHICKEN_CHANCE) {
+      this.lastChicken = this.tick;
+      this.items.push({ x: e.x, y: e.y, kind: 0 });
+    }
   }
 
+  /**
+   * The field keeps the *newest* gems, not the oldest.
+   *
+   * Dropping nothing once the cap was reached looked like a harmless way to
+   * bound the field, and it quietly ended the run's economy: the hundred and
+   * twenty gems holding the cap were the ones dropped minutes ago, somewhere
+   * the run had long since walked away from, so every kill after the second
+   * minute paid nothing at all. Experience stopped, the build froze, and the
+   * swarm kept growing — which is what "they just won't die" actually was.
+   *
+   * Evicting the oldest keeps the same ceiling, and what lies on the ground is
+   * what the player just killed: at their feet, where it can be picked up.
+   */
   private dropGem(x: number, y: number, kind: EnemyKind): void {
-    if (this.gems.length >= MAX_GEMS) return;
     const roll = this.rng();
     const worth = isElite(kind) ? 25 : roll > 0.98 ? 25 : roll > 0.85 ? 5 : 1;
+    if (this.gems.length >= MAX_GEMS) this.gems.shift();
     this.gems.push({ id: this.nextGemId++, x, y, worth });
   }
 

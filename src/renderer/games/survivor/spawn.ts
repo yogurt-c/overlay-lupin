@@ -48,9 +48,15 @@ export function waveCount(base: number, players = 1): number {
 /**
  * Enemy health at a given time. The opening minute is deliberately one-shot
  * territory — the first weapon has to feel like it works before the swarm grows.
+ *
+ * The growth rate is the whole difficulty curve, and it compounds: at 1.45 a
+ * minute-eight bat had thirteen times the health of a minute-one bat, which
+ * read as a swarm that simply would not die. Measured against a bot that stays
+ * in the swarm, 1.40 doubles how long a run lasts and 1.35 does no better — so
+ * this takes the smaller cut and leaves the late minutes something to say.
  */
 export function enemyHp(tick: number): number {
-  return Math.round(10 * Math.pow(1.45, minuteOf(tick)));
+  return Math.round(10 * Math.pow(1.40, minuteOf(tick)));
 }
 
 /** Enemy speed creeps up, but stays under the player's so running away always works. */
