@@ -1,5 +1,5 @@
 /**
- * 뱀서 — the module the shell talks to.
+ * 와글와글 — the module the shell talks to.
  *
  * Multiplayer runs in input lockstep: every client owns a full simulation, the
  * host owns the clock and the player list, and the only thing on the wire is
@@ -353,7 +353,7 @@ class SurvivorMatch implements GameMatch {
 
 export const survivorModule: GameModule = {
   id: 'survivor',
-  label: '뱀서',
+  label: '와글와글',
   hint: '← → ↑ ↓ 이동 · 공격은 자동 · 레벨업은 1 2 3',
   matching: 'room',
   roomCapacity: ROOM_CAPACITY,
