@@ -6,3 +6,4 @@ release/
 .claude
 /local-guestbook/
 docs/play/play.js
+output/
