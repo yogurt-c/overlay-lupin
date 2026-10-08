@@ -32,3 +32,5 @@
 .comment-pagination button{padding:8px 12px;border:1px solid #d8dfcd;border-radius:5px;background:#f0f2e8;color:#526c43;font-size:11px}
 .comment-pagination button:hover:not(:disabled){background:#e4eadb}
 .comment-pagination button:disabled{cursor:default;opacity:.4}
+.comment-reply{margin:14px 0 0 8px;padding:10px 0 2px 14px;border-left:2px solid #b7cbae}
+.comment-reply>strong{display:inline-block;padding:3px 7px;background:#eaf0e3;border-radius:4px;color:#36664b;font-size:10px}

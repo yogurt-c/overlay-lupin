@@ -98,7 +98,7 @@ let hasNextPage = false;
 let commentRequest = 0;
 const safeComments = value => Array.isArray(value) ? value.filter(item => item && typeof item.name === 'string' && typeof item.body === 'string').slice(0, 50) : [];
 const localComments = () => safeComments(JSON.parse(localStorage.getItem(commentStoreKey) || '[]'));
-const renderComments = comments => {
+const renderComments = (comments, replies = []) => {
   list.replaceChildren();
   if (!comments.length) return;
   comments.forEach(comment => {
@@ -107,6 +107,14 @@ const renderComments = comments => {
     const name = document.createElement('strong'); name.textContent = comment.name;
     const body = document.createElement('p'); body.textContent = comment.body;
     item.append(name, body);
+    const reply = replies.find(reply => String(reply.comment_id) === String(comment.id));
+    if (reply && typeof reply.body === 'string') {
+      const block = document.createElement('div'); block.className = 'comment-reply';
+      const badge = document.createElement('strong'); badge.textContent = '운영자';
+      const replyBody = document.createElement('p'); replyBody.textContent = reply.body;
+      block.append(badge, replyBody);
+      item.append(block);
+    }
     list.append(item);
   });
 };
@@ -128,15 +136,28 @@ const loadComments = async (requestedPage = 0) => {
     if (local) {
       comments = localComments().slice(offset, offset + commentPageSize + 1);
     } else {
-      const response = await fetch(`${commentsApiUrl}/comments?select=name,body,created_at&order=created_at.desc&limit=${commentPageSize + 1}&offset=${offset}`, { headers: { apikey: commentsConfig.anonKey, Authorization: `Bearer ${commentsConfig.anonKey}` } });
+      const response = await fetch(`${commentsApiUrl}/comments?select=id,name,body,created_at&order=created_at.desc,id.desc&limit=${commentPageSize + 1}&offset=${offset}`, { headers: { apikey: commentsConfig.anonKey, Authorization: `Bearer ${commentsConfig.anonKey}` } });
       if (!response.ok) throw new Error('comments request failed');
       comments = safeComments(await response.json());
     }
     if (request !== commentRequest) return;
     if (!comments.length && requestedPage > 0) return await loadComments(requestedPage - 1);
+    let replies = [];
+    // Fetch only replies for this page; missing reply setup must not hide the guestbook.
+    const ids = comments.slice(0, commentPageSize).map(comment => comment.id).filter(id => id != null);
+    if (!local && ids.length) {
+      try {
+        const response = await fetch(`${commentsApiUrl}/guestbook_replies?select=comment_id,body&comment_id=in.(${ids.map(id => encodeURIComponent(id)).join(',')})`, { headers: { apikey: commentsConfig.anonKey }, signal: AbortSignal.timeout(8000) });
+        if (response.ok) {
+          const data = await response.json();
+          if (Array.isArray(data)) replies = data.filter(reply => reply && reply.comment_id != null && typeof reply.body === 'string');
+        }
+      } catch { /* Keep existing comments available when replies cannot be fetched. */ }
+    }
+    if (request !== commentRequest) return;
     commentPage = requestedPage;
     hasNextPage = comments.length > commentPageSize;
-    renderComments(comments.slice(0, commentPageSize));
+    renderComments(comments.slice(0, commentPageSize), replies);
     status.textContent = local ? '미리보기 모드: 이 브라우저에만 저장돼요.' : '';
   } catch {
     if (request === commentRequest) status.textContent = '댓글을 불러오지 못했어요. 잠시 후 다시 시도해주세요.';

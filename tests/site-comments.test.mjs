@@ -4,8 +4,8 @@ import test from 'node:test';
 import vm from 'node:vm';
 
 const source = readFileSync(new URL('../docs/site.js', import.meta.url), 'utf8').split("const commentStoreKey =")[1];
-const comments = Array.from({ length: 63 }, (_, i) => ({ name: `user ${i}`, body: `comment ${i}` }));
-async function page(count, local = false) {
+const comments = Array.from({ length: 63 }, (_, i) => ({ id: i + 1, name: `user ${i}`, body: `comment ${i}` }));
+async function page(count, local = false, replies = [], repliesFail = false) {
   const elements = new Map();
   const makeElement = () => ({
     children: [], listeners: {}, disabled: false,
@@ -27,8 +27,10 @@ async function page(count, local = false) {
     commentsConfig: { url: local ? '' : 'https://example.test', anonKey: 'test' },
     commentsApiUrl: 'https://example.test',
     localStorage: { getItem: () => JSON.stringify(data) },
+    AbortSignal,
     fetch: async (url, options) => {
       if (fail) throw new Error('offline');
+      if (url.includes('/guestbook_replies?')) return { ok: !repliesFail, json: async () => replies };
       if (options.method === 'POST') { data.unshift({ name: 'new', body: 'hello' }); return { ok: true }; }
       const params = new URL(url).searchParams;
       const offset = Number(params.get('offset'));
@@ -81,4 +83,24 @@ test('local preview also paginates in groups of ten', async () => {
   await p.get('next').listeners.click();
   assert.equal(p.get('list').children.length, 1);
   assert.equal(p.get('next').disabled, true);
+});
+
+test('operator replies attach to their parent as literal text without adding list entries', async () => {
+  const body = '<img src=x onerror=alert(1)>\n답변입니다.';
+  const p = await page(11, false, [{ comment_id: 2, body }]);
+  assert.equal(p.get('list').children.length, 10);
+  assert.equal(p.get('list').children[0].children.length, 2);
+  const reply = p.get('list').children[1].children[2];
+  assert.equal(reply.className, 'comment-reply');
+  assert.equal(reply.children[0].textContent, '운영자');
+  assert.equal(reply.children[1].textContent, body);
+  await p.get('next').listeners.click();
+  assert.equal(p.get('list').children[0].children.length, 2);
+});
+
+test('reply setup or read failures do not hide comments or break pagination', async () => {
+  const p = await page(11, false, [], true);
+  assert.equal(p.get('list').children.length, 10);
+  await p.get('next').listeners.click();
+  assert.equal(p.get('list').children.length, 1);
 });
