@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f7f5ed">
+  <meta name="description" content="설치 없이 브라우저에서 오버레이 루팡의 축구, 칼싸움, 동물탑을 봇과 한 판 해보세요.">
+  <title>브라우저에서 한 판 · 오버레이 루팡</title>
+  <link rel="canonical" href="https://yogurt-c.github.io/overlay-lupin/play/">
+  <link rel="icon" href="../site-assets/hero.png">
+  <link rel="stylesheet" href="../site.css">
+  <link rel="stylesheet" href="play.css">
+  <script type="module" src="play.js"></script>
+</head>
+<body>
+<div class="page">
+  <header class="header">
+    <a class="brand" href="../" aria-label="오버레이 루팡 홈"><img src="../site-assets/hero.png" alt="" width="38" height="38"><span>오버레이 루팡<small>OVERLAY LUPIN</small></span></a>
+    <nav aria-label="메인 메뉴"><a href="../#games">게임 구경</a><a href="../#how">플레이 방법</a><a href="../#comments">방명록</a></nav>
+    <a class="header-download" href="../#download">다운로드 <span aria-hidden="true">↗</span></a>
+  </header>
+  <main class="trial">
+    <div class="trial-heading">
+      <div>
+        <span class="eyebrow">TRY BEFORE INSTALL</span>
+        <h1 class="trial-title">설치 전에, <span class="underline">딱 한 판.</span></h1>
+        <p>브라우저에서 봇과 먼저 겨뤄보세요. 친구와의 진짜 승부는 앱에서.</p>
+      </div>
+      <nav class="trial-tabs" aria-label="체험할 게임">
+        <a data-game="soccer" href="?game=soccer"><b>01</b> 축구</a>
+        <a data-game="fence" href="?game=fence"><b>02</b> 칼싸움</a>
+        <a data-game="tower" href="?game=tower"><b>03</b> 동물탑</a>
+      </nav>
+    </div>
+
+    <div class="trial-layout">
+      <div class="trial-desktop">
+        <div class="window-bar"><span class="window-dots" aria-hidden="true">● ● ●</span><span>아주 중요한 업무.txt</span><span class="trial-badge">체험판</span></div>
+        <div class="stage" id="stage" data-state="ready">
+          <div class="work-notes stage-notes" aria-hidden="true"><small>오늘의 할 일</small><p>☑ 메일 확인하기</p><p>☑ 열심히 일하는 척하기</p><p>☐ 딱 한 판만 더 하기</p><div class="fake-line"></div><div class="fake-line short"></div></div>
+          <canvas id="game-canvas" tabindex="-1" aria-label="게임 화면"></canvas>
+          <span class="game-status" id="game-status"></span>
+          <div class="game-banner" id="game-banner" hidden></div>
+
+          <div class="stage-panel" id="start-panel">
+            <span class="eyebrow">VS BOT</span>
+            <strong id="game-title">축구</strong>
+            <p>상대는 봇이에요. 키보드로 플레이해요.</p>
+            <button class="button primary" id="start-btn" type="button">시작하기 <kbd>Enter</kbd></button>
+          </div>
+          <div class="stage-panel" id="over-panel" hidden>
+            <span class="eyebrow">GAME OVER</span>
+            <strong id="over-text">경기 종료</strong>
+            <p>친구와 하면 더 진지해져요.</p>
+            <div class="panel-actions">
+              <button class="button primary" id="again-btn" type="button">한 판 더 <kbd>Enter</kbd></button>
+              <a class="button secondary" href="../#download">앱 받기 ↓</a>
+            </div>
+          </div>
+          <div class="hidden-note" aria-hidden="true">쉿, 지금은 일하는 중. <kbd>PgUp</kbd></div>
+        </div>
+        <div class="desktop-bottom"><span><span class="live-dot"></span> 봇과 연습 중</span><button id="hide-toggle" type="button" aria-pressed="false">슬쩍 숨기기 <kbd>PgDn</kbd></button></div>
+      </div>
+
+      <aside class="trial-side">
+        <section>
+          <h2>조작법</h2>
+          <ul class="control-list" id="control-list"></ul>
+        </section>
+        <section class="trial-cta">
+          <span class="eyebrow">THE REAL THING</span>
+          <h2>옆자리랑 하면, 진짜 승부.</h2>
+          <p>앱은 업무 화면 위에 살짝 떠서, 같은 Wi-Fi의 친구와 1:1로 붙어요. 게임도 10가지가 넘어요.</p>
+          <a class="button primary" href="../#download">무료로 다운로드 <span aria-hidden="true">↓</span></a>
+        </section>
+      </aside>
+    </div>
+
+    <p class="mobile-note">이 체험판은 키보드가 필요해요. PC에서 열어주세요.</p>
+  </main>
+  <footer><a class="brand footer-brand" href="../">오버레이 루팡<span class="footer-dot">·</span><span>작고 소중한 딴짓.</span></a><a href="https://github.com/yogurt-c/overlay-lupin">Made for a little break. <span>GitHub ↗</span></a></footer>
+</div>
+</body>
+</html>

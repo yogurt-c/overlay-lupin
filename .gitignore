@@ -5,3 +5,4 @@ release/
 .DS_Store
 .claude
 /local-guestbook/
+docs/play/play.js

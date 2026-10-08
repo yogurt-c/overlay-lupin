@@ -9,7 +9,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.main.json && tsc -p tsconfig.renderer.json && npm run build:physics && npm run copy-assets",
     "copy-assets": "node -e \"const fs=require('fs');fs.mkdirSync('dist/renderer',{recursive:true});fs.copyFileSync('src/renderer/index.html','dist/renderer/index.html')\"",
-    "test": "npm run build && node tests/simulation.test.mjs && node tests/cell.test.mjs && node tests/fence.test.mjs && node tests/worm.test.mjs && node tests/merandi.test.mjs && node tests/tower.test.mjs && node tests/jumpmap.test.mjs && node tests/jumpmap-network.test.mjs && node tests/jumpmap-generation.test.mjs && node tests/survivor.test.mjs && node tests/merge.test.mjs",
+    "test": "npm run build && node tests/simulation.test.mjs && node tests/cell.test.mjs && node tests/fence.test.mjs && node tests/worm.test.mjs && node tests/merandi.test.mjs && node tests/tower.test.mjs && node tests/jumpmap.test.mjs && node tests/jumpmap-network.test.mjs && node tests/jumpmap-generation.test.mjs && node tests/survivor.test.mjs && node tests/merge.test.mjs && node tests/web-trial.test.mjs",
     "dev": "npm run build && electron .",
     "start": "electron .",
     "release:mac": "npm run build && electron-builder --mac --publish=never",
@@ -17,6 +17,7 @@
     "release:mac:publish": "npm run build && electron-builder --mac --publish=always",
     "release:win:publish": "npm run build && electron-builder --win --publish=always",
     "release:publish": "npm run build && electron-builder --mac --win --publish=always",
+    "build:web": "esbuild src/renderer/web/play.ts --bundle --format=esm --platform=browser --minify --outfile=docs/play/play.js",
     "build:physics": "esbuild src/renderer/lib/tower-physics.ts --bundle --format=esm --platform=browser --outfile=dist/renderer/lib/tower-physics.js",
     "test:tower-ui": "npm run build && electron tests/tower-renderer.cjs",
     "test:analytics": "npm run build && node --test tests/analytics.test.mjs tests/analytics-edge.test.mjs"
