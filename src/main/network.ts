@@ -318,11 +318,14 @@ export class GameNetwork extends EventEmitter {
   }
 
   private sendDirect(msg: WireMessage, target: SendTarget): void {
+    // Renderer IPC can still arrive after before-quit has closed the sockets.
+    if (this.stopped) return;
     const buf = Buffer.from(JSON.stringify(msg));
     this.replySocket.send(buf, target.replyPort, target.address);
   }
 
   private broadcastHello(): void {
+    if (this.stopped) return;
     const buf = Buffer.from(
       JSON.stringify({ t: 'HELLO', id: this.myId, name: this.myName, replyPort: this.replyPort })
     );
@@ -330,7 +333,7 @@ export class GameNetwork extends EventEmitter {
   }
 
   private broadcastRoomOpen(): void {
-    if (!this.hostedRoom) return;
+    if (this.stopped || !this.hostedRoom) return;
     const room = this.hostedRoom;
     const buf = Buffer.from(
       JSON.stringify({
