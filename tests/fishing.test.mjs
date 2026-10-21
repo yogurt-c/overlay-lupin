@@ -52,9 +52,10 @@ test('version 1 saves and exports are rescaled onto the new size ranges without 
   assert.deepEqual(JSON.parse(fs.readFileSync(file+'.bak','utf8')),v1,'the original stays as the backup');
   s.merge({...v1,catches:[{...fish('c'),speciesId:loach.id,sizeMm:100}]});assert.equal(s.read().catches.find(c=>c.id==='c').sizeMm,loach.minMm,'old exports import too');
 }));
-test('fixed seats survive leaving, capacity is six and the empty seat is reused',()=>{
+test('seats fill alternating spots first, stay fixed on leaving and reuse empty spots up to six players',()=>{
   const e=new FishingEngine(rng(1));for(let i=0;i<6;i++)e.ensure('p'+i,'player');assert.equal(e.ensure('overflow','no'),undefined);
-  e.remove('p2');e.ensure('new','new');assert.equal(e.world.players.find(p=>p.id==='new').seat,2);assert.equal(e.world.players.find(p=>p.id==='p5').seat,5);
+  assert.deepEqual(e.world.players.map(p=>p.seat),[0,2,4,1,3,5]);
+  e.remove('p2');e.ensure('new','new');assert.equal(e.world.players.find(p=>p.id==='new').seat,4);assert.equal(e.world.players.find(p=>p.id==='p5').seat,5);
 });
 test('commands survive retransmission, do not skip sequence gaps, and cancel cannot erase a caught result',()=>{
   const e=new FishingEngine(rng(3),()=> 'stable-id');const p=e.ensure('me','me');
@@ -124,7 +125,7 @@ test('real room protocol sends mid-session rosters and retains neighboring seats
     assert.equal(hm.buildOutgoingPacket().world.players.find(p=>p.id===first.myId).phase,'casting');
     assert.equal(matches.get(first.myId).hud().status,hm.hud().status);
     const lastSeat=hm.buildOutgoingPacket().world.players.find(p=>p.id===guests[4].myId).seat;
-    first.leaveRoom();join(guests[5]);assert.equal(hm.buildOutgoingPacket().world.players.find(p=>p.id===guests[5].myId).seat,1);
+    first.leaveRoom();join(guests[5]);assert.equal(hm.buildOutgoingPacket().world.players.find(p=>p.id===guests[5].myId).seat,2);
     assert.equal(hm.buildOutgoingPacket().world.players.find(p=>p.id===guests[4].myId).seat,lastSeat);
   }finally{for(const n of nets)n.stop();}
 });

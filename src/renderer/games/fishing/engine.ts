@@ -52,7 +52,7 @@ export class FishingEngine {
   ensure(id: string, name: string): Fisher | undefined {
     let p = this.world.players.find(p => p.id === id);
     if (!p && this.world.players.length < 6) {
-      const seat = [0,1,2,3,4,5].find(n => !this.world.players.some(p => p.seat === n))!;
+      const seat = [0,2,4,1,3,5].find(n => !this.world.players.some(p => p.seat === n))!;
       p = { id, name: name.slice(0,24), seat, phase: 'idle', time: 0, pos: .5, target: .5, progress: 25, seed: 1,
         emoji: -1, emojiUntil: 0, showUntil: 0, notice: '', ack: 0, known: [], held: false, lastInput: this.world.tick, attempts: 0 };
       this.world.players.push(p);
