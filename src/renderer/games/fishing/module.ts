@@ -1,4 +1,4 @@
-import { SPECIES_BY_ID, validCatch } from '../../../shared/fishing.js';
+import { RARITIES, SPECIES_BY_ID, validCatch } from '../../../shared/fishing.js';
 import type { FishingSave, FishCatch, FishingAction, FishingReply } from '../../../shared/fishing.js';
 import type { GameMatch, GameModule, Viewport } from '../types.js';
 import { FishingEngine, emptyWorld, WIDTHS } from './engine.js';
@@ -28,7 +28,7 @@ export class FishingMatch implements GameMatch {
     this.engine=isHost?new FishingEngine():null;this.engine?.ensure(myId,myName);
     if(typeof document!=='undefined'){
       this.ui=new FishingUi({cancel:()=>this.command('cancel'),open:()=>this.open(),emoji:value=>this.command('emoji',{value}),
-        release:id=>void this.mutate({kind:'release',id}),favorite:id=>void this.mutate({kind:'favorite',id}),show:fish=>{this.command('show',{fish});this.ui?.message('물고기를 친구들에게 보여줬어요');},retry:()=>void this.persist(),export:()=>void this.transfer('export'),import:()=>void this.transfer('import'),continueSolo:()=>this.continueSolo()},this.solo);
+        release:id=>void this.mutate({kind:'release',id}),favorite:id=>void this.mutate({kind:'favorite',id}),show:fish=>this.show(fish),retry:()=>void this.persist(),export:()=>void this.transfer('export'),import:()=>void this.transfer('import'),continueSolo:()=>this.continueSolo()},this.solo);
       void this.load();
     }
   }
@@ -59,6 +59,11 @@ export class FishingMatch implements GameMatch {
     if(this.disposed||this.closed||this.commands.length>=32||(this.solo&&kind==='show'))return;
     this.commands.push({...extra,kind,seq:++this.seq});
   }
+  private show(fish:FishCatch):void{
+    const me=this.me(),tick=(this.engine?.world??this.world).tick;
+    if(me&&me.showUntil>tick){this.ui?.message('방금 자랑했어요. 잠시 후 다시 보여줄 수 있어요');return;}
+    this.command('show',{fish});const s=SPECIES_BY_ID.get(fish.speciesId);this.ui?.message(`${s?`${RARITIES[s.rarity]} ${s.name}`:'물고기'} 자랑 중! 모두의 화면에 잠깐 떠요`);
+  }
   private me():Fisher|undefined{return (this.engine?.world??this.world).players.find(p=>p.id===this.myId);}
   private cast():void{if(this.ready&&!this.closed&&!this.ui?.opened&&!this.pending)this.command('cast');}
   private open():void{const phase=this.me()?.phase;if(this.pending){void this.persist();return;}if(phase&&['casting','waiting','bite','fight'].includes(phase))this.ui?.confirmOpen();else this.ui?.open();}
@@ -68,6 +73,7 @@ export class FishingMatch implements GameMatch {
     if(this.disposed)return;const i=raw as FishingInput|undefined;
     if(i?.cancel){this.held=false;if(this.ui?.opened&&!this.pending)this.ui.close();this.command('cancel');}
     if(i?.emotes)this.ui?.toggleEmotes();if(i&&i.emoji>=0&&this.ui?.emotesOpen){this.command('emoji',{value:i.emoji});this.ui.toggleEmotes();}
+    if(i?.brag){const fish=this.ui?.resultBrag();if(fish)this.show(fish);}
     if(i?.cast&&!this.ui?.resultSpace())this.cast();this.held=!this.ui?.opened&&!this.closed&&!!i?.held;
     const known=this.known;
     if(this.engine){const me=this.me();if(me)me.known=known;this.engine.input(this.myId,this.held,this.commands);this.engine.step();}
@@ -107,5 +113,5 @@ export class FishingMatch implements GameMatch {
   canLeave():boolean{if(this.pending||this.saving){this.ui?.message('잡은 물고기를 저장하는 중입니다. 저장 완료 후 나가 주세요.');return false;}return true;}
   dispose():void{this.disposed=true;this.ui?.dispose();}
 }
-export const fishingModule:GameModule={id:'fishing',label:'낚시',hint:'Space 던지기·챔질 · 누르면 오른쪽, 떼면 왼쪽 · E 감정표현 · 최대 6명 · 잡은 물고기는 이 기기에 영구 저장',matching:'room',roomCapacity:6,
+export const fishingModule:GameModule={id:'fishing',label:'낚시',hint:'Space 던지기·챔질 · 누르면 오른쪽, 떼면 왼쪽 · E 감정표현 · B 방금 잡은 물고기 자랑 · 최대 6명 · 잡은 물고기는 이 기기에 영구 저장',matching:'room',roomCapacity:6,
   createMatch:(isHost,id,name)=>new FishingMatch(isHost,id,name),createSoloMatch:(id,name)=>new FishingMatch(true,id,name,true),createInputSource};

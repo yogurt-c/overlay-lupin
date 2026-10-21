@@ -5,6 +5,7 @@ export const LIMITS = [12,14,16,18,20,22];
 const GAIN = [22,20,18,16,14,13], LOSS = [10,12,14,16,18,19];
 export const CAST_SECONDS = 1.0;
 export const EMOTE_TICKS = 120;
+export const SHOW_TICKS = 300;
 export type Phase = 'casting' | 'idle' | 'waiting' | 'bite' | 'fight' | 'result';
 export interface Fisher {
   id: string; name: string; seat: number; phase: Phase; time: number; pos: number; target: number; progress: number;
@@ -58,7 +59,7 @@ export class FishingEngine {
       p.ack = cmd.seq;
       if (cmd.kind === 'cancel' && p.phase !== 'result') { p.phase = 'idle'; p.fish = undefined; p.notice = '쉬는 중'; }
       if (cmd.kind === 'emoji' && this.world.tick >= p.emojiUntil && Number.isInteger(cmd.value) && cmd.value! >= 0 && cmd.value! < 6) { p.emoji = cmd.value!; p.emojiUntil = this.world.tick + EMOTE_TICKS; }
-      if (cmd.kind === 'show' && cmd.fish && this.world.tick >= p.showUntil) { p.shown = cmd.fish; p.showUntil = this.world.tick + 300; }
+      if (cmd.kind === 'show' && cmd.fish && this.world.tick >= p.showUntil) { p.shown = cmd.fish; p.showUntil = this.world.tick + SHOW_TICKS; }
       if (cmd.kind === 'saved' && p.phase === 'result' && cmd.catchId === p.fish?.id) {
         if (!p.known.includes(p.fish!.speciesId)) p.known.push(p.fish!.speciesId);
         p.phase = 'idle'; p.fish = undefined; p.notice = '';

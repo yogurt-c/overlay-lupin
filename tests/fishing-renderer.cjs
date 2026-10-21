@@ -46,7 +46,26 @@ app.whenReady().then(async()=>{
   assert.equal(await js(`document.querySelector('.fish-result').querySelectorAll('button').length`),0);
   assert.ok(await js(`document.querySelector('.fish-result').textContent.includes('Space 닫기')`));
   await pause(60);fs.writeFileSync(path.join(root,'output/fishing/result.png'),(await win.webContents.capturePage()).toPNG());
+  // Bragging closes the collection right away and puts a trophy card over the angler for everyone.
+  assert.ok(await js(`document.querySelector('.fish-result').textContent.includes('B 자랑하기')`));
+  await js(`testMatch.step({brag:true});testMatch.step({});`);
+  assert.equal(await js(`testMatch.ui.opened`),false,'B brags from the success popup and closes it');
+  assert.equal(await js(`testMatch.engine.world.players[0].shown?.id`),store.read().catches[0].id);
+  await js(`for(let i=0;i<310;i++)testMatch.step({});`);
+  await js(`testMatch.ui.open();document.querySelector('.fish-card').click();`);
+  await js(`[...document.querySelectorAll('#fishing-ui button')].find(b=>b.textContent==='자랑하기').click()`);
+  assert.equal(await js(`testMatch.ui.opened`),false,'brag closes the popup');
+  await js(`testMatch.step({});const w=testMatch.engine.world;w.players[1].shown={id:'f1',speciesId:'fish-3-15',sizeMm:900,caughtAt:'2026-01-01T00:00:00.000Z',favorite:false,released:false};w.players[1].showUntil=w.tick+200;
+    w.players[2].shown={id:'f2',speciesId:'fish-5-19',sizeMm:2000,caughtAt:'2026-01-01T00:00:00.000Z',favorite:false,released:false};w.players[2].showUntil=w.tick+200;w.players[2].emoji=4;w.players[2].emojiUntil=w.tick+100;
+    for(let i=0;i<20;i++)testMatch.step({});testMatch.render(document.getElementById('field').getContext('2d'),{width:320,height:280,pixelRatio:devicePixelRatio});`);
+  assert.equal(await js(`testMatch.engine.world.players[0].shown?.id`),store.read().catches[0].id);
+  await pause(60);fs.writeFileSync(path.join(root,'output/fishing/brag.png'),(await win.webContents.capturePage()).toPNG());
   await js(`testMatch.roomClosed();testMatch.continueSolo();testMatch.ui.caught(testMatch.save.catches[0],'수집함에 저장했어요.');`);
+  await js(`testMatch.step({cast:true});`);
+  assert.equal(await js(`testMatch.ui.opened`),true,'a fresh success popup ignores Space for a moment');
+  assert.ok(await js(`document.querySelector('.fish-hint').classList.contains('fish-locked')`));
+  assert.equal(await js(`testMatch.engine.world.players[0].phase`),'idle','the swallowed press does not cast either');
+  await pause(850);
   assert.equal(await js(`[...document.querySelectorAll('#fishing-ui button')].some(b=>b.textContent==='자랑하기')`),false);
   await js(`testMatch.step({cast:true});`);
   assert.equal(await js(`testMatch.ui.opened`),false);

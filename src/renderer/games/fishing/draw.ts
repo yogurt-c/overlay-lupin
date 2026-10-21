@@ -1,11 +1,13 @@
-import type { Species } from '../../../shared/fishing.js';
-import { SPECIES_BY_ID } from '../../../shared/fishing.js';
+import type { FishCatch, Species } from '../../../shared/fishing.js';
+import { RARITIES, RARITY_SIGNS, SPECIES_BY_ID } from '../../../shared/fishing.js';
 import { beginSketchFrame, jitter, roughLimb, roughStroke } from '../../lib/sketch.js';
 import type { Viewport } from '../types.js';
-import { WIDTHS, CAST_SECONDS, EMOTE_TICKS } from './engine.js';
+import { WIDTHS, CAST_SECONDS, EMOTE_TICKS, SHOW_TICKS } from './engine.js';
 import type { FishingWorld, Fisher } from './engine.js';
 const INK = '#14181a', BROWN = '#7a5433', HALO = 'rgba(255,255,255,.94)';
 export const EMOTES = ['안녕','좋아요','하트','놀람','축하','아쉬움'];
+/** Stamp inks per rarity, muted so they sit on the same paper as the sketch scene. */
+export const RARITY_INK = ['#7d857b','#4f8a5b','#3d74a8','#8a5bb0','#c08416','#c4473a'];
 function line(c: CanvasRenderingContext2D, x: number,y: number,a: number,b: number, color = INK, w = 1.2): void { roughStroke(c,x,y,a,b,w,color,HALO); }
 function label(c: CanvasRenderingContext2D, text: string, x: number,y: number, size=9,color=INK): void {
   c.font = `${size}px Menlo, sans-serif`; c.textAlign = 'center'; c.lineWidth = 3; c.strokeStyle = HALO; c.strokeText(text,x,y); c.fillStyle = color; c.fillText(text,x,y);
@@ -119,8 +121,9 @@ function drawHeadAndHat(c: CanvasRenderingContext2D, hx: number, hy: number, fac
 }
 /** Chibi angler sitting on the dock edge, drawn in the fencers' thick-ink style. Hip sits at (x, 110). */
 function person(c: CanvasRenderingContext2D,p: Fisher,x:number, tick:number, local:boolean, hideEmotes:boolean): void {
-  const ink=local?INK:BROWN, y=110, emoting=!hideEmotes&&p.emojiUntil>tick, base=poseOf(p,tick);
-  const pose=emoting&&!['bite','fight'].includes(p.phase)?{...base,face:EMOTE_FACES[p.emoji]??base.face}:base, {butt,mid,tip}=rodGeometry(pose);
+  const ink=local?INK:BROWN, y=110, emoting=!hideEmotes&&p.emojiUntil>tick, showing=!!p.shown&&p.showUntil>tick, base=poseOf(p,tick);
+  const calm=!['bite','fight'].includes(p.phase);
+  const pose=emoting&&calm?{...base,face:EMOTE_FACES[p.emoji]??base.face}:showing&&calm?{...base,face:'joy' as Face}:base, {butt,mid,tip}=rodGeometry(pose);
   const dx=Math.cos(pose.rod), dy=Math.sin(pose.rod), shoulderX=pose.lean*.6+2, shoulderY=-9+pose.crouch*.6;
   c.save(); c.translate(x,y); c.lineCap=c.lineJoin='round';
   // Thighs rest on the planks and the shins dangle, kicking in a two-step beat rather than a smooth swing.
@@ -155,8 +158,9 @@ function person(c: CanvasRenderingContext2D,p: Fisher,x:number, tick:number, loc
     for(const [dx,dy,r] of [[-15,-38,3],[-21,-24,1.8],[24,-12,2.2]] as const) sparkle(c,x+dx,y+dy,r,BROWN);
   }
   label(c,local?'나':p.name.slice(0,5),x,142,7,ink);
-  if(emoting) emoteBubble(c,p.emoji,x+9,y-50,EMOTE_TICKS-(p.emojiUntil-tick),ink);
-  if(p.shown&&p.showUntil>tick) { const s=SPECIES_BY_ID.get(p.shown.speciesId); if(s){drawFish(c,s,x,y-57,24);label(c,`${(p.shown.sizeMm/10).toFixed(1)}cm`,x,y-74,7);} }
+  if(showing) bragCard(c,p.shown!,x,y-44,SHOW_TICKS-(p.showUntil-tick),ink);
+  // A brag card already sits over the head, so the emote perches on its corner instead of hiding under it.
+  if(emoting) emoteBubble(c,p.emoji,showing?x+28:x+9,showing?y-97:y-50,EMOTE_TICKS-(p.emojiUntil-tick),ink);
 }
 /** Line with a little slack so it reads as fishing line, not a ruler stroke. */
 function slackLine(c: CanvasRenderingContext2D, ax: number, ay: number, bx: number, by: number, sag: number, ink: string): void {
@@ -244,6 +248,48 @@ function emoteBubble(c: CanvasRenderingContext2D, kind: number, x: number, y: nu
   c.arcTo(11,-11,11,9,r); c.arcTo(11,9,-11,9,r); c.lineTo(-2,9); c.lineTo(-9,14); c.lineTo(-6,9); c.arcTo(-11,9,-11,-11,r); c.arcTo(-11,-11,11,-11,r); c.closePath();
   c.lineWidth = 4; c.strokeStyle = HALO; c.stroke(); c.fillStyle = '#fffefa'; c.fill(); c.lineWidth = 1.4; c.strokeStyle = ink; c.stroke();
   c.translate(0,-1); c.scale(.92,.92); drawEmoteIcon(c,kind,age,ink);
+  c.restore();
+}
+const BRAG_POP = [.2,.5,.85,1.12,1.2,1.14,1.06,1,.97,1], BRAG_FADE = 24;
+const BRAG_SPARKS: [number,number,number][] = [[-26,-40,2.2],[26,-24,1.8],[-25,-14,1.6],[25,-58,2.4],[0,-64,1.8]];
+/** Fits a label inside `max` px by squeezing it horizontally, so long species names never spill off the card. */
+function fitLabel(c: CanvasRenderingContext2D, text: string, x: number, y: number, max: number, font: string, color: string): void {
+  c.font = font; c.textAlign = 'center'; c.fillStyle = color;
+  const w = c.measureText(text).width, k = w > max ? max/w : 1;
+  c.save(); c.translate(x,y); c.scale(k,1); c.fillText(text,0,0); c.restore();
+}
+/**
+ * Trophy card lifted over the angler's head: it pops out of the hat, the fish flaps on it, and it floats off at the end.
+ * A rarity ribbon heads the card so onlookers can tell a 고급 catch at a glance; rarer fish also get louder,
+ * with sparkles from 고급 and a turning sunburst from 영웅. Origin is the tail tip just above the hat.
+ */
+function bragCard(c: CanvasRenderingContext2D, fish: FishCatch, x: number, y: number, age: number, ink: string): void {
+  const s = SPECIES_BY_ID.get(fish.speciesId); if (!s) return;
+  const rc = RARITY_INK[s.rarity], left = SHOW_TICKS-age, fade = left < BRAG_FADE ? left/BRAG_FADE : 1;
+  const pop = BRAG_POP[age] ?? 1, bob = Math.floor(age/18)%2 ? -1 : 0, cy = -27, top = -57;
+  c.save(); c.translate(x,y-(1-fade)*10+bob); c.scale(pop,pop); c.globalAlpha = fade; c.lineJoin = 'round';
+  if (s.rarity >= 3) {
+    c.save(); c.translate(0,-32); c.rotate(age*.012); c.fillStyle = rc; c.globalAlpha = fade*.22;
+    for (let i = 0; i < 10; i++) { const a = i*Math.PI/5; c.beginPath(); c.moveTo(0,0); c.arc(0,0,36+s.rarity*2,a,a+.24); c.closePath(); c.fill(); }
+    c.restore();
+  }
+  const card = new Path2D(); card.roundRect(-22,top,44,-8-top,6);
+  const tail = new Path2D(); tail.moveTo(-4,-8.6); tail.lineTo(0,-2); tail.lineTo(4,-8.6);
+  c.lineWidth = 4.5; c.strokeStyle = HALO; c.stroke(card); c.stroke(tail);
+  c.fillStyle = '#fffefa'; c.fill(card); c.fill(tail);
+  c.save(); c.clip(card); c.fillStyle = rc; c.globalAlpha = fade*.12; c.fillRect(-22,-39,44,24); c.globalAlpha = fade; c.fillRect(-22,top,44,9); c.restore();
+  c.lineWidth = 1.4; c.strokeStyle = ink; c.stroke(card); c.stroke(tail);
+  c.fillStyle = '#fffefa'; c.fillRect(-3.3,-9.5,6.6,1.6);
+  // The fish flaps on the card in held two-frame beats, like the hooked catch on the line.
+  c.save(); c.translate(0,cy); c.rotate(Math.floor(age/9)%2 ? .12 : -.08); drawFish(c,s,0,0,27,ink); c.restore();
+  fitLabel(c,`${RARITY_SIGNS[s.rarity]} ${RARITIES[s.rarity]}`,0,top+6.6,38,'bold 6px Menlo, sans-serif','#fffefa');
+  fitLabel(c,s.name,0,-40.5,38,'bold 6px Menlo, sans-serif',ink);
+  fitLabel(c,`${(fish.sizeMm/10).toFixed(1)}cm`,0,-10.5,38,'bold 7px Menlo, sans-serif',rc);
+  if (fish.sizeMm >= s.minMm+.95*(s.maxMm-s.minMm)) {
+    c.save(); c.translate(-21,top+1); c.rotate(-.3); c.beginPath(); c.arc(0,0,6,0,Math.PI*2); c.fillStyle = '#fffefa'; c.fill();
+    c.strokeStyle = RED; c.lineWidth = .9; c.stroke(); fitLabel(c,'월척',0,1.8,10,'bold 5px Menlo, sans-serif',RED); c.restore();
+  }
+  BRAG_SPARKS.slice(0,Math.min(5,s.rarity)).forEach(([sx,sy,r],i) => { if ((Math.floor(age/7)+i)%3) sparkle(c,sx,sy,r,i%2?GOLD:rc); });
   c.restore();
 }
 function sparkle(c: CanvasRenderingContext2D, x: number, y: number, s: number, ink: string): void {

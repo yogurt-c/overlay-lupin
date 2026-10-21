@@ -1,15 +1,14 @@
 import { RARITIES, RARITY_SIGNS, SPECIES, SPECIES_BY_ID } from '../../../shared/fishing.js';
 import type { FishingSave, FishCatch, Species } from '../../../shared/fishing.js';
-import { drawEmoteIcon, drawFish, EMOTES } from './draw.js';
+import { drawEmoteIcon, drawFish, EMOTES, RARITY_INK } from './draw.js';
 export interface FishingUiActions {
   cancel():void; open():void; emoji(value:number):void;
   release(id:string):void; favorite(id:string):void; show(fish:FishCatch):void; retry():void; export():void; import():void; continueSolo():void;
 }
 function el<K extends keyof HTMLElementTagNameMap>(tag:K,text?:string,className?:string):HTMLElementTagNameMap[K] { const n=document.createElement(tag);if(text)n.textContent=text;if(className)n.className=className;return n; }
 function button(text:string,click:()=>void,className?:string):HTMLButtonElement {const n=el('button',text,className);n.type='button';n.onclick=click;return n;}
-/** Stamp inks per rarity, muted so they sit on the same paper as the sketch scene. */
-const RARITY_INK=['#7d857b','#4f8a5b','#3d74a8','#8a5bb0','#c08416','#c4473a'];
-const PAGE_SIZE=6, TOAST_MS=3500;
+/** Space is mashed during the fight, so a fresh success popup ignores it briefly instead of vanishing unseen. */
+const PAGE_SIZE=6, TOAST_MS=3500, RESULT_LOCK_MS=800;
 const cm=(mm:number)=>`${(mm/10).toFixed(1)}cm`;
 const specimenNo=(s:Species)=>`No.${String(SPECIES.indexOf(s)+1).padStart(3,'0')}`;
 const CSS = `
@@ -23,7 +22,8 @@ const CSS = `
 #fishing-ui button:focus-visible,#fishing-ui select:focus-visible,#fishing-ui input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 #fishing-ui button:disabled{opacity:.4;cursor:default;transform:none}
 #fishing-ui .fish-tools{display:flex;gap:4px;align-items:center;flex-wrap:wrap}
-#fishing-ui .fish-top{position:absolute;top:-26px;left:50%;transform:translateX(-50%)}
+/* Top right, inset past the shell's status dot so the two never touch. */
+#fishing-ui .fish-top{position:absolute;top:-26px;right:12px}
 #fishing-ui .fish-top button{border:1.3px solid var(--ink);border-radius:999px;padding:2px 9px;box-shadow:0 2px 0 var(--ink)}
 #fishing-ui .fish-top button:hover{transform:translateY(-1px);box-shadow:0 3px 0 var(--ink);background:var(--paper)}
 #fishing-ui .fish-top button:active{transform:translateY(2px);box-shadow:0 0 0 var(--ink)}
@@ -89,6 +89,7 @@ const CSS = `
 #fishing-ui .fish-result canvas{width:150px;height:auto;aspect-ratio:16/9}
 #fishing-ui .fish-result button{font-size:9px;margin:2px}
 #fishing-ui .fish-result .fish-name{font-size:11px}
+#fishing-ui .fish-locked{opacity:.35}#fishing-ui .fish-hint{transition:opacity 200ms ease}
 #fishing-ui kbd{font:inherit;font-size:8.5px;padding:0 4px;border:1px solid var(--ink);border-radius:3px;box-shadow:0 1px 0 var(--ink);background:var(--paper)}
 
 #fishing-ui .fish-toast{z-index:3;position:absolute;left:50%;bottom:36px;transform:translateX(-50%);display:flex;gap:6px;align-items:center;width:max-content;max-width:calc(100% - 16px);box-sizing:border-box;padding:5px 5px 5px 9px;
@@ -112,7 +113,7 @@ export class FishingUi {
   root: HTMLDivElement; panel:HTMLDivElement; private toast:HTMLDivElement; private emotes:HTMLDivElement;
   private save:FishingSave={version:1,profileId:'',catches:[]}; private tab:'collection'|'catalog'='collection';
   private query='';private rarity=-1;private sort='recent';private favorites=false;private page=0;private selected?:string;private confirmRelease=false;
-  private result?:FishCatch;private resultNote='';private resultError=false; private mute=false; private toastTimer?:ReturnType<typeof setTimeout>;
+  private result?:FishCatch;private resultNote='';private resultError=false; private mute=false; private toastTimer?:ReturnType<typeof setTimeout>;private lockTimer?:ReturnType<typeof setTimeout>;private lockedUntil=0;
   constructor(private actions:FishingUiActions,private solo=false){
     if(!document.getElementById('fishing-style')){const style=el('style');style.id='fishing-style';style.textContent=CSS;document.head.append(style);}
     this.root=el('div');this.root.id='fishing-ui';
@@ -158,12 +159,18 @@ export class FishingUi {
     this.compact(true,'수집함 열기');this.panel.hidden=false;
     this.panel.replaceChildren(el('h3','낚시 중이에요'),el('p','이번 낚시를 취소하고 수집함을 열까요?'),this.row(button('취소하고 열기',()=>{this.actions.cancel();this.open();}),button('계속 낚시',()=>this.close())));
   }
-  caught(fish:FishCatch,note:string,error=false):void{this.result=fish;this.resultNote=note;this.resultError=error;this.panel.hidden=false;this.renderResult();}
+  caught(fish:FishCatch,note:string,error=false):void{this.result=fish;this.resultNote=note;this.resultError=error;this.lockedUntil=Date.now()+RESULT_LOCK_MS;this.panel.hidden=false;this.renderResult();}
   /** Consume this press so closing a result never casts a new line as well. */
   resultSpace():boolean{
     if(!this.opened||!this.result)return false;
+    if(Date.now()<this.lockedUntil)return true;
     if(this.resultError)this.actions.retry();else this.close();
     return true;
+  }
+  /** B on a success popup brags the fresh catch and closes the popup; returns the fish to show, if any. */
+  resultBrag():FishCatch|undefined{
+    const fish=this.result;if(this.solo||!this.opened||!fish||this.resultError)return undefined;
+    this.close();return fish;
   }
   private row(...children:HTMLElement[]):HTMLDivElement{const n=el('div',undefined,'fish-actions');n.style.justifyContent='center';n.append(...children);return n;}
   private chip(s:Species):HTMLSpanElement{const n=el('span',`${RARITY_SIGNS[s.rarity]} ${RARITIES[s.rarity]}`,'fish-chip');n.style.color=RARITY_INK[s.rarity];return n;}
@@ -178,7 +185,9 @@ export class FishingUi {
   private renderResult():void{
     this.compact(true);this.toast.hidden=true;this.emotes.hidden=true;
     const fish=this.result;if(!fish)return;const s=SPECIES_BY_ID.get(fish.speciesId)!;
-    const hint=el('p',undefined,'fish-muted');hint.append(el('kbd','Space'),` ${this.resultError?'저장 다시 시도':'닫기'}`);
+    const hint=el('p',undefined,'fish-muted fish-hint');hint.append(el('kbd','Space'),` ${this.resultError?'저장 다시 시도':'닫기'}`);if(!this.resultError&&!this.solo)hint.append(' · ',el('kbd','B'),' 자랑하기');
+    const wait=this.lockedUntil-Date.now();clearTimeout(this.lockTimer);
+    if(wait>0){hint.classList.add('fish-locked');this.lockTimer=setTimeout(()=>hint.classList.remove('fish-locked'),wait);}
     this.panel.replaceChildren(el('h3',this.resultError?'저장 재시도 필요':'낚시 성공!'),this.chip(s),this.art(s.id,true,90,105),el('p',`${s.name} · ${cm(fish.sizeMm)}`,'fish-name'),el('p',this.resultNote),hint);
   }
   roomClosed():void{this.compact(true,'낚시방 종료');this.panel.hidden=false;this.panel.replaceChildren(el('h3','낚시방이 닫혔어요'),el('p','저장한 물고기는 그대로 남아 있어요.'),this.row(button('혼자 계속하기',()=>{this.actions.continueSolo();})));}
@@ -262,11 +271,11 @@ export class FishingUi {
         this.panel.append(box);
       }else{
         actions.append(button(fish.favorite?'★ 잠금 해제':'☆ 즐겨찾기',()=>this.actions.favorite(fish.id)));
-        if(!this.solo)actions.append(button('자랑하기',()=>this.actions.show(fish)));
+        if(!this.solo)actions.append(button('자랑하기',()=>{this.close();this.actions.show(fish);}));
         const release=button('풀어주기',()=>{this.confirmRelease=true;this.renderCollection();},'fish-danger');release.disabled=fish.favorite;if(fish.favorite)release.title='즐겨찾기를 해제하면 풀어줄 수 있어요';actions.append(release);
       }
     }
     this.panel.append(actions);
   }
-  dispose():void{clearTimeout(this.toastTimer);this.root.remove();}
+  dispose():void{clearTimeout(this.toastTimer);clearTimeout(this.lockTimer);this.root.remove();}
 }
