@@ -90,7 +90,7 @@ test('real room protocol sends mid-session rosters and retains neighboring seats
       n.on('room-member-left',id=>matches.get(n.myId)?.removePeer(id));
     }
     host.createRoom('fishing',6);host.startRoom();const hm=matches.get(host.myId);
-    const join=g=>host.handleMessage(Buffer.from(JSON.stringify({t:'ROOM_JOIN',id:g.myId,name:'친구',roomId,replyPort:g.replyPort})),{address:'127.0.0.1',port:g.replyPort});
+    const join=g=>(g.pendingJoinId=roomId,host.handleMessage(Buffer.from(JSON.stringify({t:'ROOM_JOIN',id:g.myId,name:'친구',roomId,replyPort:g.replyPort})),{address:'127.0.0.1',port:g.replyPort}));
     guests.forEach(join);assert.equal(hm.buildOutgoingPacket().world.players.length,6);
     const first=guests[0];first.sendRoomState({kind:'fishing-input',name:'친구',held:false,commands:[{seq:1,kind:'cast'}]});hm.step({});host.sendRoomState(hm.buildOutgoingPacket());
     assert.equal(hm.buildOutgoingPacket().world.players.find(p=>p.id===first.myId).phase,'casting');
@@ -116,7 +116,7 @@ test('host leaving hands the playing room to the earliest member, who keeps it o
       n.on('room-lost',()=>lost.push(n.myId));
     }
     host.createRoom('fishing',6);host.startRoom();const hm=matches.get(host.myId);
-    const join=g=>host.handleMessage(Buffer.from(JSON.stringify({t:'ROOM_JOIN',id:g.myId,name:'친구',roomId,replyPort:g.replyPort})),{address:'127.0.0.1',port:g.replyPort});
+    const join=g=>(g.pendingJoinId=roomId,host.handleMessage(Buffer.from(JSON.stringify({t:'ROOM_JOIN',id:g.myId,name:'친구',roomId,replyPort:g.replyPort})),{address:'127.0.0.1',port:g.replyPort}));
     join(heir);join(friend);hm.step({});host.sendRoomState(hm.buildOutgoingPacket());
     const friendSeat=hm.buildOutgoingPacket().world.players.find(p=>p.id===friend.myId).seat;
     // A forged handoff from someone other than the host is ignored.
@@ -136,12 +136,30 @@ test('host leaving hands the playing room to the earliest member, who keeps it o
     assert.equal(hm2.buildOutgoingPacket().world.players.length,1);
   }finally{for(const n of nets)n.stop();}
 });
+test('a roster still in flight after leaving does not pull the player back into the room',async()=>{
+  const {GameNetwork}=await import('../dist/main/network.js');
+  const nets=[new GameNetwork(),new GameNetwork(),new GameNetwork()];const [host,leaver,late]=nets;let starts=0;
+  try{
+    // The leaver's ROOM_LEAVE is lost, so the host still lists them when the next player arrives.
+    nets.forEach((n,i)=>{n.replyPort=44000+i;n.broadcastRoomOpen=()=>{};n.sendDirect=(msg,target)=>{const to=nets.find(p=>p.replyPort===target.replyPort);if(to&&msg.t!=='ROOM_LEAVE')to.handleMessage(Buffer.from(JSON.stringify(msg)),{address:'127.0.0.1',port:n.replyPort});};});
+    leaver.on('room-started',()=>starts++);
+    host.createRoom('fishing',6);host.startRoom();const roomId=host.hostedRoom.id;
+    const join=g=>(g.pendingJoinId=roomId,host.handleMessage(Buffer.from(JSON.stringify({t:'ROOM_JOIN',id:g.myId,name:'친구',roomId,replyPort:g.replyPort})),{address:'127.0.0.1',port:g.replyPort}));
+    join(leaver);assert.equal(starts,1);
+    leaver.leaveRoom();join(late);
+    assert.equal(starts,1,'no second start');assert.equal(leaver.joinedRoom,null);
+    // A roster for a room I am in, but that no longer lists me, is ignored as well.
+    late.handleMessage(Buffer.from(JSON.stringify({t:'ROOM_ROSTER',roomId,name:'x',gameId:'fishing',hostId:host.myId,capacity:6,members:[{id:host.myId,name:'h'}],status:'playing'})),{address:'127.0.0.1',port:44000});
+    assert.equal(late.joinedRoom.id,roomId);
+  }finally{for(const n of nets)n.stop();}
+});
 test('rooms of games without handoff still close when the host leaves',async()=>{
   const {GameNetwork}=await import('../dist/main/network.js');
   const nets=[new GameNetwork(),new GameNetwork()];const [host,guest]=nets;const lost=[];
   try{
     nets.forEach((n,i)=>{n.replyPort=42000+i;n.broadcastRoomOpen=()=>{};n.sendDirect=(msg,target)=>{const to=nets.find(p=>p.replyPort===target.replyPort);if(to)to.handleMessage(Buffer.from(JSON.stringify(msg)),{address:'127.0.0.1',port:n.replyPort});};n.on('room-lost',r=>lost.push(r));});
     host.createRoom('cell',6);host.startRoom();
+    guest.pendingJoinId=host.hostedRoom.id;
     host.handleMessage(Buffer.from(JSON.stringify({t:'ROOM_JOIN',id:guest.myId,name:'친구',roomId:host.hostedRoom.id,replyPort:guest.replyPort})),{address:'127.0.0.1',port:guest.replyPort});
     host.leaveRoom();assert.deepEqual(lost,['closed']);assert.equal(guest.hostedRoom,null);
   }finally{for(const n of nets)n.stop();}

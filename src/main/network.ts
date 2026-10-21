@@ -175,6 +175,8 @@ export class GameNetwork extends EventEmitter {
   private hostedRoom: HostedRoom | null = null;
   /** Set only while I've joined someone else's room. */
   private joinedRoom: JoinedRoom | null = null;
+  /** The room I asked to join and am waiting to hear back from; rosters for any other room I'm not in are stale. */
+  private pendingJoinId: string | null = null;
   private openRooms = new Map<string, OpenRoom>();
 
   constructor(name: string = os.hostname()) {
@@ -302,6 +304,7 @@ export class GameNetwork extends EventEmitter {
     if (this.hostedRoom || this.joinedRoom) return;
     const room = this.openRooms.get(roomId);
     if (!room) return;
+    this.pendingJoinId = roomId;
     this.sendDirect(
       { t: 'ROOM_JOIN', id: this.myId, name: this.myName, roomId, replyPort: this.replyPort },
       { address: room.hostAddress, replyPort: room.hostReplyPort }
@@ -310,6 +313,7 @@ export class GameNetwork extends EventEmitter {
 
   /** Leaves whatever room I'm in — as host, hands a playing handoff room to the next member, otherwise closes it for everyone. */
   leaveRoom(): void {
+    this.pendingJoinId = null;
     if (this.hostedRoom) {
       const room = this.hostedRoom;
       this.hostedRoom = null;
@@ -529,6 +533,10 @@ export class GameNetwork extends EventEmitter {
 
       case 'ROOM_ROSTER': {
         if (this.hostedRoom) return;
+        // A roster still in flight after I left (or one that no longer lists me) must not pull me back into the room.
+        if (this.joinedRoom?.id !== msg.roomId && this.pendingJoinId !== msg.roomId) return;
+        if (!Array.isArray(msg.members) || !msg.members.some((m) => m.id === this.myId)) return;
+        this.pendingJoinId = null;
         const wasPlaying = this.joinedRoom?.id === msg.roomId && this.joinedRoom.status === 'playing';
         this.joinedRoom = {
           id: msg.roomId,
