@@ -3,6 +3,7 @@ import { RARITIES, SPECIES_BY_ID } from '../../../shared/fishing.js';
 import { beginSketchFrame, jitter, roughLimb, roughStroke } from '../../lib/sketch.js';
 import type { Viewport } from '../types.js';
 import { WIDTHS, CAST_SECONDS, EMOTE_TICKS, SHOW_TICKS } from './engine.js';
+import { LEGEND_ART } from './legend-art.js';
 import type { FishingWorld, Fisher } from './engine.js';
 const INK = '#14181a', BROWN = '#7a5433', HALO = 'rgba(255,255,255,.94)';
 export const EMOTES = ['안녕','좋아요','하트','놀람','축하','아쉬움','별로','눈웃음'];
@@ -12,9 +13,11 @@ function line(c: CanvasRenderingContext2D, x: number,y: number,a: number,b: numb
 function label(c: CanvasRenderingContext2D, text: string, x: number,y: number, size=9,color=INK): void {
   c.font = `${size}px Menlo, sans-serif`; c.textAlign = 'center'; c.lineWidth = 3; c.strokeStyle = HALO; c.strokeText(text,x,y); c.fillStyle = color; c.fillText(text,x,y);
 }
-/** Data-driven silhouettes: body family, proportions, fins, tail, markings and fantasy appendages. */
+/** Data-driven silhouettes: body family, proportions, fins, tail, markings and fantasy appendages. 전설/신화 use bespoke art. */
 export function drawFish(c: CanvasRenderingContext2D, s: Species, x: number,y: number, size: number, ink = INK): void {
   c.save(); c.translate(x,y); c.scale(size/60,size/60); c.lineJoin = c.lineCap = 'round';
+  const art = LEGEND_ART[s.id];
+  if (art) { art(c,ink); c.restore(); return; }
   const f = s.feature, h = s.shape === 'eel' ? 5 : s.shape === 'slim' ? 9 : s.shape === 'flat' ? 17 : 14 + f%4;
   const body = new Path2D();
   if (s.shape === 'eel') {
@@ -274,7 +277,7 @@ function fitLabel(c: CanvasRenderingContext2D, text: string, x: number, y: numbe
 /**
  * Trophy card lifted over the angler's head: it pops out of the hat, the fish flaps on it, and it floats off at the end.
  * A rarity ribbon heads the card so onlookers can tell a 고급 catch at a glance; rarer fish also get louder,
- * with sparkles from 고급 and a turning sunburst from 영웅. Origin is the tail tip just above the hat.
+ * with sparkles from 고급 and a turning sunburst from 에픽. Origin is the tail tip just above the hat.
  */
 function bragCard(c: CanvasRenderingContext2D, fish: FishCatch, x: number, y: number, age: number, ink: string): void {
   const s = SPECIES_BY_ID.get(fish.speciesId); if (!s) return;

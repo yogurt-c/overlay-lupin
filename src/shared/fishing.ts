@@ -1,5 +1,5 @@
 /** Shared catalog and save contract. Species IDs are permanent across releases. */
-export const RARITIES = ['일반', '고급', '희귀', '영웅', '전설', '신화'] as const;
+export const RARITIES = ['일반', '고급', '희귀', '에픽', '전설', '신화'] as const;
 export type FishShape = 'round' | 'slim' | 'eel' | 'flat' | 'puffer' | 'angler' | 'dragon';
 export interface Species {
   id: string; name: string; artVariant: number; rarity: number; minMm: number; maxMm: number;
