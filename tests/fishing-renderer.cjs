@@ -60,6 +60,15 @@ app.whenReady().then(async()=>{
     for(let i=0;i<20;i++)testMatch.step({});testMatch.render(document.getElementById('field').getContext('2d'),{width:320,height:280,pixelRatio:devicePixelRatio});`);
   assert.equal(await js(`testMatch.engine.world.players[0].shown?.id`),store.read().catches[0].id);
   await pause(60);fs.writeFileSync(path.join(root,'output/fishing/brag.png'),(await win.webContents.capturePage()).toPNG());
+  // C toggles the collection; the emote bar holds all eight emotes inside the window and 8 picks the last one.
+  await js(`testMatch.step({collection:true});`);assert.equal(await js(`testMatch.ui.opened`),true,'C opens the collection');
+  await js(`testMatch.step({collection:true});`);assert.equal(await js(`testMatch.ui.opened`),false,'C closes the collection');
+  await js(`{for(let i=0;i<310;i++)testMatch.step({});const w=testMatch.engine.world;w.players[1].emoji=6;w.players[1].emojiUntil=w.tick+100;w.players[3].emoji=7;w.players[3].emojiUntil=w.tick+100;testMatch.step({emotes:true});
+    for(let i=0;i<12;i++)testMatch.step({});testMatch.render(document.getElementById('field').getContext('2d'),{width:320,height:280,pixelRatio:devicePixelRatio});}`);
+  assert.equal(await js(`document.querySelectorAll('.fish-emote').length`),8);
+  assert.ok(await js(`(()=>{const r=document.querySelector('.fish-emotes').getBoundingClientRect();return r.left>=0&&r.right<=320;})()`),'emote bar fits the window');
+  await pause(60);fs.writeFileSync(path.join(root,'output/fishing/emotes.png'),(await win.webContents.capturePage()).toPNG());
+  await js(`testMatch.step({emoji:7});testMatch.step({});`);assert.equal(await js(`testMatch.engine.world.players[0].emoji`),7);
   await js(`testMatch.roomClosed();testMatch.continueSolo();testMatch.ui.caught(testMatch.save.catches[0],'수집함에 저장했어요.');`);
   await js(`testMatch.step({cast:true});`);
   assert.equal(await js(`testMatch.ui.opened`),true,'a fresh success popup ignores Space for a moment');

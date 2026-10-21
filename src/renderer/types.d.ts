@@ -39,6 +39,8 @@ export interface OverlayLupinApi {
   /** Fires exactly once per room per client: on explicit start, or immediately on joining a room already playing. */
   onRoomStarted(cb: (isHost: boolean, gameId: string) => void): void;
   onRoomLost(cb: (reason: 'closed' | 'left' | 'timeout') => void): void;
+  /** The host left and handed its playing room to me — I'm the host now. */
+  onRoomPromoted(cb: (formerHostId: string) => void): void;
   /** Host-only: another member's own packet, tagged with who sent it. */
   onRoomMemberState(cb: (fromId: string, payload: unknown) => void): void;
   /** Member-only: the host's authoritative world snapshot. */

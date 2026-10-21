@@ -5,7 +5,7 @@ import type { Viewport } from '../types.js';
 import { WIDTHS, CAST_SECONDS, EMOTE_TICKS, SHOW_TICKS } from './engine.js';
 import type { FishingWorld, Fisher } from './engine.js';
 const INK = '#14181a', BROWN = '#7a5433', HALO = 'rgba(255,255,255,.94)';
-export const EMOTES = ['안녕','좋아요','하트','놀람','축하','아쉬움'];
+export const EMOTES = ['안녕','좋아요','하트','놀람','축하','아쉬움','별로','눈웃음'];
 /** Stamp inks per rarity, muted so they sit on the same paper as the sketch scene. */
 export const RARITY_INK = ['#7d857b','#4f8a5b','#3d74a8','#8a5bb0','#c08416','#c4473a'];
 function line(c: CanvasRenderingContext2D, x: number,y: number,a: number,b: number, color = INK, w = 1.2): void { roughStroke(c,x,y,a,b,w,color,HALO); }
@@ -49,7 +49,7 @@ export function drawFish(c: CanvasRenderingContext2D, s: Species, x: number,y: n
 }
 type Face = 'calm'|'focus'|'wow'|'strain'|'joy'|'sad';
 /** The angler's face echoes the emote while it is not busy fighting a fish. */
-const EMOTE_FACES: Face[] = ['joy','joy','joy','wow','joy','sad'];
+const EMOTE_FACES: Face[] = ['joy','joy','joy','wow','joy','sad','sad','joy'];
 /** One held keyframe, hip-space (+x toward the water). Poses snap between keys like the fencers instead of tweening. */
 interface Pose { lean: number; crouch: number; rod: number; bend: number; grip: [number,number]; face: Face; arc?: boolean }
 const HAT = '#ecdcbf', ROD = 30, FLOAT_DX = 28, WATER_Y = 165, RED = '#c4473a', BLUSH = 'rgba(232,120,110,.5)';
@@ -231,6 +231,19 @@ export function drawEmoteIcon(c: CanvasRenderingContext2D, kind: number, age: nu
         c.save(); c.translate(-1+Math.cos(a)*r,1+Math.sin(a)*r); c.rotate(i+age*.1); c.fillRect(-1.3,-.7,2.6,1.4); c.restore(); });
       break;
     }
+    case 6: { // thumbs down that drops and stays down
+      c.translate(0,Math.min(age,6)/3); c.scale(1,-1); c.beginPath(); c.roundRect(-5,-1,9,8,2.5); c.fill(); c.stroke();
+      c.beginPath(); c.moveTo(-3,-1); c.lineTo(-2.5,-7.5); c.quadraticCurveTo(-.5,-8.5,.5,-6.5); c.lineTo(.5,-1); c.fill(); c.stroke();
+      c.lineWidth = .9; for (const ly of [2,4.5]) { c.beginPath(); c.moveTo(4,ly); c.lineTo(1,ly); c.stroke(); }
+      c.fillStyle = ink; c.fillRect(-7.5,-.5,2,8);
+      break;
+    }
+    case 7: { // ^^ smiling eyes that bob with blushing cheeks
+      c.translate(0,beat ? -1 : 0); c.lineWidth = 2;
+      for (const ex of [-4.5,4.5]) { c.beginPath(); c.moveTo(ex-3.2,1.5); c.lineTo(ex,-2.5); c.lineTo(ex+3.2,1.5); c.stroke(); }
+      c.fillStyle = BLUSH; for (const ex of [-6.5,6.5]) { c.beginPath(); c.ellipse(ex,5,2.2,1.2,0,0,Math.PI*2); c.fill(); }
+      break;
+    }
     default: { // drooping tear
       const drip = (age%40)/40; c.beginPath(); c.moveTo(0,-7); c.bezierCurveTo(5,0,5,6,0,6); c.bezierCurveTo(-5,6,-5,0,0,-7); c.closePath();
       c.fillStyle = BLUE; c.fill(); c.stroke(); c.fillStyle = '#fffefa'; c.beginPath(); c.ellipse(-1.5,1.5,1,1.6,0,0,Math.PI*2); c.fill();
@@ -319,6 +332,6 @@ export function drawFishing(c:CanvasRenderingContext2D,view:Viewport,w:FishingWo
     label(c,`${Math.round(p.progress)}%`,160,190,8);
   }else label(c,p?.phase==='casting'?'찌를 던지는 중…':p?.phase==='waiting'?'찌를 바라보는 중…':p?.phase==='bite'?'입질! Space로 챔질':p?.phase==='result'?'잡았어요! 수집함에 저장 중…':p?.notice||'Space로 낚싯대를 던져 보세요',160,202,9);
   label(c,'Space 던지기·챔질 · 누르기/떼기로 당기기',150,250,8);
-  label(c,'E 감정표현 · Esc 쉬기',150,265,8);
+  label(c,'E 감정표현 · C 수집함 · Esc 쉬기',150,265,8);
   c.restore();
 }

@@ -117,7 +117,7 @@ export class FishingUi {
     if(!document.getElementById('fishing-style')){const style=el('style');style.id='fishing-style';style.textContent=CSS;document.head.append(style);}
     this.root=el('div');this.root.id='fishing-ui';
     const top=el('div',undefined,'fish-tools fish-top');
-    top.append(button('수집함',()=>actions.open()));
+    const collection=button('수집함',()=>actions.open());collection.title='수집함 (C)';top.append(collection);
     this.panel=el('div',undefined,'fish-panel');this.panel.hidden=true;
     this.toast=el('div',undefined,'fish-toast');this.toast.hidden=true;this.toast.setAttribute('role','status');
     this.emotes=el('div',undefined,'fish-tools fish-emotes');this.emotes.hidden=true;
@@ -137,6 +137,7 @@ export class FishingUi {
     b.append(art,el('kbd',String(i+1)));return b;
   }
   get opened():boolean{return !this.panel.hidden;}
+  get showingResult():boolean{return this.opened&&!!this.result;}
   get emotesOpen():boolean{return !this.emotes.hidden;}
   get hideEmotes():boolean{return this.mute;}
   toggleEmotes():void{this.emotes.hidden=!this.emotes.hidden;}
@@ -257,7 +258,7 @@ export class FishingUi {
     sheet.append(plate,info);this.panel.append(sheet);
     if(known){
       const facts=el('dl',undefined,'fish-facts');
-      for(const [k,v] of [['누적',`${records.length}마리`],['최대',cm(records.reduce((n,c)=>Math.max(n,c.sizeMm),0))],['첫 발견',records.map(c=>c.caughtAt).sort()[0].slice(0,10)]]){const d=el('div');d.append(el('dt',k),el('dd',v));facts.append(d);}
+      const best=el('div');best.append(el('dt','최대'),el('dd',cm(records.reduce((n,c)=>Math.max(n,c.sizeMm),0))));facts.append(best);
       this.panel.append(facts);
     }
     const actions=el('div',undefined,'fish-actions');

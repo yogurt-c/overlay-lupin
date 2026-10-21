@@ -50,6 +50,8 @@ export interface GameMatch {
   applyOpponentPacket(packet: unknown): void;
   /** Room games only: another member disconnected — drop their entity instead of leaving a frozen ghost. */
   removePeer?(peerId: string): void;
+  /** Room games that outlive their host: the host left and this client now runs the simulation. */
+  promoteToHost?(formerHostId: string): void;
   /** Initial room roster, before any member input packets arrive. */
   setMembers?(members: { id: string; name: string }[]): void;
 }

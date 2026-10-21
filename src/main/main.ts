@@ -81,6 +81,7 @@ app.whenReady().then(() => {
   net.on('room-roster', (roster) => win?.webContents.send('net:room-roster', roster));
   net.on('room-started', (isHost, gameId) => win?.webContents.send('net:room-started', { isHost, gameId }));
   net.on('room-lost', (reason) => win?.webContents.send('net:room-lost', reason));
+  net.on('room-promoted', (formerHostId) => win?.webContents.send('net:room-promoted', formerHostId));
   net.on('room-member-state', (fromId, payload) => win?.webContents.send('net:room-member-state', { fromId, payload }));
   net.on('room-world', (payload) => win?.webContents.send('net:room-world', payload));
   net.on('room-member-left', (peerId) => win?.webContents.send('net:room-member-left', peerId));

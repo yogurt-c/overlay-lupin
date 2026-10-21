@@ -57,6 +57,9 @@ contextBridge.exposeInMainWorld('overlayLupin', {
   onRoomLost: (cb: (reason: 'closed' | 'left' | 'timeout') => void) => {
     ipcRenderer.on('net:room-lost', (_e, reason) => cb(reason));
   },
+  onRoomPromoted: (cb: (formerHostId: string) => void) => {
+    ipcRenderer.on('net:room-promoted', (_e, formerHostId) => cb(formerHostId));
+  },
   onRoomMemberState: (cb: (fromId: string, payload: unknown) => void) => {
     ipcRenderer.on('net:room-member-state', (_e, data) => cb(data.fromId, data.payload));
   },

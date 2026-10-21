@@ -69,10 +69,17 @@ export class FishingMatch implements GameMatch {
   private open():void{const phase=this.me()?.phase;if(this.pending){void this.persist();return;}if(phase&&['casting','waiting','bite','fight'].includes(phase))this.ui?.confirmOpen();else this.ui?.open();}
   setMembers(members:{id:string;name:string}[]):void{if(this.engine)for(const m of members)this.engine.ensure(m.id,m.name);}
   removePeer(id:string):void{this.engine?.remove(id);}
+  /** Continue the room from the last snapshot, so everyone keeps their seat and any fish on the line. */
+  promoteToHost(formerHostId:string):void{
+    if(this.engine||this.closed)return;
+    const engine=new FishingEngine();engine.world=structuredClone(this.world);engine.remove(formerHostId);engine.ensure(this.myId,this.myName);
+    this.engine=engine;this.isHost=true;this.ui?.message('방장이 나가서 내가 낚시방을 이어받았어요');
+  }
   step(raw:unknown):void{
     if(this.disposed)return;const i=raw as FishingInput|undefined;
     if(i?.cancel){this.held=false;if(this.ui?.opened&&!this.pending)this.ui.close();this.command('cancel');}
     if(i?.emotes)this.ui?.toggleEmotes();if(i&&i.emoji>=0&&this.ui?.emotesOpen){this.command('emoji',{value:i.emoji});this.ui.toggleEmotes();}
+    if(i?.collection&&!this.ui?.showingResult){if(this.ui?.opened)this.ui.close();else this.open();}
     if(i?.brag){const fish=this.ui?.resultBrag();if(fish)this.show(fish);}
     if(i?.cast&&!this.ui?.resultSpace())this.cast();this.held=!this.ui?.opened&&!this.closed&&!!i?.held;
     const known=this.known;
@@ -113,5 +120,5 @@ export class FishingMatch implements GameMatch {
   canLeave():boolean{if(this.pending||this.saving){this.ui?.message('잡은 물고기를 저장하는 중입니다. 저장 완료 후 나가 주세요.');return false;}return true;}
   dispose():void{this.disposed=true;this.ui?.dispose();}
 }
-export const fishingModule:GameModule={id:'fishing',label:'낚시',hint:'Space 던지기·챔질 · 누르면 오른쪽, 떼면 왼쪽 · E 감정표현 · B 방금 잡은 물고기 자랑 · 최대 6명 · 잡은 물고기는 이 기기에 영구 저장',matching:'room',roomCapacity:6,
+export const fishingModule:GameModule={id:'fishing',label:'낚시',hint:'Space 던지기·챔질 · 누르면 오른쪽, 떼면 왼쪽 · E 감정표현 · C 수집함 · B 방금 잡은 물고기 자랑 · 최대 6명 · 잡은 물고기는 이 기기에 영구 저장',matching:'room',roomCapacity:6,
   createMatch:(isHost,id,name)=>new FishingMatch(isHost,id,name),createSoloMatch:(id,name)=>new FishingMatch(true,id,name,true),createInputSource};

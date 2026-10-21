@@ -692,6 +692,8 @@ window.overlayLupin.onRoomLost(() => {
   }
 });
 
+window.overlayLupin.onRoomPromoted((formerHostId) => activeMatch?.promoteToHost?.(formerHostId));
+
 window.overlayLupin.onRoomMemberState((fromId, payload) => {
   activeMatch?.applyOpponentPacket({ ...(payload as Record<string, unknown>), from: fromId });
 });

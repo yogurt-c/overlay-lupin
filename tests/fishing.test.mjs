@@ -93,6 +93,52 @@ test('real room protocol sends mid-session rosters and retains neighboring seats
     assert.equal(hm.buildOutgoingPacket().world.players.find(p=>p.id===guests[4].myId).seat,lastSeat);
   }finally{for(const n of nets)n.stop();}
 });
+test('host leaving hands the playing room to the earliest member, who keeps it open even alone',async()=>{
+  const {GameNetwork}=await import('../dist/main/network.js');
+  const nets=Array.from({length:3},()=>new GameNetwork());const [host,heir,friend]=nets;const matches=new Map(),lost=[],started=[];let roomId='';
+  try{
+    for(let i=0;i<nets.length;i++){
+      const n=nets[i];n.replyPort=41000+i;n.broadcastRoomOpen=()=>{};
+      n.sendDirect=(msg,target)=>{const to=nets.find(p=>p.replyPort===target.replyPort&&!p.left);if(to)to.handleMessage(Buffer.from(JSON.stringify(msg)),{address:'127.0.0.1',port:n.replyPort});};
+      n.on('room-started',(isHost)=>{started.push(n.myId);const m=new FishingMatch(isHost,n.myId,'player');matches.set(n.myId,m);if(isHost)m.setMembers([...n.hostedRoom.members.values()]);});
+      n.on('room-roster',r=>{roomId=r.id;matches.get(n.myId)?.setMembers(r.members);});
+      n.on('room-member-state',(from,payload)=>matches.get(n.myId)?.applyOpponentPacket({...payload,from}));
+      n.on('room-world',payload=>matches.get(n.myId)?.applyOpponentPacket(payload));
+      n.on('room-member-left',id=>matches.get(n.myId)?.removePeer(id));
+      n.on('room-promoted',id=>matches.get(n.myId)?.promoteToHost(id));
+      n.on('room-lost',()=>lost.push(n.myId));
+    }
+    host.createRoom('fishing',6);host.startRoom();const hm=matches.get(host.myId);
+    const join=g=>host.handleMessage(Buffer.from(JSON.stringify({t:'ROOM_JOIN',id:g.myId,name:'친구',roomId,replyPort:g.replyPort})),{address:'127.0.0.1',port:g.replyPort});
+    join(heir);join(friend);hm.step({});host.sendRoomState(hm.buildOutgoingPacket());
+    const friendSeat=hm.buildOutgoingPacket().world.players.find(p=>p.id===friend.myId).seat;
+    // A forged handoff from someone other than the host is ignored.
+    friend.handleMessage(Buffer.from(JSON.stringify({t:'ROOM_HANDOFF',roomId,gameId:'fishing',capacity:6,formerHostId:host.myId,hostId:friend.myId,members:[]})),{address:'127.0.0.1',port:49999});
+    assert.equal(friend.joinedRoom.hostId,host.myId);
+    host.leaveRoom();host.left=true;
+    assert.deepEqual(lost,[]);assert.equal(started.length,3,'nobody restarts the match');
+    assert.equal(heir.hostedRoom.id,roomId);assert.equal(friend.joinedRoom.hostId,heir.myId);
+    const hm2=matches.get(heir.myId);hm2.step({});
+    const world=hm2.buildOutgoingPacket().world;
+    assert.deepEqual(world.players.map(p=>p.id).sort(),[heir.myId,friend.myId].sort());
+    assert.equal(world.players.find(p=>p.id===friend.myId).seat,friendSeat,'seats carry over');
+    friend.sendRoomState({kind:'fishing-input',name:'친구',held:false,commands:[{seq:1,kind:'cast'}]});hm2.step({});
+    assert.equal(hm2.buildOutgoingPacket().world.players.find(p=>p.id===friend.myId).phase,'casting','inputs reach the new host');
+    friend.leaveRoom();friend.left=true;
+    assert.equal(heir.hostedRoom.members.size,1);assert.deepEqual(lost,[],'the room stays open with one player');
+    assert.equal(hm2.buildOutgoingPacket().world.players.length,1);
+  }finally{for(const n of nets)n.stop();}
+});
+test('rooms of games without handoff still close when the host leaves',async()=>{
+  const {GameNetwork}=await import('../dist/main/network.js');
+  const nets=[new GameNetwork(),new GameNetwork()];const [host,guest]=nets;const lost=[];
+  try{
+    nets.forEach((n,i)=>{n.replyPort=42000+i;n.broadcastRoomOpen=()=>{};n.sendDirect=(msg,target)=>{const to=nets.find(p=>p.replyPort===target.replyPort);if(to)to.handleMessage(Buffer.from(JSON.stringify(msg)),{address:'127.0.0.1',port:n.replyPort});};n.on('room-lost',r=>lost.push(r));});
+    host.createRoom('cell',6);host.startRoom();
+    host.handleMessage(Buffer.from(JSON.stringify({t:'ROOM_JOIN',id:guest.myId,name:'친구',roomId:host.hostedRoom.id,replyPort:guest.replyPort})),{address:'127.0.0.1',port:guest.replyPort});
+    host.leaveRoom();assert.deepEqual(lost,['closed']);assert.equal(guest.hostedRoom,null);
+  }finally{for(const n of nets)n.stop();}
+});
 
 test('10,000 saved fish remain readable and no import can duplicate catches',()=>storeTest(s=>{
   const catches=Array.from({length:10000},(_,i)=>fish('load-'+i));const data={version:1,profileId:'large',catches};
