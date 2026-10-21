@@ -1,4 +1,4 @@
-import { RARITIES, RARITY_SIGNS, SPECIES, SPECIES_BY_ID } from '../../../shared/fishing.js';
+import { RARITIES, SPECIES, SPECIES_BY_ID } from '../../../shared/fishing.js';
 import type { FishingSave, FishCatch, Species } from '../../../shared/fishing.js';
 import { drawEmoteIcon, drawFish, EMOTES, RARITY_INK } from './draw.js';
 export interface FishingUiActions {
@@ -57,7 +57,6 @@ const CSS = `
 #fishing-ui .fish-line span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #fishing-ui .fish-name{font-weight:700;font-size:9.5px;min-width:0}
 #fishing-ui .fish-meta{font-size:8px;color:var(--muted);margin-left:auto;flex:none}
-#fishing-ui .fish-card .fish-sign{position:absolute;top:2px;left:0;font-size:8px;font-weight:700;color:var(--rc)}
 #fishing-ui .fish-card .fish-star{position:absolute;top:1px;right:0;color:var(--accent)}
 #fishing-ui .fish-card.fish-unknown{border-style:dashed;border-top-style:solid}
 #fishing-ui .fish-card.fish-unknown .fish-name{color:var(--muted);font-weight:400}
@@ -173,7 +172,7 @@ export class FishingUi {
     this.close();return fish;
   }
   private row(...children:HTMLElement[]):HTMLDivElement{const n=el('div',undefined,'fish-actions');n.style.justifyContent='center';n.append(...children);return n;}
-  private chip(s:Species):HTMLSpanElement{const n=el('span',`${RARITY_SIGNS[s.rarity]} ${RARITIES[s.rarity]}`,'fish-chip');n.style.color=RARITY_INK[s.rarity];return n;}
+  private chip(s:Species):HTMLSpanElement{const n=el('span',RARITIES[s.rarity],'fish-chip');n.style.color=RARITY_INK[s.rarity];return n;}
   /** Undiscovered species render as a flat silhouette so the catalog teases the shape without spoiling it. */
   private art(sid:string,known=true,height=90,size=100):HTMLCanvasElement{
     const c=el('canvas');c.width=160;c.height=height;const s=SPECIES_BY_ID.get(sid);if(!s)return c;
@@ -208,7 +207,7 @@ export class FishingUi {
     if(this.selected){this.detail(this.selected);return;}
     const controls=el('div',undefined,'fish-filters');const search=el('input');search.placeholder='이름 검색';search.setAttribute('aria-label','물고기 이름 검색');search.value=this.query;
     search.oninput=()=>{this.query=search.value;this.page=0;this.renderRows();};controls.append(search);
-    const rarity=el('select');rarity.setAttribute('aria-label','등급 필터');['전체',...RARITIES].forEach((t,i)=>{const o=el('option',i?`${RARITY_SIGNS[i-1]} ${t}`:t);o.value=String(i-1);rarity.append(o);});rarity.value=String(this.rarity);rarity.onchange=()=>{this.rarity=Number(rarity.value);this.page=0;this.renderRows();};controls.append(rarity);
+    const rarity=el('select');rarity.setAttribute('aria-label','등급 필터');['전체',...RARITIES].forEach((t,i)=>{const o=el('option',t);o.value=String(i-1);rarity.append(o);});rarity.value=String(this.rarity);rarity.onchange=()=>{this.rarity=Number(rarity.value);this.page=0;this.renderRows();};controls.append(rarity);
     const sort=el('select');sort.setAttribute('aria-label','정렬');[['recent','최근'],['size','크기'],['rarity','등급'],['name','이름']].forEach(([v,t])=>{const o=el('option',t);o.value=v;sort.append(o);});sort.value=this.sort;sort.onchange=()=>{this.sort=sort.value;this.page=0;this.renderRows();};controls.append(sort);
     const fav=button(this.favorites?'★':'☆',()=>{this.favorites=!this.favorites;this.page=0;this.renderCollection();});fav.title='즐겨찾기만 보기';fav.setAttribute('aria-label','즐겨찾기만 보기');fav.setAttribute('aria-pressed',String(this.favorites));
     controls.append(fav);this.panel.append(controls);
@@ -238,7 +237,7 @@ export class FishingUi {
     if(!known)card.classList.add('fish-unknown');
     const best=records?.reduce((n,c)=>Math.max(n,c.sizeMm),0)??0;
     const text=el('div',undefined,'fish-line');text.append(el('span',known?s.name:'미발견','fish-name'),el('span',fish?cm(fish.sizeMm):known?cm(best):specimenNo(s),'fish-meta'));
-    card.append(this.art(s.id,known,64,78),el('span',RARITY_SIGNS[s.rarity],'fish-sign'),text);
+    card.append(this.art(s.id,known,64,78),text);
     if(fish?.favorite)card.append(el('span','★','fish-star'));
     card.setAttribute('aria-label',`${known?s.name:'미발견 물고기'}, ${RARITIES[s.rarity]}${fish?`, ${cm(fish.sizeMm)}`:''}`);
     return card;

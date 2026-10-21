@@ -1,5 +1,5 @@
 import type { FishCatch, Species } from '../../../shared/fishing.js';
-import { RARITIES, RARITY_SIGNS, SPECIES_BY_ID } from '../../../shared/fishing.js';
+import { RARITIES, SPECIES_BY_ID } from '../../../shared/fishing.js';
 import { beginSketchFrame, jitter, roughLimb, roughStroke } from '../../lib/sketch.js';
 import type { Viewport } from '../types.js';
 import { WIDTHS, CAST_SECONDS, EMOTE_TICKS, SHOW_TICKS } from './engine.js';
@@ -282,7 +282,7 @@ function bragCard(c: CanvasRenderingContext2D, fish: FishCatch, x: number, y: nu
   c.fillStyle = '#fffefa'; c.fillRect(-3.3,-9.5,6.6,1.6);
   // The fish flaps on the card in held two-frame beats, like the hooked catch on the line.
   c.save(); c.translate(0,cy); c.rotate(Math.floor(age/9)%2 ? .12 : -.08); drawFish(c,s,0,0,27,ink); c.restore();
-  fitLabel(c,`${RARITY_SIGNS[s.rarity]} ${RARITIES[s.rarity]}`,0,top+6.6,38,'bold 6px Menlo, sans-serif','#fffefa');
+  fitLabel(c,RARITIES[s.rarity],0,top+6.6,38,'bold 6px Menlo, sans-serif','#fffefa');
   fitLabel(c,s.name,0,-40.5,38,'bold 6px Menlo, sans-serif',ink);
   fitLabel(c,`${(fish.sizeMm/10).toFixed(1)}cm`,0,-10.5,38,'bold 7px Menlo, sans-serif',rc);
   if (fish.sizeMm >= s.minMm+.95*(s.maxMm-s.minMm)) {
