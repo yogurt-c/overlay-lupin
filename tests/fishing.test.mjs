@@ -8,6 +8,7 @@ import { SPECIES, isFishingSave } from '../dist/shared/fishing.js';
 import { FishingEngine, WIDTHS, pickSpecies } from '../dist/renderer/games/fishing/engine.js';
 import { FishingMatch, validWorld } from '../dist/renderer/games/fishing/module.js';
 import { LEGEND_ART } from '../dist/renderer/games/fishing/legend-art.js';
+import { EPIC_ART } from '../dist/renderer/games/fishing/epic-art.js';
 const { FishingStore } = createRequire(import.meta.url)('../dist/main/fishing-store.js');
 const rng = seed => () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
 const fish = (id='catch-1') => ({id,speciesId:SPECIES[0].id,sizeMm:SPECIES[0].minMm,caughtAt:'2026-10-21T00:00:00.000Z',favorite:false,released:false});
@@ -18,9 +19,10 @@ test('all 120 permanent species share one fishing pool with planned rarity distr
   assert.ok(SPECIES.every(s=>s.minMm<s.maxMm));
   const random=rng(33);const ids=new Set();for(let n=0;n<100000;n++)ids.add(pickSpecies([],random).id);assert.equal(ids.size,120);
 });
-test('every 전설/신화 species has its own bespoke art and no other species does',()=>{
+test('every 에픽/전설/신화 species has its own bespoke art and no other species does',()=>{
   assert.deepEqual(Object.keys(LEGEND_ART).sort(),SPECIES.filter(s=>s.rarity>=4).map(s=>s.id).sort());
-  assert.equal(new Set(Object.values(LEGEND_ART)).size,Object.keys(LEGEND_ART).length);
+  assert.deepEqual(Object.keys(EPIC_ART).sort(),SPECIES.filter(s=>s.rarity===3).map(s=>s.id).sort());
+  const arts=[...Object.values(LEGEND_ART),...Object.values(EPIC_ART)];assert.equal(new Set(arts).size,arts.length);
 });
 test('fixed seats survive leaving, capacity is six and the empty seat is reused',()=>{
   const e=new FishingEngine(rng(1));for(let i=0;i<6;i++)e.ensure('p'+i,'player');assert.equal(e.ensure('overflow','no'),undefined);

@@ -4,6 +4,7 @@ import { beginSketchFrame, jitter, roughLimb, roughStroke } from '../../lib/sket
 import type { Viewport } from '../types.js';
 import { WIDTHS, CAST_SECONDS, EMOTE_TICKS, SHOW_TICKS } from './engine.js';
 import { LEGEND_ART } from './legend-art.js';
+import { EPIC_ART } from './epic-art.js';
 import type { FishingWorld, Fisher } from './engine.js';
 const INK = '#14181a', BROWN = '#7a5433', HALO = 'rgba(255,255,255,.94)';
 export const EMOTES = ['안녕','좋아요','하트','놀람','축하','아쉬움','별로','눈웃음'];
@@ -13,10 +14,10 @@ function line(c: CanvasRenderingContext2D, x: number,y: number,a: number,b: numb
 function label(c: CanvasRenderingContext2D, text: string, x: number,y: number, size=9,color=INK): void {
   c.font = `${size}px Menlo, sans-serif`; c.textAlign = 'center'; c.lineWidth = 3; c.strokeStyle = HALO; c.strokeText(text,x,y); c.fillStyle = color; c.fillText(text,x,y);
 }
-/** Data-driven silhouettes: body family, proportions, fins, tail, markings and fantasy appendages. 전설/신화 use bespoke art. */
+/** Data-driven silhouettes: body family, proportions, fins, tail, markings and fantasy appendages. 에픽 and up use bespoke art. */
 export function drawFish(c: CanvasRenderingContext2D, s: Species, x: number,y: number, size: number, ink = INK): void {
   c.save(); c.translate(x,y); c.scale(size/60,size/60); c.lineJoin = c.lineCap = 'round';
-  const art = LEGEND_ART[s.id];
+  const art = LEGEND_ART[s.id] ?? EPIC_ART[s.id];
   if (art) { art(c,ink); c.restore(); return; }
   const f = s.feature, h = s.shape === 'eel' ? 5 : s.shape === 'slim' ? 9 : s.shape === 'flat' ? 17 : 14 + f%4;
   const body = new Path2D();

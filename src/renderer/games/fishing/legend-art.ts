@@ -2,27 +2,8 @@
  * Bespoke art for every 전설/신화 species, so no legendary fish shares a silhouette with another fish.
  * Same space as drawFish: ~60 units wide, head at -x, tail at +x, sized to fit the 5:2 collection card.
  */
-type Art = (c: CanvasRenderingContext2D, ink: string) => void;
-type Pt = [number, number];
-const PAPER = '#fffefa', HALO = 'rgba(255,255,255,.94)', TAU = Math.PI * 2;
-const GOLD = '#c08416', RED = '#c4473a', BLUE = '#3d74a8';
-function shape(c: CanvasRenderingContext2D, p: Path2D, ink: string, fill = PAPER, w = 1.5): void { c.strokeStyle = HALO; c.lineWidth = w + 3.5; c.stroke(p); c.fillStyle = fill; c.fill(p); c.strokeStyle = ink; c.lineWidth = w; c.stroke(p); }
-function stroke(c: CanvasRenderingContext2D, ink: string, w: number, draw: () => void): void { c.strokeStyle = ink; c.lineWidth = w; c.beginPath(); draw(); c.stroke(); }
-function dot(c: CanvasRenderingContext2D, x: number, y: number, r: number, fill: string): void { c.beginPath(); c.arc(x, y, r, 0, TAU); c.fillStyle = fill; c.fill(); }
-function eye(c: CanvasRenderingContext2D, x: number, y: number, ink: string, r = 1.4): void { dot(c, x, y, r + 1, PAPER); dot(c, x, y, r, ink); }
-function star(c: CanvasRenderingContext2D, x: number, y: number, s: number, fill: string): void { c.beginPath(); c.moveTo(x, y - s * 2); c.lineTo(x + s * .5, y - s * .5); c.lineTo(x + s * 2, y); c.lineTo(x + s * .5, y + s * .5); c.lineTo(x, y + s * 2); c.lineTo(x - s * .5, y + s * .5); c.lineTo(x - s * 2, y); c.lineTo(x - s * .5, y - s * .5); c.closePath(); c.fillStyle = fill; c.fill(); }
-/** Ribbon around a centreline: `at(t)` → [x,y], `width(t)` → half width. */
-function ribbon(at: (t: number) => Pt, width: (t: number) => number, n = 40): { path: Path2D; top: Pt[]; bottom: Pt[] } {
-  const top: Pt[] = [], bottom: Pt[] = [];
-  for (let i = 0; i <= n; i++) {
-    const t = i / n, [x, y] = at(t), [x2, y2] = at(Math.min(1, t + .01)), [x1, y1] = at(Math.max(0, t - .01));
-    const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1, nx = -dy / len, ny = dx / len, w = width(t);
-    top.push([x + nx * w, y + ny * w]); bottom.push([x - nx * w, y - ny * w]);
-  }
-  const p = new Path2D(); top.forEach(([x, y], i) => i ? p.lineTo(x, y) : p.moveTo(x, y)); bottom.reverse().forEach(([x, y]) => p.lineTo(x, y)); p.closePath();
-  return { path: p, top, bottom: bottom.reverse() };
-}
-function clipped(c: CanvasRenderingContext2D, p: Path2D, draw: () => void): void { c.save(); c.clip(p); draw(); c.restore(); }
+import { BLUE, GOLD, PAPER, RED, TAU, clipped, dot, eye, ribbon, shape, star, stroke } from './art-kit.js';
+import type { Art, Pt } from './art-kit.js';
 
 const D: Record<string, Art> = {};
 
