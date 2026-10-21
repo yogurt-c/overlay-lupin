@@ -2,6 +2,7 @@ import { app } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { VisibilityShortcuts } from '../shared/shortcuts.js';
+import { normalizeNickname } from '../shared/nickname.js';
 
 export const DEFAULT_VISIBILITY_SHORTCUTS: VisibilityShortcuts = {
   hide: 'PageDown',
@@ -31,4 +32,23 @@ export function loadVisibilityShortcuts(): VisibilityShortcuts {
 export function saveVisibilityShortcuts(shortcuts: VisibilityShortcuts): void {
   fs.mkdirSync(path.dirname(settingsFilePath()), { recursive: true });
   fs.writeFileSync(settingsFilePath(), JSON.stringify(shortcuts, null, 2), 'utf-8');
+}
+
+function profileFilePath(): string {
+  return path.join(app.getPath('userData'), 'profile.json');
+}
+
+/** null when no nickname was ever saved (or the file is unusable) — the caller falls back to the hostname. */
+export function loadNickname(): string | null {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(profileFilePath(), 'utf-8')) as { nickname?: unknown };
+    return normalizeNickname(parsed.nickname);
+  } catch {
+    return null;
+  }
+}
+
+export function saveNickname(nickname: string): void {
+  fs.mkdirSync(path.dirname(profileFilePath()), { recursive: true });
+  fs.writeFileSync(profileFilePath(), JSON.stringify({ nickname }, null, 2), 'utf-8');
 }
