@@ -396,11 +396,11 @@ export class GameNetwork extends EventEmitter {
     this.broadcastRoomOpen();
   }
 
-  /** Host only: tells my own renderer about the room I'm hosting (never travels over the wire). */
+  /** Host-only roster. Fishing also needs mid-session rosters to authorize and seat new arrivals. */
   private emitRoomRoster(): void {
     if (!this.hostedRoom) return;
     const room = this.hostedRoom;
-    if (room.status !== 'lobby') return;
+    if (room.status !== 'lobby' && room.gameId !== 'fishing') return;
     this.emit('room-roster', {
       id: room.id,
       name: room.name,

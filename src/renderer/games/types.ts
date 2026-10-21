@@ -35,6 +35,11 @@ export interface GameVariant {
 }
 
 export interface GameMatch {
+  /** Release game-owned DOM and event handlers when leaving. */
+  dispose?(): void;
+  canLeave?(): boolean;
+  /** Optional graceful room shutdown UI. */
+  roomClosed?(): void;
   /** Advances the simulation by exactly one fixed tick. */
   step(input: unknown): void;
   render(ctx: CanvasRenderingContext2D, viewport: Viewport, alpha: number): void;
