@@ -3,8 +3,10 @@ export const RARITIES = ['일반', '고급', '희귀', '에픽', '전설', '신�
 export type FishShape = 'round' | 'slim' | 'eel' | 'flat' | 'puffer' | 'angler' | 'dragon';
 export interface Species {
   id: string; name: string; artVariant: number; rarity: number; minMm: number; maxMm: number;
-  shape: FishShape; pattern: number; feature: number; fantasy: boolean; description: string;
+  shape: FishShape; pattern: number; feature: number; fantasy: boolean; rainOnly: boolean; description: string;
 }
+/** Species that only bite while it rains: 3 전설 (비취붕어, 폭포비룡어, 달그림자어) and 2 신화 (강의이무기, 구름비늘어). */
+export const RAIN_ONLY = new Set(['fish-0-18','fish-1-17','fish-4-18','fish-1-19','fish-4-19']);
 // Each catalog group (IDs and artwork stay stable): 6 common, 5 uncommon, 4 rare, 2 epic, 2 legendary, 1 mythic.
 // Three epic slots replace legendary/mythic slots below: 36/30/24/15/10/5.
 const names = [
@@ -60,7 +62,7 @@ export const SPECIES: Species[] = names.flatMap((list, artVariant) => list.map((
   const [minMm, maxMm] = sizeRange(name, rarity, shape, i, artVariant);
   const fantasy = artVariant >= 4 || (artVariant === 3 && i < 11) || i >= 15;
   return { id: `fish-${artVariant}-${i}`, name, artVariant, rarity, minMm, maxMm,
-    shape, pattern: (i + artVariant) % 5, feature: i, fantasy,
+    shape, pattern: (i + artVariant) % 5, feature: i, fantasy, rainOnly: RAIN_ONLY.has(`fish-${artVariant}-${i}`),
     description: `${features[i]}${fantasy ? '가 인상적인 상상 속 물고기' : '가 보이는 물고기'}. ${['느긋하게 물살을 탄다','잠깐 멈췄다가 재빨리 움직인다','짧은 돌진을 반복한다','넓게 헤엄치다 방향을 바꾼다','떨림 뒤에 크게 움직인다'][(i + artVariant) % 5]}.` };
 }));
 export const SPECIES_BY_ID = new Map(SPECIES.map(s => [s.id, s]));

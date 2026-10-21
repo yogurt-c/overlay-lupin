@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { SAVE_VERSION, SPECIES, isFishingSave } from '../dist/shared/fishing.js';
-import { FishingEngine, WIDTHS, pickSpecies } from '../dist/renderer/games/fishing/engine.js';
+import { FishingEngine, WIDTHS, pickSpecies, isRaining, RAIN_CHECK_TICKS } from '../dist/renderer/games/fishing/engine.js';
 import { FishingMatch, validWorld } from '../dist/renderer/games/fishing/module.js';
 import { LEGEND_ART } from '../dist/renderer/games/fishing/legend-art.js';
 import { EPIC_ART } from '../dist/renderer/games/fishing/epic-art.js';
@@ -17,7 +17,17 @@ test('all 120 permanent species share one fishing pool with planned rarity distr
   assert.equal(SPECIES.length,120);assert.equal(new Set(SPECIES.map(s=>s.id)).size,120);assert.equal(new Set(SPECIES.map(s=>s.name)).size,120);
   assert.deepEqual([0,1,2,3,4,5].map(r=>SPECIES.filter(s=>s.rarity===r).length),[36,30,24,15,10,5]);
   assert.ok(SPECIES.every(s=>s.minMm<s.maxMm));
-  const random=rng(33);const ids=new Set();for(let n=0;n<100000;n++)ids.add(pickSpecies([],random).id);assert.equal(ids.size,120);
+  const random=rng(33);const ids=new Set();for(let n=0;n<100000;n++)ids.add(pickSpecies([],random,n%2===0).id);assert.equal(ids.size,120);
+});
+test('three 전설 and two 신화 bite only while it rains',()=>{
+  const rain=SPECIES.filter(s=>s.rainOnly);assert.equal(rain.filter(s=>s.rarity===4).length,3);assert.equal(rain.filter(s=>s.rarity===5).length,2);assert.equal(rain.length,5);
+  const random=rng(9);for(let n=0;n<100000;n++)assert.ok(!pickSpecies([],random,false).rainOnly);
+});
+test('the host rolls showers that everyone sees and casts during rain can hook rain-only fish',()=>{
+  const e=new FishingEngine(()=>0,()=> 'id');e.ensure('me','me');
+  for(let n=0;n<RAIN_CHECK_TICKS;n++)e.step();assert.ok(isRaining(e.world));assert.ok(validWorld(e.snapshot()));
+  const until=e.world.rainUntil;while(e.world.tick<until)e.step();assert.ok(!isRaining(e.world));
+  assert.equal(validWorld({...e.snapshot(),rainUntil:undefined}),false);
 });
 test('every 에픽/전설/신화 species has its own bespoke art and no other species does',()=>{
   assert.deepEqual(Object.keys(LEGEND_ART).sort(),SPECIES.filter(s=>s.rarity>=4).map(s=>s.id).sort());

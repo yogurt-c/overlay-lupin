@@ -123,11 +123,62 @@ function drawHeadAndHat(c: CanvasRenderingContext2D, hx: number, hy: number, fac
   roughStroke(c,-r*1.15,.6,r*1.4,-.2,2,ink,HALO);
   c.restore();
 }
+/** Held keyframes as [ends at age, openness]: yank it up folded, half, pop past fully open, settle. */
+const UMBRELLA_OPEN: [number,number][] = [[6,0],[12,.45],[18,1.18],[24,.92],[Infinity,1]];
+const UMBRELLA_CLOSE: [number,number][] = [[6,.5],[12,.1],[18,0]];
+/** Each seat fumbles for its umbrella at a slightly different moment, so the row pops open in a ripple. */
+const umbrellaDelay = (seat: number) => 24 + seat*9;
+interface Sky { rainFrom: number; rainUntil: number }
+/** Openness of a seat's umbrella and how long ago it started opening, or undefined when it is put away. */
+function umbrellaOf(sky: Sky, seat: number, tick: number): { open: number; age: number } | undefined {
+  if (sky.rainUntil <= sky.rainFrom || tick < sky.rainFrom) return undefined;
+  const delay = umbrellaDelay(seat);
+  if (tick < sky.rainUntil) {
+    const age = tick-sky.rainFrom-delay;
+    return age < 0 ? undefined : { open: UMBRELLA_OPEN.find(([end]) => age < end)![1], age };
+  }
+  const key = UMBRELLA_CLOSE.find(([end]) => tick-sky.rainUntil-delay < end);
+  return key && { open: key[1], age: Infinity };
+}
+/** Umbrella tucked against the shoulder, leaning back from the water. `open` 0 is a furled spike, above 1 is the pop. */
+function drawUmbrella(c: CanvasRenderingContext2D, seat: number, open: number, age: number, ink: string): void {
+  const lift = age < 6 ? 8 : 0, spread = Math.min(1,open), w = 3+16*open, rimY = -30-12*spread, apex = -55+(open > 1 ? 3 : 0);
+  c.save(); c.translate(-9,-2+lift); c.rotate(-.12); c.lineCap = c.lineJoin = 'round';
+  roughStroke(c,0,0,0,apex,1.3,ink,HALO);
+  c.beginPath(); c.moveTo(0,0); c.lineTo(0,3); c.arc(2.5,3,2.5,Math.PI,0,true); c.strokeStyle = ink; c.lineWidth = 1.4; c.stroke();
+  const ribs = 4, xs = Array.from({length:ribs+1},(_,i) => -w+i*2*w/ribs);
+  const canopy = new Path2D(); canopy.moveTo(-w,rimY); canopy.bezierCurveTo(-w*.9,apex,w*.9,apex,w,rimY);
+  for (let i = ribs; i > 0; i--) canopy.quadraticCurveTo((xs[i]+xs[i-1])/2,rimY-3*spread,xs[i-1],rimY);
+  canopy.closePath();
+  c.lineWidth = 4.5; c.strokeStyle = HALO; c.stroke(canopy); c.fillStyle = '#fffefa'; c.fill(canopy);
+  // Every other panel is pen-hatched, leaning one way or the other per seat, so neighbours' umbrellas still differ.
+  c.save(); c.clip(canopy); c.strokeStyle = ink; c.lineWidth = .5; c.globalAlpha = .6;
+  const lean = seat%2 ? 1 : -1;
+  for (let i = seat%2; i < ribs; i += 2) {
+    c.save(); c.beginPath(); c.moveTo(0,apex); c.lineTo(xs[i],rimY+3); c.lineTo(xs[i+1],rimY+3); c.closePath(); c.clip();
+    c.beginPath(); for (let h = -30; h < 30; h += 2.4) { c.moveTo(h,rimY+4); c.lineTo(h+lean*14,apex); } c.stroke(); c.restore();
+  }
+  c.restore();
+  // Two slightly offset passes give the canopy the same doubled ink edge as the heads.
+  c.strokeStyle = ink;
+  for (let k = 0; k < 2; k++) { c.save(); c.translate(jitter(.8),jitter(.8)); c.lineWidth = k ? .9 : 1.5; c.stroke(canopy); c.restore(); }
+  c.lineWidth = .7; for (const x of xs.slice(1,-1)) { c.beginPath(); c.moveTo(0,apex+2); c.quadraticCurveTo(x*.55,(apex+rimY)/2,x,rimY); c.stroke(); }
+  c.fillStyle = ink; for (const x of xs) { c.beginPath(); c.arc(x,rimY,.9,0,Math.PI*2); c.fill(); }
+  c.beginPath(); c.moveTo(0,apex); c.lineTo(0,apex-3.5); c.lineWidth = 1.5; c.stroke(); c.beginPath(); c.arc(0,apex-4,1,0,Math.PI*2); c.fill();
+  // A furled umbrella still wears its strap.
+  if (spread < .2) { c.lineWidth = .9; c.beginPath(); c.moveTo(-3,rimY-8); c.lineTo(3,rimY-10); c.moveTo(-3,rimY-5); c.lineTo(3,rimY-7); c.stroke(); }
+  // The pop flicks a few ink drops off the rim.
+  if (age >= 12 && age < 24) {
+    const f = (age-12)/12; c.globalAlpha = 1-f*.7;
+    for (const d of [-1,1]) for (const k of [0,1]) { c.beginPath(); c.ellipse(d*(w+3+f*8+k*4),rimY+f*6-k*3,.8,1.3,d*.5,0,Math.PI*2); c.fill(); }
+  }
+  c.restore();
+}
 /** Chibi angler sitting on the dock edge, drawn in the fencers' thick-ink style. Hip sits at (x, 110). */
-function person(c: CanvasRenderingContext2D,p: Fisher,x:number, tick:number, local:boolean, hideEmotes:boolean): void {
+function person(c: CanvasRenderingContext2D,p: Fisher,x:number, tick:number, local:boolean, hideEmotes:boolean, sky:Sky): void {
   const ink=local?INK:BROWN, y=110, emoting=!hideEmotes&&p.emojiUntil>tick, showing=!!p.shown&&p.showUntil>tick, base=poseOf(p,tick);
-  const calm=!['bite','fight'].includes(p.phase);
-  const pose=emoting&&calm?{...base,face:EMOTE_FACES[p.emoji]??base.face}:showing&&calm?{...base,face:'joy' as Face}:base, {butt,mid,tip}=rodGeometry(pose);
+  const calm=!['bite','fight'].includes(p.phase), umbrella=umbrellaOf(sky,p.seat,tick), popping=!!umbrella&&umbrella.age<24;
+  const pose=emoting&&calm?{...base,face:EMOTE_FACES[p.emoji]??base.face}:showing&&calm?{...base,face:'joy' as Face}:popping&&calm?{...base,face:'wow' as Face}:base, {butt,mid,tip}=rodGeometry(pose);
   const dx=Math.cos(pose.rod), dy=Math.sin(pose.rod), shoulderX=pose.lean*.6+2, shoulderY=-9+pose.crouch*.6;
   c.save(); c.translate(x,y); c.lineCap=c.lineJoin='round';
   // Thighs rest on the planks and the shins dangle, kicking in a two-step beat rather than a smooth swing.
@@ -145,6 +196,7 @@ function person(c: CanvasRenderingContext2D,p: Fisher,x:number, tick:number, loc
   roughLimb(c,shoulderX,shoulderY,(shoulderX+pose.grip[0])/2+1,(shoulderY+pose.grip[1])/2+3,pose.grip[0],pose.grip[1],2.2,ink,HALO);
   const blink=tick%190<6;
   drawHeadAndHat(c,pose.lean*1.1+1,-21+pose.crouch,pose.face,ink,blink);
+  if(umbrella) drawUmbrella(c,p.seat,umbrella.open,umbrella.age,ink);
   c.restore();
   const tx=x+tip[0], ty=y+tip[1];
   if(p.phase==='casting') drawFlight(c,p.time/CAST_SECONDS,tx,ty,x,ink);
@@ -309,6 +361,54 @@ function bragCard(c: CanvasRenderingContext2D, fish: FishCatch, x: number, y: nu
   BRAG_SPARKS.slice(0,Math.min(5,s.rarity)).forEach(([sx,sy,r],i) => { if ((Math.floor(age/7)+i)%3) sparkle(c,sx,sy,r,i%2?GOLD:rc); });
   c.restore();
 }
+const RAIN_FADE = 60, RAIN_BOTTOM = WATER_Y+16, RIPPLE_TICKS = 42, SPLASH_TICKS = 9;
+/** A faint far curtain of short hairlines behind a nearer, longer, faster one; each pen stroke breaks once like a dry nib. */
+const RAIN_LAYERS = [
+  { count: 48, len: 5, speed: 3.4, width: .4, alpha: .28, slant: .2 },
+  { count: 26, len: 12, speed: 5.6, width: .55, alpha: .55, slant: .26 }
+];
+/** 0..1 strength of the shower, easing in when it starts and out after it stops. */
+function rainLevel(sky: Sky, tick: number): number {
+  if (sky.rainUntil <= sky.rainFrom || tick < sky.rainFrom) return 0;
+  return tick < sky.rainUntil ? Math.min(1,(tick-sky.rainFrom)/RAIN_FADE) : Math.max(0,1-(tick-sky.rainUntil)/RAIN_FADE);
+}
+/** Stable 0..1 hash so every drop, ring and splash keeps its own lane from frame to frame. */
+const hash = (n: number) => { const x = Math.sin(n*127.1+311.7)*43758.5453; return x-Math.floor(x); };
+/** Thin slanted ink hairlines, rings opening on the water and tiny crowns on the planks. Drawn behind the anglers. */
+function drawRain(c: CanvasRenderingContext2D, level: number, tick: number): void {
+  c.save(); c.strokeStyle = INK; c.lineCap = 'round';
+  RAIN_LAYERS.forEach((l, li) => {
+    c.globalAlpha = l.alpha*level; c.lineWidth = l.width; c.beginPath();
+    for (let i = 0; i < l.count; i++) {
+      const seed = i+li*100, y = (hash(seed)*RAIN_BOTTOM + tick*l.speed*(.85+hash(seed+50)*.3))%(RAIN_BOTTOM+l.len) - l.len;
+      const x = hash(seed+7)*360 - 20 - y*l.slant, dx = -l.len*l.slant;
+      if (y+l.len > RAIN_BOTTOM) continue;
+      if (li === 0) { c.moveTo(x,y); c.lineTo(x+dx,y+l.len); continue; }
+      c.moveTo(x,y); c.lineTo(x+dx*.62,y+l.len*.62); c.moveTo(x+dx*.76,y+l.len*.76); c.lineTo(x+dx,y+l.len);
+    }
+    c.stroke();
+  });
+  // Rings: a quick crown where the drop lands, then two thin ellipses spreading and fading.
+  c.lineWidth = .5;
+  for (let i = 0; i < Math.round(11*level); i++) {
+    const age = (tick+i*17)%RIPPLE_TICKS, cycle = Math.floor((tick+i*17)/RIPPLE_TICKS), f = age/RIPPLE_TICKS;
+    const x = 18+hash(i*31+cycle)*284, y = WATER_Y+6+hash(i*13+cycle)*14;
+    c.globalAlpha = (1-f)*.7*level; c.beginPath(); c.ellipse(x,y,1.5+f*9,.5+f*2.2,0,0,Math.PI*2); c.stroke();
+    if (f > .25) { c.globalAlpha = (1-f)*.45*level; c.beginPath(); c.ellipse(x,y,(f-.25)*7,(f-.25)*1.6,0,0,Math.PI*2); c.stroke(); }
+    if (age < SPLASH_TICKS) crown(c,x,y,age/SPLASH_TICKS,level);
+  }
+  for (let i = 0; i < Math.round(6*level); i++) {
+    const age = (tick+i*23)%40, cycle = Math.floor((tick+i*23)/40);
+    if (age < SPLASH_TICKS) crown(c,20+hash(i*7+cycle*3)*280,113.5,age/SPLASH_TICKS,level);
+  }
+  c.restore();
+}
+/** Three ink flecks jumping out of a landing drop. */
+function crown(c: CanvasRenderingContext2D, x: number, y: number, f: number, level: number): void {
+  c.globalAlpha = (1-f)*.7*level; c.lineWidth = .5; c.beginPath();
+  for (const a of [-2.3,-Math.PI/2,-.85]) { const r0 = 1+f*2, r1 = r0+1.6; c.moveTo(x+Math.cos(a)*r0,y+Math.sin(a)*r0); c.lineTo(x+Math.cos(a)*r1,y+Math.sin(a)*r1); }
+  c.stroke();
+}
 function sparkle(c: CanvasRenderingContext2D, x: number, y: number, s: number, ink: string): void {
   c.beginPath(); c.moveTo(x,y-s*2); c.lineTo(x+s*.5,y-s*.5); c.lineTo(x+s*2,y); c.lineTo(x+s*.5,y+s*.5); c.lineTo(x,y+s*2); c.lineTo(x-s*.5,y+s*.5); c.lineTo(x-s*2,y); c.lineTo(x-s*.5,y-s*.5); c.closePath();
   c.fillStyle=ink; c.fill();
@@ -318,9 +418,10 @@ export function drawFishing(c:CanvasRenderingContext2D,view:Viewport,w:FishingWo
   const scale=Math.min(view.width/320,view.height/280);c.save();c.translate((view.width-320*scale)/2,(view.height-280*scale)/2);c.scale(scale,scale);beginSketchFrame();
   line(c,17,114,301,114);line(c,17,118,301,118,INK,.7);
   for(const x of [23,110,205,295])line(c,x,118,x,128,INK,.8);
+  const rain=rainLevel(w,w.tick);if(rain>0)drawRain(c,rain,w.tick);
   for(let seat=0;seat<(solo?1:6);seat++){
     const x=solo?150:31+seat*46,p=solo?w.players.find(p=>p.id===myId):w.players.find(p=>p.seat===seat);
-    if(p) person(c,p,x,w.tick,p.id===myId,hideEmotes&&p.id!==myId);
+    if(p) person(c,p,x,w.tick,p.id===myId,hideEmotes&&p.id!==myId,w);
     else {label(c,'·',x,110,12,'#a8ada6');label(c,'빈자리',x,141,6,'#a8ada6');}
   }
   for(let i=0;i<7;i++)line(c,25+i*40,179+(i%2)*3,35+i*40,179+(i%2)*3,'#a8ada6',.45);

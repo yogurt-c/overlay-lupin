@@ -11,7 +11,7 @@ import { FishingUi } from './ui.js';
 export function validWorld(value: unknown): value is FishingWorld {
   if(!value||typeof value!=='object')return false;
   const w=value as FishingWorld;
-  return Number.isSafeInteger(w.tick)&&w.tick>=0&&Array.isArray(w.players)&&w.players.length<=6&&
+  return Number.isSafeInteger(w.tick)&&w.tick>=0&&Number.isSafeInteger(w.rainFrom)&&Number.isSafeInteger(w.rainUntil)&&w.rainFrom<=w.rainUntil&&Array.isArray(w.players)&&w.players.length<=6&&
     new Set(w.players.map(p=>p?.id)).size===w.players.length&&new Set(w.players.map(p=>p?.seat)).size===w.players.length&&w.players.every(p=>
       p&&typeof p.id==='string'&&p.id.length<=120&&typeof p.name==='string'&&p.name.length<=24&&Number.isInteger(p.seat)&&p.seat>=0&&p.seat<6&&
       ['idle','casting','waiting','bite','fight','result'].includes(p.phase)&&[p.time,p.pos,p.target,p.progress,p.seed,p.emoji,p.emojiUntil,p.showUntil,p.ack,p.attempts,p.lastInput].every(Number.isFinite)&&

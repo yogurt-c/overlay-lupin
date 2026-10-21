@@ -290,8 +290,8 @@ export class FishingUi {
     const sheet=el('div',undefined,'fish-detail');sheet.style.setProperty('--rc',RARITY_INK[s.rarity]);
     const plate=el('div',undefined,'fish-plate');plate.append(this.art(s.id,known,100,100),el('small',specimenNo(s)));
     const info=el('div',undefined,'fish-info'),tags=el('div',undefined,'fish-actions');
-    tags.append(this.chip(s),el('span',s.fantasy?'창작종':'현실종','fish-muted'));
-    info.append(el('h3',known?s.name:'미발견 물고기'),tags,el('p',known?s.description:'이 낚시터에서 만날 수 있어요.','fish-desc'));
+    tags.append(this.chip(s),el('span',s.fantasy?'창작종':'현실종','fish-muted'));if(s.rainOnly)tags.append(el('span','비 올 때만','fish-muted'));
+    info.append(el('h3',known?s.name:'미발견 물고기'),tags,el('p',known?s.description:s.rainOnly?'비 오는 날에만 모습을 드러내요.':'이 낚시터에서 만날 수 있어요.','fish-desc'));
     sheet.append(plate,info);this.panel.append(sheet);
     if(known){
       const facts=el('dl',undefined,'fish-facts');
