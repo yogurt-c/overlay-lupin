@@ -124,6 +124,7 @@ function currentModule(): GameModule {
 
 function setUiState(next: UiState): void {
   uiState = next;
+  document.body.dataset.game = next === 'play' ? selectedGameId : '';
   idleIcon.hidden = next !== 'idle' && next !== 'panel';
   statusDot.hidden = next === 'play';
   panel.hidden = next !== 'panel';
@@ -168,6 +169,7 @@ function startMatch(mode: 'duel' | 'room', isHost: boolean, gameId: string, vari
   const module = GAME_MODULES.find((m) => m.id === gameId) ?? GAME_MODULES[0];
   selectedGameId = module.id;
   activeMatchMode = mode;
+  activeMatch?.dispose?.();
   activeMatch = module.createMatch(isHost, myId, myName, knownVariant(module, variant));
   activeInput = inputSources.get(module.id) ?? null;
   stepAccumulator = 0;
@@ -183,6 +185,7 @@ function beginSoloMatch(): void {
   const module = currentModule();
   if (!module.createSoloMatch) return;
   activeMatchMode = 'solo';
+  activeMatch?.dispose?.();
   activeMatch = module.createSoloMatch(myId, myName, variantOf(module));
   activeInput = inputSources.get(module.id) ?? null;
   stepAccumulator = 0;
@@ -199,8 +202,10 @@ function recordGameStart(gameId: string, mode: 'solo' | 'duel' | 'room'): void {
 }
 
 function endMatch(): void {
+  if (activeMatch?.canLeave && !activeMatch.canLeave()) return;
   if (activeMatchMode === 'room') window.overlayLupin.leaveRoom();
   else if (activeMatchMode === 'duel') window.overlayLupin.leaveMatch();
+  activeMatch?.dispose?.();
   activeMatch = null;
   activeMatchMode = null;
   setUiState('idle');
@@ -663,6 +668,7 @@ window.overlayLupin.onRooms((list) => {
 
 window.overlayLupin.onRoomRoster((roster) => {
   currentRoster = roster;
+  if (uiState === 'play') activeMatch?.setMembers?.(roster.members);
   if (uiState !== 'play') {
     renderLobby(roster);
     setUiState('lobby');
@@ -673,15 +679,23 @@ window.overlayLupin.onRoomStarted((isHost, gameId) => beginRoomMatch(isHost, gam
 
 window.overlayLupin.onRoomLost(() => {
   currentRoster = null;
+  if (uiState === 'play' && activeMatch?.roomClosed) {
+    activeMatchMode = 'solo';
+    activeMatch.roomClosed();
+    return;
+  }
   if (uiState === 'lobby' || uiState === 'play') {
+    activeMatch?.dispose?.();
     activeMatch = null;
     activeMatchMode = null;
     setUiState('idle');
   }
 });
 
+window.overlayLupin.onRoomPromoted((formerHostId) => activeMatch?.promoteToHost?.(formerHostId));
+
 window.overlayLupin.onRoomMemberState((fromId, payload) => {
-  activeMatch?.applyOpponentPacket({ from: fromId, ...(payload as Record<string, unknown>) });
+  activeMatch?.applyOpponentPacket({ ...(payload as Record<string, unknown>), from: fromId });
 });
 
 window.overlayLupin.onRoomWorld((payload) => activeMatch?.applyOpponentPacket(payload));

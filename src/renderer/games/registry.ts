@@ -1,3 +1,4 @@
+import { fishingModule } from './fishing/module.js';
 import { towerModule } from './tower/module.js';
 import { soccerModule } from './soccer/module.js';
 import { volleyballModule } from './volleyball/module.js';
@@ -21,5 +22,6 @@ export const GAME_MODULES: GameModule[] = [
   towerModule,
   jumpmapModule,
   survivorModule,
-  mergeModule
+  mergeModule,
+  fishingModule
 ];

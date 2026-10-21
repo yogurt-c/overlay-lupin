@@ -16,6 +16,10 @@ const ROOM_TIMEOUT_MS = 6000;
 /** How long the host waits without a ROOM_POS before treating a live member as disconnected. */
 const ROOM_MEMBER_TIMEOUT_MS = 5000;
 const DEFAULT_ROOM_CAPACITY = 6;
+/** Rooms that outlive their host: when the host leaves mid-session, the earliest remaining member takes over. */
+const HANDOFF_GAMES = new Set(['fishing']);
+/** The handoff is a single UDP burst with no ack, so it goes out twice; duplicates are ignored. */
+const HANDOFF_SENDS = 2;
 
 interface KnownPeer extends PeerInfo {
   /** The peer's reply-socket port (from their HELLO), used for direct unicast messages. */
@@ -91,6 +95,16 @@ type WireMessage =
     }
   | { t: 'ROOM_LEAVE'; id: string; roomId: string }
   | { t: 'ROOM_CLOSED'; roomId: string }
+  /** A leaving host passes its playing room to `hostId`; the heir starts hosting and the rest follow it. */
+  | {
+      t: 'ROOM_HANDOFF';
+      roomId: string;
+      gameId: string;
+      capacity: number;
+      formerHostId: string;
+      hostId: string;
+      members: { id: string; name: string; address: string; replyPort: number }[];
+    }
   /** A member's own state, sent to the host only. */
   | { t: 'ROOM_POS'; id: string; roomId: string; payload: unknown }
   /** The host's authoritative world snapshot, broadcast to every member. */
@@ -117,6 +131,8 @@ export declare interface GameNetwork {
   /** Fires exactly once per room per client: on explicit start, or immediately on joining a room already playing. */
   on(event: 'room-started', listener: (isHost: boolean, gameId: string) => void): this;
   on(event: 'room-lost', listener: (reason: 'closed' | 'left' | 'timeout') => void): this;
+  /** The host left and handed its playing room to me — I'm the host now. */
+  on(event: 'room-promoted', listener: (formerHostId: string) => void): this;
   /** Host-only: another member's own packet, tagged with who sent it. */
   on(event: 'room-member-state', listener: (fromId: string, payload: unknown) => void): this;
   /** Member-only: the host's authoritative world snapshot. */
@@ -159,6 +175,8 @@ export class GameNetwork extends EventEmitter {
   private hostedRoom: HostedRoom | null = null;
   /** Set only while I've joined someone else's room. */
   private joinedRoom: JoinedRoom | null = null;
+  /** The room I asked to join and am waiting to hear back from; rosters for any other room I'm not in are stale. */
+  private pendingJoinId: string | null = null;
   private openRooms = new Map<string, OpenRoom>();
 
   constructor(name: string = os.hostname()) {
@@ -286,21 +304,34 @@ export class GameNetwork extends EventEmitter {
     if (this.hostedRoom || this.joinedRoom) return;
     const room = this.openRooms.get(roomId);
     if (!room) return;
+    this.pendingJoinId = roomId;
     this.sendDirect(
       { t: 'ROOM_JOIN', id: this.myId, name: this.myName, roomId, replyPort: this.replyPort },
       { address: room.hostAddress, replyPort: room.hostReplyPort }
     );
   }
 
-  /** Leaves whatever room I'm in — closes it for everyone if I was hosting. */
+  /** Leaves whatever room I'm in — as host, hands a playing handoff room to the next member, otherwise closes it for everyone. */
   leaveRoom(): void {
+    this.pendingJoinId = null;
     if (this.hostedRoom) {
       const room = this.hostedRoom;
       this.hostedRoom = null;
-      for (const member of room.members.values()) {
-        if (member.id === this.myId) continue;
-        this.sendDirect({ t: 'ROOM_CLOSED', roomId: room.id }, member);
-      }
+      const others = Array.from(room.members.values()).filter((m) => m.id !== this.myId);
+      // Map order is join order, so the longest-staying member inherits the room.
+      const heir = room.status === 'playing' && HANDOFF_GAMES.has(room.gameId) ? others[0] : undefined;
+      const msg: WireMessage = heir
+        ? {
+            t: 'ROOM_HANDOFF',
+            roomId: room.id,
+            gameId: room.gameId,
+            capacity: room.capacity,
+            formerHostId: this.myId,
+            hostId: heir.id,
+            members: others.map(({ id, name, address, replyPort }) => ({ id, name, address, replyPort }))
+          }
+        : { t: 'ROOM_CLOSED', roomId: room.id };
+      for (let i = 0; i < (heir ? HANDOFF_SENDS : 1); i++) for (const member of others) this.sendDirect(msg, member);
     } else if (this.joinedRoom) {
       const room = this.joinedRoom;
       this.joinedRoom = null;
@@ -396,11 +427,11 @@ export class GameNetwork extends EventEmitter {
     this.broadcastRoomOpen();
   }
 
-  /** Host only: tells my own renderer about the room I'm hosting (never travels over the wire). */
+  /** Host-only roster. Fishing also needs mid-session rosters to authorize and seat new arrivals. */
   private emitRoomRoster(): void {
     if (!this.hostedRoom) return;
     const room = this.hostedRoom;
-    if (room.status !== 'lobby') return;
+    if (room.status !== 'lobby' && room.gameId !== 'fishing') return;
     this.emit('room-roster', {
       id: room.id,
       name: room.name,
@@ -502,6 +533,10 @@ export class GameNetwork extends EventEmitter {
 
       case 'ROOM_ROSTER': {
         if (this.hostedRoom) return;
+        // A roster still in flight after I left (or one that no longer lists me) must not pull me back into the room.
+        if (this.joinedRoom?.id !== msg.roomId && this.pendingJoinId !== msg.roomId) return;
+        if (!Array.isArray(msg.members) || !msg.members.some((m) => m.id === this.myId)) return;
+        this.pendingJoinId = null;
         const wasPlaying = this.joinedRoom?.id === msg.roomId && this.joinedRoom.status === 'playing';
         this.joinedRoom = {
           id: msg.roomId,
@@ -542,6 +577,38 @@ export class GameNetwork extends EventEmitter {
           this.emit('room-lost', 'closed');
         }
         break;
+
+      case 'ROOM_HANDOFF': {
+        const room = this.joinedRoom;
+        // Only the host I'm actually following may give its room away.
+        if (!room || room.id !== msg.roomId || room.hostId !== msg.formerHostId) return;
+        if (rinfo.address !== room.hostAddress || rinfo.port !== room.hostReplyPort) return;
+        if (!Array.isArray(msg.members) || msg.members.length > msg.capacity) return;
+        const heir = msg.members.find((m) => m.id === msg.hostId);
+        if (!heir) return;
+        if (heir.id !== this.myId) {
+          this.joinedRoom = { ...room, hostId: heir.id, hostAddress: heir.address, hostReplyPort: heir.replyPort, lastMsgAt: Date.now() };
+          return;
+        }
+        const now = Date.now();
+        this.joinedRoom = null;
+        this.hostedRoom = {
+          id: msg.roomId,
+          name: `${this.myName}의 방`,
+          gameId: msg.gameId,
+          capacity: msg.capacity,
+          status: 'playing',
+          members: new Map(
+            msg.members.map((m) => [
+              m.id,
+              m.id === this.myId ? { id: m.id, name: this.myName, address: '', replyPort: 0, lastSeen: now } : { ...m, lastSeen: now }
+            ])
+          )
+        };
+        this.emit('room-promoted', msg.formerHostId);
+        this.broadcastRosterToAll();
+        break;
+      }
 
       case 'ROOM_POS': {
         const member = this.hostedRoom?.id === msg.roomId ? this.hostedRoom.members.get(msg.id) : undefined;

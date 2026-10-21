@@ -1,4 +1,7 @@
-import { app, ipcMain, BrowserWindow } from 'electron';
+import { app, ipcMain, BrowserWindow, dialog } from 'electron';
+import fs from 'node:fs';
+import { FishingStore } from './fishing-store';
+import type { FishingAction, FishingReply } from '../shared/fishing';
 import { createGameWindow } from './window';
 import { GameNetwork } from './network';
 import {
@@ -39,6 +42,28 @@ app.whenReady().then(() => {
   });
   win = createGameWindow();
   net.start();
+  const fishing = new FishingStore(app.getPath('userData'));
+  const fishingReply = (fn: () => FishingReply): FishingReply => {
+    try { return fn(); } catch (error) { return { ok: false, error: error instanceof Error ? error.message : '저장하지 못했습니다.' }; }
+  };
+  ipcMain.handle('fishing:load', () => fishingReply(() => ({ ok: true, data: fishing.load() })));
+  ipcMain.handle('fishing:act', (_event, action: FishingAction) => fishingReply(() => ({ ok: true, data: fishing.act(action) })));
+  ipcMain.handle('fishing:export', async () => {
+    if (!win) return { ok: false };
+    const result = await dialog.showSaveDialog(win, { title: '낚시 수집 데이터 내보내기', defaultPath: 'fishing-collection-backup.json', filters: [{ name: 'JSON', extensions: ['json'] }] });
+    if (result.canceled || !result.filePath) return { ok: false, cancelled: true };
+    return fishingReply(() => { fs.writeFileSync(result.filePath!, JSON.stringify(fishing.read(), null, 2), 'utf8'); return { ok: true }; });
+  });
+  ipcMain.handle('fishing:import', async () => {
+    if (!win) return { ok: false };
+    const result = await dialog.showOpenDialog(win, { title: '낚시 수집 데이터 합치기', properties: ['openFile'], filters: [{ name: 'JSON', extensions: ['json'] }] });
+    if (result.canceled || !result.filePaths[0]) return { ok: false, cancelled: true };
+    return fishingReply(() => {
+      const filename = result.filePaths[0];
+      if (fs.statSync(filename).size > 100 * 1024 * 1024) throw new Error('100MB 이하 파일을 선택해 주세요.');
+      return { ok: true, data: fishing.merge(JSON.parse(fs.readFileSync(filename, 'utf8'))) };
+    });
+  });
 
   installQuitMenu();
   installVisibilityShortcuts(() => win, loadVisibilityShortcuts());
@@ -56,6 +81,7 @@ app.whenReady().then(() => {
   net.on('room-roster', (roster) => win?.webContents.send('net:room-roster', roster));
   net.on('room-started', (isHost, gameId) => win?.webContents.send('net:room-started', { isHost, gameId }));
   net.on('room-lost', (reason) => win?.webContents.send('net:room-lost', reason));
+  net.on('room-promoted', (formerHostId) => win?.webContents.send('net:room-promoted', formerHostId));
   net.on('room-member-state', (fromId, payload) => win?.webContents.send('net:room-member-state', { fromId, payload }));
   net.on('room-world', (payload) => win?.webContents.send('net:room-world', payload));
   net.on('room-member-left', (peerId) => win?.webContents.send('net:room-member-left', peerId));

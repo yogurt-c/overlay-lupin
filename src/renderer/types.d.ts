@@ -1,10 +1,15 @@
 import type { PeerInfo, RoomInfo, RoomRoster } from '../shared/protocol.js';
 import type { VisibilityShortcuts } from '../shared/shortcuts.js';
+import type { FishingAction, FishingReply } from '../shared/fishing.js';
 import type { AnalyticsStart } from '../shared/analytics.js';
 
 export type { PeerInfo, RoomInfo, RoomRoster, VisibilityShortcuts };
 
 export interface OverlayLupinApi {
+  fishingLoad(): Promise<FishingReply>;
+  fishingAct(action: FishingAction): Promise<FishingReply>;
+  fishingExport(): Promise<FishingReply>;
+  fishingImport(): Promise<FishingReply>;
   recordGameStart(input: AnalyticsStart): void;
   getAnalyticsEnabled(): Promise<boolean>;
   setAnalyticsEnabled(enabled: boolean): Promise<{ ok: boolean; enabled: boolean }>;
@@ -34,6 +39,8 @@ export interface OverlayLupinApi {
   /** Fires exactly once per room per client: on explicit start, or immediately on joining a room already playing. */
   onRoomStarted(cb: (isHost: boolean, gameId: string) => void): void;
   onRoomLost(cb: (reason: 'closed' | 'left' | 'timeout') => void): void;
+  /** The host left and handed its playing room to me — I'm the host now. */
+  onRoomPromoted(cb: (formerHostId: string) => void): void;
   /** Host-only: another member's own packet, tagged with who sent it. */
   onRoomMemberState(cb: (fromId: string, payload: unknown) => void): void;
   /** Member-only: the host's authoritative world snapshot. */
