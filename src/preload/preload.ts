@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld('overlayLupin', {
   getAnalyticsEnabled: (): Promise<boolean> => ipcRenderer.invoke('analytics:get'),
   setAnalyticsEnabled: (enabled: boolean): Promise<{ ok: boolean; enabled: boolean }> => ipcRenderer.invoke('analytics:set', enabled),
   whoAmI: (): Promise<{ id: string; name: string }> => ipcRenderer.invoke('net:whoami'),
+  setNickname: (name: string): Promise<{ ok: boolean; reason?: 'invalid' | 'busy' | 'save'; name: string }> =>
+    ipcRenderer.invoke('net:set-name', name),
 
   onPeers: (cb: (peers: PeerInfo[]) => void) => {
     ipcRenderer.on('net:peers', (_e, peers) => cb(peers));

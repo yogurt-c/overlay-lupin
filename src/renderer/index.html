@@ -123,6 +123,33 @@
     font-weight: 600;
     letter-spacing: 0.02em;
   }
+  .nickname-row { display: flex; gap: 4px; margin: 0; }
+  .nickname-row input {
+    flex: 1;
+    min-width: 0;
+    font-family: inherit;
+    font-size: 10.5px;
+    padding: 4px 6px;
+    border-radius: 6px;
+    border: 1.3px solid rgba(20, 24, 26, 0.35);
+    background: #fff;
+    color: #14181a;
+  }
+  .nickname-row input:focus { outline: none; border-color: #2f6b4f; }
+  .nickname-row button {
+    flex: none;
+    font-family: inherit;
+    font-size: 10.5px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    border: 1.3px solid rgba(20, 24, 26, 0.35);
+    background: rgba(20, 24, 26, 0.04);
+    cursor: pointer;
+    color: #14181a;
+  }
+  .nickname-row :disabled { opacity: 0.45; cursor: default; }
+  #nickname-msg { margin: 4px 0 8px; font-size: 9.5px; line-height: 1.4; color: #7a827c; min-height: 1.2em; }
+  #nickname-msg.error { color: #9a4a3f; }
   .shortcut-row {
     display: flex;
     align-items: center;
@@ -472,6 +499,12 @@
   </button>
 
   <div id="settings-panel" hidden>
+    <h2>닉네임</h2>
+    <form id="nickname-form" class="nickname-row">
+      <input id="nickname-input" type="text" maxlength="24" autocomplete="off" spellcheck="false" aria-label="닉네임">
+      <button id="nickname-save-btn" type="submit">변경</button>
+    </form>
+    <p id="nickname-msg" role="status"></p>
     <h2>단축키</h2>
     <div class="shortcut-row">
       <span>숨기기</span>

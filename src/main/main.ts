@@ -11,13 +11,14 @@ import {
   resumeVisibilityShortcuts
 } from './shortcuts';
 import { installAutoUpdater } from './updater';
-import { loadVisibilityShortcuts, saveVisibilityShortcuts, DEFAULT_VISIBILITY_SHORTCUTS } from './settings';
+import { loadVisibilityShortcuts, saveVisibilityShortcuts, DEFAULT_VISIBILITY_SHORTCUTS, loadNickname, saveNickname } from './settings';
+import { normalizeNickname } from '../shared/nickname';
 import type { VisibilityShortcuts } from '../shared/shortcuts.js';
 import { GameAnalytics } from './analytics';
 import type { AnalyticsStart } from '../shared/analytics';
 
 let win: BrowserWindow | null = null;
-const net = new GameNetwork();
+const net = new GameNetwork(loadNickname() ?? undefined);
 
 app.whenReady().then(() => {
   const analytics = new GameAnalytics({
@@ -68,6 +69,18 @@ app.whenReady().then(() => {
   ipcMain.on('net:leave', () => net.leaveMatch());
   ipcMain.on('net:pos', (_event, payload: unknown) => net.sendLocalState(payload));
   ipcMain.handle('net:whoami', () => ({ id: net.myId, name: net.myName }));
+  ipcMain.handle('net:set-name', (_event, raw: unknown) => {
+    const name = normalizeNickname(raw);
+    if (!name) return { ok: false, reason: 'invalid', name: net.myName };
+    if (!net.canRename()) return { ok: false, reason: 'busy', name: net.myName };
+    try {
+      saveNickname(name);
+    } catch {
+      return { ok: false, reason: 'save', name: net.myName };
+    }
+    net.rename(name);
+    return { ok: true, name: net.myName };
+  });
 
   ipcMain.on('net:create-room', (_event, { gameId, capacity }: { gameId: string; capacity?: number }) =>
     net.createRoom(gameId, capacity)

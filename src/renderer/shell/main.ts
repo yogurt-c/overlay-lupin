@@ -41,6 +41,10 @@ const shortcutHideBtn = document.getElementById('shortcut-hide-btn') as HTMLButt
 const shortcutShowBtn = document.getElementById('shortcut-show-btn') as HTMLButtonElement;
 const settingsResetBtn = document.getElementById('settings-reset-btn') as HTMLButtonElement;
 const settingsMsg = document.getElementById('settings-msg') as HTMLParagraphElement;
+const nicknameForm = document.getElementById('nickname-form') as HTMLFormElement;
+const nicknameInput = document.getElementById('nickname-input') as HTMLInputElement;
+const nicknameSaveBtn = document.getElementById('nickname-save-btn') as HTMLButtonElement;
+const nicknameMsg = document.getElementById('nickname-msg') as HTMLParagraphElement;
 const waitingBox = document.getElementById('waiting-box') as HTMLDivElement;
 const waitingName = document.getElementById('waiting-name') as HTMLElement;
 const cancelInviteBtn = document.getElementById('cancel-invite-btn') as HTMLButtonElement;
@@ -109,6 +113,7 @@ resizeCanvas();
 window.overlayLupin.whoAmI().then((me) => {
   myId = me.id;
   myName = me.name;
+  nicknameInput.value = me.name;
 });
 
 function currentModule(): GameModule {
@@ -132,6 +137,7 @@ function setUiState(next: UiState): void {
   // waiting for a syncHud() that won't run again until the next match starts.
   if (next !== 'play') bannerEl.hidden = true;
   reconnectMsg.hidden = next !== 'reconnecting';
+  syncNicknameAvailability();
   if (next !== 'play') {
     for (const src of inputSources.values()) src.clear();
     clearCanvas();
@@ -408,10 +414,73 @@ settingsResetBtn.addEventListener('click', async () => {
   renderShortcuts();
 });
 
+/* ------------------------------------------------------------- Nickname */
+
+/** Names already sent into a room, match or invite would go stale, so renaming waits until I'm back outside all of them. */
+function canChangeNickname(): boolean {
+  return uiState === 'idle' || uiState === 'panel';
+}
+
+function setNicknameMessage(text: string, isError = false): void {
+  nicknameMsg.textContent = text;
+  nicknameMsg.classList.toggle('error', isError);
+}
+
+function syncNicknameAvailability(): void {
+  const allowed = canChangeNickname();
+  nicknameInput.disabled = !allowed;
+  nicknameSaveBtn.disabled = !allowed;
+  if (allowed) {
+    if (nicknameMsg.dataset.busy) setNicknameMessage('');
+    delete nicknameMsg.dataset.busy;
+  } else {
+    nicknameInput.value = myName;
+    nicknameMsg.dataset.busy = '1';
+    setNicknameMessage('게임·방·초대 중에는 바꿀 수 없습니다.');
+  }
+}
+
+// Every game's input source listens on `window` and preventDefaults its keys (WASD, Space, arrows…),
+// which would otherwise eat those characters before they reach the field.
+for (const type of ['keydown', 'keyup'] as const) {
+  nicknameInput.addEventListener(type, (e) => e.stopPropagation());
+}
+nicknameInput.addEventListener('focus', () => {
+  if (recordingKey) stopRecording();
+});
+
+nicknameForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!canChangeNickname()) return;
+  if (nicknameInput.value.trim() === myName) {
+    setNicknameMessage('');
+    return;
+  }
+  nicknameSaveBtn.disabled = true;
+  try {
+    const result = await window.overlayLupin.setNickname(nicknameInput.value);
+    myName = result.name;
+    nicknameInput.value = result.name;
+    if (result.ok) setNicknameMessage('변경했습니다.');
+    else if (result.reason === 'invalid') setNicknameMessage('1~24자로 입력해주세요.', true);
+    else if (result.reason === 'busy') setNicknameMessage('게임·방·초대 중에는 바꿀 수 없습니다.', true);
+    else setNicknameMessage('저장하지 못했습니다.', true);
+  } catch {
+    setNicknameMessage('닉네임을 변경하지 못했습니다.', true);
+  } finally {
+    syncNicknameAvailability();
+  }
+});
+
 settingsBtn.addEventListener('click', () => {
   settingsPanel.hidden = !settingsPanel.hidden;
   if (settingsPanel.hidden) stopRecording();
-  else settingsMsg.textContent = '';
+  else {
+    settingsMsg.textContent = '';
+    nicknameInput.value = myName;
+    syncNicknameAvailability();
+    if (!nicknameMsg.dataset.busy) setNicknameMessage('');
+  }
 });
 
 // Closing the panel from outside also cancels an in-progress recording, same as #panel's own

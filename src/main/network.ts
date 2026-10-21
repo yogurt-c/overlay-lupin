@@ -139,7 +139,7 @@ export declare interface GameNetwork {
  */
 export class GameNetwork extends EventEmitter {
   readonly myId = crypto.randomUUID();
-  readonly myName = os.hostname();
+  private name: string;
 
   private discoverySocket = dgram.createSocket({ type: 'udp4', reuseAddr: true });
   private replySocket = dgram.createSocket('udp4');
@@ -160,6 +160,27 @@ export class GameNetwork extends EventEmitter {
   /** Set only while I've joined someone else's room. */
   private joinedRoom: JoinedRoom | null = null;
   private openRooms = new Map<string, OpenRoom>();
+
+  constructor(name: string = os.hostname()) {
+    super();
+    this.name = name;
+  }
+
+  get myName(): string {
+    return this.name;
+  }
+
+  /** Only while I'm in no room, match or invite — names already sent to others there would go stale. */
+  canRename(): boolean {
+    return !this.hostedRoom && !this.joinedRoom && !this.currentMatch && !this.pendingOutgoing && !this.pendingIncoming;
+  }
+
+  /** Peers pick the new name up from the next HELLO broadcast. */
+  rename(name: string): boolean {
+    if (!this.canRename()) return false;
+    this.name = name;
+    return true;
+  }
 
   start(): void {
     this.discoverySocket.on('message', (buf, rinfo) => this.handleMessage(buf, rinfo));
@@ -552,9 +573,9 @@ export class GameNetwork extends EventEmitter {
   }
 
   private upsertPeer(id: string, name: string, address: string, replyPort: number): void {
-    const existed = this.peers.has(id);
+    const previous = this.peers.get(id);
     this.peers.set(id, { id, name, address, replyPort, lastSeen: Date.now() });
-    if (!existed) this.emitPeers();
+    if (!previous || previous.name !== name) this.emitPeers();
   }
 
   private sweep(): void {
