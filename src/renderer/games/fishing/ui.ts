@@ -1,6 +1,6 @@
 import { RARITIES, RARITY_SIGNS, SPECIES, SPECIES_BY_ID } from '../../../shared/fishing.js';
 import type { FishingSave, FishCatch, Species } from '../../../shared/fishing.js';
-import { drawFish, EMOTES } from './draw.js';
+import { drawEmoteIcon, drawFish, EMOTES } from './draw.js';
 export interface FishingUiActions {
   cancel():void; open():void; emoji(value:number):void;
   release(id:string):void; favorite(id:string):void; show(fish:FishCatch):void; retry():void; export():void; import():void; continueSolo():void;
@@ -23,10 +23,10 @@ const CSS = `
 #fishing-ui button:focus-visible,#fishing-ui select:focus-visible,#fishing-ui input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 #fishing-ui button:disabled{opacity:.4;cursor:default;transform:none}
 #fishing-ui .fish-tools{display:flex;gap:4px;align-items:center;flex-wrap:wrap}
-#fishing-ui .fish-top{position:absolute;top:0;left:0;right:0;justify-content:center}
-#fishing-ui .fish-top button,#fishing-ui .fish-emotes button{border:1.3px solid var(--ink);border-radius:999px;padding:2px 9px;box-shadow:0 2px 0 var(--ink)}
-#fishing-ui .fish-top button:hover,#fishing-ui .fish-emotes button:hover{transform:translateY(-1px);box-shadow:0 3px 0 var(--ink);background:var(--paper)}
-#fishing-ui .fish-top button:active,#fishing-ui .fish-emotes button:active{transform:translateY(2px);box-shadow:0 0 0 var(--ink)}
+#fishing-ui .fish-top{position:absolute;top:-26px;left:50%;transform:translateX(-50%)}
+#fishing-ui .fish-top button{border:1.3px solid var(--ink);border-radius:999px;padding:2px 9px;box-shadow:0 2px 0 var(--ink)}
+#fishing-ui .fish-top button:hover{transform:translateY(-1px);box-shadow:0 3px 0 var(--ink);background:var(--paper)}
+#fishing-ui .fish-top button:active{transform:translateY(2px);box-shadow:0 0 0 var(--ink)}
 
 #fishing-ui .fish-panel{position:absolute;inset:0 2px 31px 0;display:flex;flex-direction:column;gap:4px;box-sizing:border-box;padding:0 8px 4px;overflow:auto;scrollbar-width:thin;pointer-events:auto;-webkit-app-region:no-drag;
   background:repeating-linear-gradient(180deg,transparent 0 17px,rgba(61,116,168,.07) 17px 18px),var(--paper);border:1.5px solid var(--ink);border-radius:10px;box-shadow:2px 3px 0 var(--ink)}
@@ -95,7 +95,14 @@ const CSS = `
   background:var(--ink);color:var(--paper);border-radius:7px;font-size:9.5px;line-height:1.4;pointer-events:auto;-webkit-app-region:no-drag;box-shadow:0 4px 10px -4px rgba(20,24,26,.6);animation:fish-pop 180ms cubic-bezier(.16,1,.3,1)}
 #fishing-ui .fish-toast button{background:transparent;color:var(--paper);border-color:transparent;min-height:18px;padding:0 5px}
 #fishing-ui .fish-toast button:hover{background:rgba(255,255,255,.12);border-color:transparent}
-#fishing-ui .fish-emotes{position:absolute;bottom:32px;left:0;right:0;justify-content:center;padding:5px;gap:5px;background:var(--paper);border:1.5px solid var(--ink);border-radius:9px;pointer-events:auto;-webkit-app-region:no-drag;animation:fish-pop 180ms cubic-bezier(.16,1,.3,1)}
+#fishing-ui .fish-emotes{--tx:-50%;position:absolute;bottom:34px;left:50%;transform:translateX(-50%);flex-wrap:nowrap;gap:2px;padding:3px;background:var(--paper);border:1.5px solid var(--ink);border-radius:999px;box-shadow:0 3px 0 var(--ink);pointer-events:auto;-webkit-app-region:no-drag;animation:fish-pop 180ms cubic-bezier(.16,1,.3,1)}
+#fishing-ui .fish-emote{position:relative;width:30px;height:30px;min-height:0;padding:0;border:0;border-radius:50%;background:transparent;display:grid;place-items:center}
+#fishing-ui .fish-emote:hover{background:var(--paper-2);transform:translateY(-2px) scale(1.12)}
+#fishing-ui .fish-emote:active{transform:scale(.92)}
+#fishing-ui .fish-emote canvas{width:24px;height:24px;pointer-events:none}
+#fishing-ui .fish-emote kbd{position:absolute;right:1px;bottom:0;padding:0;border:0;box-shadow:none;background:none;font:bold 7px Menlo,sans-serif;color:var(--muted);line-height:1}
+#fishing-ui .fish-mute{min-height:0;height:22px;margin:0 3px 0 2px;padding:0 7px;border-radius:999px;border-color:var(--line);color:var(--muted);font-size:8.5px;white-space:nowrap}
+#fishing-ui .fish-mute[aria-pressed="true"]{color:var(--paper);background:var(--ink);border-color:var(--ink)}
 #fishing-ui .fish-muted{color:var(--muted)}
 @keyframes fish-pop{from{opacity:0;transform:translate(var(--tx,0),4px)}}
 #fishing-ui .fish-toast{--tx:-50%}
@@ -114,13 +121,20 @@ export class FishingUi {
     this.panel=el('div',undefined,'fish-panel');this.panel.hidden=true;
     this.toast=el('div',undefined,'fish-toast');this.toast.hidden=true;this.toast.setAttribute('role','status');
     this.emotes=el('div',undefined,'fish-tools fish-emotes');this.emotes.hidden=true;
-    EMOTES.forEach((name,i)=>this.emotes.append(button(`${i+1} ${name}`,()=>{actions.emoji(i);this.emotes.hidden=true;})));
-    this.emotes.append(button('남의 표현 숨김',()=>{this.mute=!this.mute;this.emotes.lastElementChild!.textContent=this.mute?'남의 표현 보기':'남의 표현 숨김';}));
+    EMOTES.forEach((name,i)=>this.emotes.append(this.emoteButton(name,i)));
+    const mute=button('남 숨김',()=>{this.mute=!this.mute;mute.setAttribute('aria-pressed',String(this.mute));},'fish-mute');
+    mute.title='다른 사람의 감정표현 숨기기';mute.setAttribute('aria-pressed','false');this.emotes.append(mute);
     this.root.append(top,this.toast,this.emotes,this.panel);
     // Electron resolves -webkit-app-region in DOM order and this root inherits the body's drag region.
     // Mounting it right after the canvas keeps every later shell control (leave, settings) clickable.
     const field=document.getElementById('field');
     if(field)field.after(this.root);else document.body.append(this.root);
+  }
+  private emoteButton(name:string,i:number):HTMLButtonElement{
+    const b=button('',()=>{this.actions.emoji(i);this.emotes.hidden=true;},'fish-emote');b.title=`${i+1} ${name}`;b.setAttribute('aria-label',name);
+    const art=el('canvas'),ratio=window.devicePixelRatio||1;art.width=art.height=24*ratio;
+    const c=art.getContext('2d');if(c){c.scale(ratio*1.05,ratio*1.05);c.translate(11.4,11.6);drawEmoteIcon(c,i,30);}
+    b.append(art,el('kbd',String(i+1)));return b;
   }
   get opened():boolean{return !this.panel.hidden;}
   get emotesOpen():boolean{return !this.emotes.hidden;}

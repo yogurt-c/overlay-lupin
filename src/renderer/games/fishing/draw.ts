@@ -2,11 +2,10 @@ import type { Species } from '../../../shared/fishing.js';
 import { SPECIES_BY_ID } from '../../../shared/fishing.js';
 import { beginSketchFrame, jitter, roughLimb, roughStroke } from '../../lib/sketch.js';
 import type { Viewport } from '../types.js';
-import { WIDTHS, CAST_SECONDS } from './engine.js';
+import { WIDTHS, CAST_SECONDS, EMOTE_TICKS } from './engine.js';
 import type { FishingWorld, Fisher } from './engine.js';
 const INK = '#14181a', BROWN = '#7a5433', HALO = 'rgba(255,255,255,.94)';
 export const EMOTES = ['안녕','좋아요','하트','놀람','축하','아쉬움'];
-const SIGNS = ['안녕','+1','♡','!','짝짝','ㅠㅠ'];
 function line(c: CanvasRenderingContext2D, x: number,y: number,a: number,b: number, color = INK, w = 1.2): void { roughStroke(c,x,y,a,b,w,color,HALO); }
 function label(c: CanvasRenderingContext2D, text: string, x: number,y: number, size=9,color=INK): void {
   c.font = `${size}px Menlo, sans-serif`; c.textAlign = 'center'; c.lineWidth = 3; c.strokeStyle = HALO; c.strokeText(text,x,y); c.fillStyle = color; c.fillText(text,x,y);
@@ -46,7 +45,9 @@ export function drawFish(c: CanvasRenderingContext2D, s: Species, x: number,y: n
   if (s.fantasy) { c.beginPath(); const a=10,b=-h-7; c.moveTo(a,b-3); c.lineTo(a+1,b-1); c.lineTo(a+4,b); c.lineTo(a+1,b+1); c.lineTo(a,b+4); c.lineTo(a-1,b+1); c.lineTo(a-4,b); c.lineTo(a-1,b-1); c.closePath(); c.stroke(); }
   c.restore();
 }
-type Face = 'calm'|'focus'|'wow'|'strain'|'joy';
+type Face = 'calm'|'focus'|'wow'|'strain'|'joy'|'sad';
+/** The angler's face echoes the emote while it is not busy fighting a fish. */
+const EMOTE_FACES: Face[] = ['joy','joy','joy','wow','joy','sad'];
 /** One held keyframe, hip-space (+x toward the water). Poses snap between keys like the fencers instead of tweening. */
 interface Pose { lean: number; crouch: number; rod: number; bend: number; grip: [number,number]; face: Face; arc?: boolean }
 const HAT = '#ecdcbf', ROD = 30, FLOAT_DX = 28, WATER_Y = 165, RED = '#c4473a', BLUSH = 'rgba(232,120,110,.5)';
@@ -88,6 +89,7 @@ function drawFace(c: CanvasRenderingContext2D, hx: number, hy: number, r: number
     c.beginPath();
     if (face === 'joy') { c.arc(x,ey+.8,1.6,Math.PI*1.1,Math.PI*1.9); c.stroke(); }
     else if (face === 'strain') { const d = x === ex[0] ? 1 : -1; c.moveTo(x-1.4*d,ey-1.3); c.lineTo(x+1.2*d,ey); c.lineTo(x-1.4*d,ey+1.3); c.stroke(); }
+    else if (face === 'sad') { c.moveTo(x-1.4,ey-.2); c.lineTo(x+1.4,ey+.6); c.stroke(); }
     else if (blink && face === 'calm') { c.moveTo(x-1.3,ey); c.lineTo(x+1.3,ey); c.stroke(); }
     else { c.arc(x,ey,face === 'wow' ? 1.6 : 1.2,0,Math.PI*2); c.fill(); if (face === 'wow') { c.fillStyle = '#fffefa'; c.beginPath(); c.arc(x+.5,ey-.5,.5,0,Math.PI*2); c.fill(); c.fillStyle = ink; } }
   }
@@ -95,6 +97,7 @@ function drawFace(c: CanvasRenderingContext2D, hx: number, hy: number, r: number
   c.beginPath();
   if (face === 'wow') c.arc(mx,my+.6,1.3,0,Math.PI*2);
   else if (face === 'joy') { c.arc(mx,my-.6,2.2,.15*Math.PI,.85*Math.PI); c.closePath(); c.fill(); }
+  else if (face === 'sad') c.arc(mx,my+1.2,1.6,1.2*Math.PI,1.8*Math.PI);
   else if (face === 'strain') { c.moveTo(mx-2,my+.5); c.lineTo(mx-.7,my-.6); c.lineTo(mx+.7,my+.5); c.lineTo(mx+2,my-.6); }
   else c.arc(mx,my-1.4,1.6,.2*Math.PI,.8*Math.PI);
   c.stroke();
@@ -116,7 +119,8 @@ function drawHeadAndHat(c: CanvasRenderingContext2D, hx: number, hy: number, fac
 }
 /** Chibi angler sitting on the dock edge, drawn in the fencers' thick-ink style. Hip sits at (x, 110). */
 function person(c: CanvasRenderingContext2D,p: Fisher,x:number, tick:number, local:boolean, hideEmotes:boolean): void {
-  const ink=local?INK:BROWN, y=110, pose=poseOf(p,tick), {butt,mid,tip}=rodGeometry(pose);
+  const ink=local?INK:BROWN, y=110, emoting=!hideEmotes&&p.emojiUntil>tick, base=poseOf(p,tick);
+  const pose=emoting&&!['bite','fight'].includes(p.phase)?{...base,face:EMOTE_FACES[p.emoji]??base.face}:base, {butt,mid,tip}=rodGeometry(pose);
   const dx=Math.cos(pose.rod), dy=Math.sin(pose.rod), shoulderX=pose.lean*.6+2, shoulderY=-9+pose.crouch*.6;
   c.save(); c.translate(x,y); c.lineCap=c.lineJoin='round';
   // Thighs rest on the planks and the shins dangle, kicking in a two-step beat rather than a smooth swing.
@@ -151,7 +155,7 @@ function person(c: CanvasRenderingContext2D,p: Fisher,x:number, tick:number, loc
     for(const [dx,dy,r] of [[-15,-38,3],[-21,-24,1.8],[24,-12,2.2]] as const) sparkle(c,x+dx,y+dy,r,BROWN);
   }
   label(c,local?'나':p.name.slice(0,5),x,142,7,ink);
-  if(!hideEmotes&&p.emojiUntil>tick) { c.fillStyle='#fffefa'; c.strokeStyle=ink;c.lineWidth=1;c.beginPath();c.roundRect(x-13,y-64,26,17,5);c.fill();c.stroke();label(c,SIGNS[p.emoji]??'',x,y-52,8,ink); }
+  if(emoting) emoteBubble(c,p.emoji,x+9,y-50,EMOTE_TICKS-(p.emojiUntil-tick),ink);
   if(p.shown&&p.showUntil>tick) { const s=SPECIES_BY_ID.get(p.shown.speciesId); if(s){drawFish(c,s,x,y-57,24);label(c,`${(p.shown.sizeMm/10).toFixed(1)}cm`,x,y-74,7);} }
 }
 /** Line with a little slack so it reads as fishing line, not a ruler stroke. */
@@ -182,6 +186,65 @@ function drawFlight(c: CanvasRenderingContext2D, t: number, tx: number, ty: numb
 function bubble(c: CanvasRenderingContext2D, x: number, y: number, text: string, ink: string): void {
   c.beginPath(); c.roundRect(x-7,y-9,14,13,6); c.moveTo(x-2,y+4); c.lineTo(x,y+8); c.lineTo(x+2,y+4);
   c.fillStyle='#fffefa'; c.fill(); c.strokeStyle=ink; c.lineWidth=1.2; c.stroke(); label(c,text,x,y+1.5,11,RED);
+}
+const BLUE = '#3d74a8', GOLD = '#c08416', CONFETTI = [RED,BLUE,GOLD,'#4f8a5b'];
+/** Hand-drawn emote glyphs on a ~16px box centred at the origin; `age` drives each one's little loop. */
+export function drawEmoteIcon(c: CanvasRenderingContext2D, kind: number, age: number, ink = INK): void {
+  c.save(); c.lineCap = c.lineJoin = 'round'; c.strokeStyle = ink; c.fillStyle = '#fffefa'; c.lineWidth = 1.3;
+  const beat = Math.floor(age/8)%2;
+  switch (kind) {
+    case 0: { // waving hand, rocking on the wrist
+      c.rotate(beat ? .3 : -.15); c.beginPath(); c.roundRect(-4.5,-2,9,8,3.5); c.fill(); c.stroke();
+      for (const [fx,h] of [[-3,6],[-1,7.5],[1,7.5],[3,6]]) { c.beginPath(); c.moveTo(fx,-1); c.lineTo(fx,-1-h); c.stroke(); }
+      c.beginPath(); c.moveTo(-4.5,2); c.lineTo(-7.5,-1.5); c.stroke();
+      c.rotate(beat ? -.3 : .15); c.lineWidth = .9;
+      for (const r of [9,11.5]) { c.beginPath(); c.arc(-1,-1,r,-2.5,-1.9); c.stroke(); c.beginPath(); c.arc(1,-1,r,-1.25,-.6); c.stroke(); }
+      break;
+    }
+    case 1: { // thumbs up with a small hop
+      c.translate(0,beat ? -1 : 0); c.beginPath(); c.roundRect(-5,-1,9,8,2.5); c.fill(); c.stroke();
+      c.beginPath(); c.moveTo(-3,-1); c.lineTo(-2.5,-7.5); c.quadraticCurveTo(-.5,-8.5,.5,-6.5); c.lineTo(.5,-1); c.fill(); c.stroke();
+      c.lineWidth = .9; for (const ly of [2,4.5]) { c.beginPath(); c.moveTo(4,ly); c.lineTo(1,ly); c.stroke(); }
+      c.fillStyle = ink; c.fillRect(-7.5,-.5,2,8);
+      break;
+    }
+    case 2: { // heart that beats twice and rests
+      const s = [0,1].includes(Math.floor(age/7)%4) ? 1.15 : 1; c.scale(s,s);
+      c.beginPath(); c.moveTo(0,6); c.bezierCurveTo(-9,0,-7,-8,0,-3.5); c.bezierCurveTo(7,-8,9,0,0,6); c.closePath();
+      c.fillStyle = RED; c.fill(); c.stroke(); c.fillStyle = '#fffefa'; c.beginPath(); c.ellipse(-3.2,-2.4,1.3,.8,-.6,0,Math.PI*2); c.fill();
+      break;
+    }
+    case 3: { // exclamation with a shock burst
+      c.translate(beat ? .8 : -.8,0); c.fillStyle = RED; c.beginPath(); c.moveTo(-2,-7.5); c.lineTo(2,-7.5); c.lineTo(.9,2.5); c.lineTo(-.9,2.5); c.closePath(); c.fill(); c.stroke();
+      c.beginPath(); c.arc(0,5.8,1.5,0,Math.PI*2); c.fill(); c.stroke();
+      c.lineWidth = 1; for (const a of [-2.5,-.65]) { c.beginPath(); c.moveTo(Math.cos(a)*6,Math.sin(a)*6-1); c.lineTo(Math.cos(a)*9,Math.sin(a)*9-1); c.stroke(); }
+      break;
+    }
+    case 4: { // party popper spraying confetti
+      c.beginPath(); c.moveTo(-7,7); c.lineTo(-4,-2); c.lineTo(2,4); c.closePath(); c.fillStyle = GOLD; c.fill(); c.stroke();
+      const spread = Math.min(1,age/14);
+      CONFETTI.forEach((color,i) => { const a=-1.9+i*.55, r=4+spread*5+(beat&&i%2?1:0); c.fillStyle=color;
+        c.save(); c.translate(-1+Math.cos(a)*r,1+Math.sin(a)*r); c.rotate(i+age*.1); c.fillRect(-1.3,-.7,2.6,1.4); c.restore(); });
+      break;
+    }
+    default: { // drooping tear
+      const drip = (age%40)/40; c.beginPath(); c.moveTo(0,-7); c.bezierCurveTo(5,0,5,6,0,6); c.bezierCurveTo(-5,6,-5,0,0,-7); c.closePath();
+      c.fillStyle = BLUE; c.fill(); c.stroke(); c.fillStyle = '#fffefa'; c.beginPath(); c.ellipse(-1.5,1.5,1,1.6,0,0,Math.PI*2); c.fill();
+      c.globalAlpha = 1-drip; c.fillStyle = BLUE; c.beginPath(); c.arc(5,1+drip*7,1,0,Math.PI*2); c.fill();
+    }
+  }
+  c.restore();
+}
+/** Speech bubble that pops in with overshoot, idles, then floats up and fades over its last ticks. */
+function emoteBubble(c: CanvasRenderingContext2D, kind: number, x: number, y: number, age: number, ink: string): void {
+  const POP = 9, FADE = 18, left = EMOTE_TICKS-age;
+  const s = age < POP ? [.3,.7,1.05,1.2,1.15,1.08,1.02,.99,1][age] : 1, fade = left < FADE ? left/FADE : 1;
+  c.save(); c.translate(x,y-(1-fade)*6); c.scale(s,s); c.globalAlpha = fade;
+  const r = 7; c.beginPath(); c.moveTo(0,-11);
+  c.arcTo(11,-11,11,9,r); c.arcTo(11,9,-11,9,r); c.lineTo(-2,9); c.lineTo(-9,14); c.lineTo(-6,9); c.arcTo(-11,9,-11,-11,r); c.arcTo(-11,-11,11,-11,r); c.closePath();
+  c.lineWidth = 4; c.strokeStyle = HALO; c.stroke(); c.fillStyle = '#fffefa'; c.fill(); c.lineWidth = 1.4; c.strokeStyle = ink; c.stroke();
+  c.translate(0,-1); c.scale(.92,.92); drawEmoteIcon(c,kind,age,ink);
+  c.restore();
 }
 function sparkle(c: CanvasRenderingContext2D, x: number, y: number, s: number, ink: string): void {
   c.beginPath(); c.moveTo(x,y-s*2); c.lineTo(x+s*.5,y-s*.5); c.lineTo(x+s*2,y); c.lineTo(x+s*.5,y+s*.5); c.lineTo(x,y+s*2); c.lineTo(x-s*.5,y+s*.5); c.lineTo(x-s*2,y); c.lineTo(x-s*.5,y-s*.5); c.closePath();
