@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { isFishingSave, validCatch } from '../shared/fishing';
+import { SAVE_VERSION, isFishingSave, migrateSave, validCatch } from '../shared/fishing';
 import type { FishingSave, FishingAction } from '../shared/fishing';
 
 /** Main-process only. Synchronous transactions serialize IPC mutations, including import. */
@@ -9,9 +9,9 @@ export class FishingStore {
   private file: string;
   constructor(directory: string) { fs.mkdirSync(directory, { recursive: true }); this.file = path.join(directory, 'fishing-collection.json'); }
   read(): FishingSave {
-    if (!fs.existsSync(this.file) && !fs.existsSync(this.file + '.bak')) return { version: 1, profileId: randomUUID(), catches: [] };
+    if (!fs.existsSync(this.file) && !fs.existsSync(this.file + '.bak')) return { version: SAVE_VERSION, profileId: randomUUID(), catches: [] };
     for (const filename of [this.file, this.file + '.bak']) {
-      try { const d: unknown = JSON.parse(fs.readFileSync(filename, 'utf8')); if (isFishingSave(d)) return d; } catch { /* Try the last valid backup. Never silently reset corrupt collections. */ }
+      try { const d = migrateSave(JSON.parse(fs.readFileSync(filename, 'utf8'))); if (isFishingSave(d)) return d; } catch { /* Try the last valid backup. Never silently reset corrupt collections. */ }
     }
     throw new Error('수집 데이터와 백업을 읽을 수 없습니다. 파일을 보존한 채 복구용 내보내기 파일을 가져와 주세요.');
   }
@@ -19,7 +19,7 @@ export class FishingStore {
     const encoded = JSON.stringify(data);
     // Preserve a valid prior snapshot, never a corrupt primary file.
     if (fs.existsSync(this.file)) {
-      try { const old = fs.readFileSync(this.file, 'utf8'); if (isFishingSave(JSON.parse(old))) this.atomic(this.file + '.bak', old); } catch (e) {
+      try { const old = fs.readFileSync(this.file, 'utf8'); if (isFishingSave(migrateSave(JSON.parse(old)))) this.atomic(this.file + '.bak', old); } catch (e) {
         if (!(e instanceof SyntaxError)) throw e;
       }
     }
@@ -31,7 +31,9 @@ export class FishingStore {
     try { fs.writeFileSync(fd, data, 'utf8'); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
     fs.renameSync(tmp, file);
   }
-  load(): FishingSave { const d = this.read(); if (!fs.existsSync(this.file)) this.write(d); return d; }
+  /** Also persists a migration, leaving the pre-migration file as the `.bak` snapshot. */
+  load(): FishingSave { const d = this.read(); if (!fs.existsSync(this.file) || this.fileVersion() !== SAVE_VERSION) this.write(d); return d; }
+  private fileVersion(): unknown { try { return (JSON.parse(fs.readFileSync(this.file, 'utf8')) as { version?: unknown }).version; } catch { return undefined; } }
   act(action: FishingAction): FishingSave {
     const d = this.read();
     if (!action || typeof action !== 'object') throw new Error('잘못된 요청입니다.');
@@ -46,13 +48,14 @@ export class FishingStore {
     } else throw new Error('지원하지 않는 요청입니다.');
     this.write(d); return d;
   }
-  merge(incoming: unknown): FishingSave {
+  merge(raw: unknown): FishingSave {
+    const incoming = migrateSave(raw);
     if (!isFishingSave(incoming)) throw new Error('지원하지 않거나 손상된 낚시 데이터입니다.');
     let d: FishingSave;
     try { d = this.read(); } catch {
       // Keep corrupt originals for manual recovery before replacing them.
       for (const suffix of ['', '.bak']) if (fs.existsSync(this.file + suffix)) fs.copyFileSync(this.file + suffix, this.file + suffix + `.damaged-${Date.now()}`);
-      d = { version: 1, profileId: randomUUID(), catches: [] };
+      d = { version: SAVE_VERSION, profileId: randomUUID(), catches: [] };
     }
     const byId = new Map(d.catches.map(c => [c.id, c]));
     for (const fish of incoming.catches) {
@@ -64,5 +67,5 @@ export class FishingStore {
     this.atomic(this.file + '.before-import', JSON.stringify(this.readSafely()));
     this.write(d); return d;
   }
-  private readSafely(): FishingSave { try { return this.read(); } catch { return { version: 1, profileId: 'recovery', catches: [] }; } }
+  private readSafely(): FishingSave { try { return this.read(); } catch { return { version: SAVE_VERSION, profileId: 'recovery', catches: [] }; } }
 }

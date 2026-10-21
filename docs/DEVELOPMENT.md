@@ -24,6 +24,6 @@ npm run test:tower-ui # Electron 동물탑 UI/두 창 대전 검사
 
 ## 낚시 저장
 
-수집함은 Electron `userData` 아래 `fishing-collection.json`에 저장한다. main 프로세스가 검증 후 임시 파일에 쓰고 fsync한 뒤 교체하며, `.bak`은 직전 정상 저장본이다. 기본 파일이 깨지면 `.bak`을 읽고, 둘 다 깨졌으면 빈 수집함으로 덮어쓰지 않는다. 가져오기 전에는 `.before-import`를 남기고 개체 ID로 병합한다.
+수집함은 Electron `userData` 아래 `fishing-collection.json`에 저장한다. main 프로세스가 검증 후 임시 파일에 쓰고 fsync한 뒤 교체하며, `.bak`은 직전 정상 저장본이다. 기본 파일이 깨지면 `.bak`을 읽고, 둘 다 깨졌으면 빈 수집함으로 덮어쓰지 않는다. 가져오기 전에는 `.before-import`를 남기고 개체 ID로 병합한다. 저장 형식 버전 2에서 물고기 크기 범위가 바뀌었다. 버전 1 저장본과 내보내기 파일은 읽을 때 옛 범위에서의 상대 위치를 유지한 채 새 범위로 변환되고(`migrateSave`), 첫 로드 때 원본이 `.bak`으로 남는다.
 
 빌드의 `build:fishing-store` 단계는 main용 저장 모듈과 공통 카탈로그를 CommonJS로 따로 묶는다. renderer용 ESM 출력이 main용 공유 모듈 출력을 덮어쓰는 문제를 피하기 위한 것이라 지우면 안 된다.

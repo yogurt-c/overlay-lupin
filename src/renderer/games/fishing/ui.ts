@@ -1,4 +1,4 @@
-import { RARITIES, SPECIES, SPECIES_BY_ID } from '../../../shared/fishing.js';
+import { RARITIES, SAVE_VERSION, SPECIES, SPECIES_BY_ID } from '../../../shared/fishing.js';
 import type { FishingSave, FishCatch, Species } from '../../../shared/fishing.js';
 import { drawEmoteIcon, drawFish, EMOTES, RARITY_INK } from './draw.js';
 export interface FishingUiActions {
@@ -122,7 +122,7 @@ const CSS = `
 `;
 export class FishingUi {
   root: HTMLDivElement; panel:HTMLDivElement; private toast:HTMLDivElement; private emotes:HTMLDivElement;
-  private save:FishingSave={version:1,profileId:'',catches:[]}; private tab:'collection'|'catalog'='collection';
+  private save:FishingSave={version:SAVE_VERSION,profileId:'',catches:[]}; private tab:'collection'|'catalog'='collection';
   private query='';private rarity=-1;private sort='recent';private favorites=false;private page=0;private selected?:string;private confirmRelease=false;
   private result?:FishCatch;private resultNote='';private resultError=false; private mute=false; private toastTimer?:ReturnType<typeof setTimeout>;private lockTimer?:ReturnType<typeof setTimeout>;private lockedUntil=0;
   constructor(private actions:FishingUiActions,private solo=false){

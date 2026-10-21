@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { SPECIES, isFishingSave } from '../dist/shared/fishing.js';
+import { SAVE_VERSION, SPECIES, isFishingSave } from '../dist/shared/fishing.js';
 import { FishingEngine, WIDTHS, pickSpecies } from '../dist/renderer/games/fishing/engine.js';
 import { FishingMatch, validWorld } from '../dist/renderer/games/fishing/module.js';
 import { LEGEND_ART } from '../dist/renderer/games/fishing/legend-art.js';
@@ -24,6 +24,24 @@ test('every 에픽/전설/신화 species has its own bespoke art and no other sp
   assert.deepEqual(Object.keys(EPIC_ART).sort(),SPECIES.filter(s=>s.rarity===3).map(s=>s.id).sort());
   const arts=[...Object.values(LEGEND_ART),...Object.values(EPIC_ART)];assert.equal(new Set(arts).size,arts.length);
 });
+test('real species keep real lengths and rarer tiers reach bigger fish',()=>{
+  const by=n=>SPECIES.find(s=>s.name===n);
+  assert.ok(by('미꾸라지').maxMm<=200,'no 40cm loach');assert.ok(by('송사리').maxMm<=40);assert.ok(by('참돔').maxMm>=900);
+  const avgMax=[0,1,2,3,4,5].map(r=>{const l=SPECIES.filter(s=>s.rarity===r);return l.reduce((n,s)=>n+s.maxMm,0)/l.length;});
+  avgMax.slice(1).forEach((m,i)=>assert.ok(m>avgMax[i],`tier ${i+1} outgrows tier ${i}`));
+  assert.ok(SPECIES.every(s=>Number.isInteger(s.minMm)&&Number.isInteger(s.maxMm)&&s.minMm>0&&s.minMm<s.maxMm));
+});
+test('version 1 saves and exports are rescaled onto the new size ranges without losing anything',()=>storeTest((s,dir)=>{
+  const loach=SPECIES.find(s=>s.name==='미꾸라지'),koi=SPECIES.find(s=>s.name==='잉어');
+  // Old ranges: 미꾸라지 100–311mm, 잉어 97–444mm. 311 was the old record loach; 97 the smallest carp.
+  const v1={version:1,profileId:'old',catches:[{...fish('a'),speciesId:loach.id,sizeMm:311,favorite:true},{...fish('b'),speciesId:koi.id,sizeMm:97,released:true}]};
+  const file=path.join(dir,'fishing-collection.json');fs.writeFileSync(file,JSON.stringify(v1));
+  const d=s.load();assert.equal(d.version,SAVE_VERSION);assert.equal(d.profileId,'old');
+  assert.deepEqual(d.catches.map(c=>[c.id,c.sizeMm,c.favorite,c.released]),[['a',loach.maxMm,true,false],['b',koi.minMm,false,true]]);
+  assert.equal(JSON.parse(fs.readFileSync(file,'utf8')).version,SAVE_VERSION,'migration is persisted');
+  assert.deepEqual(JSON.parse(fs.readFileSync(file+'.bak','utf8')),v1,'the original stays as the backup');
+  s.merge({...v1,catches:[{...fish('c'),speciesId:loach.id,sizeMm:100}]});assert.equal(s.read().catches.find(c=>c.id==='c').sizeMm,loach.minMm,'old exports import too');
+}));
 test('fixed seats survive leaving, capacity is six and the empty seat is reused',()=>{
   const e=new FishingEngine(rng(1));for(let i=0;i<6;i++)e.ensure('p'+i,'player');assert.equal(e.ensure('overflow','no'),undefined);
   e.remove('p2');e.ensure('new','new');assert.equal(e.world.players.find(p=>p.id==='new').seat,2);assert.equal(e.world.players.find(p=>p.id==='p5').seat,5);
@@ -73,7 +91,7 @@ test('corrupt primary recovers from backup; corrupt primary and backup never sil
   s.act({kind:'catch',fish:fish()});s.act({kind:'catch',fish:fish('catch-2')});
   fs.writeFileSync(path.join(dir,'fishing-collection.json'),'bad');assert.equal(s.read().catches.length,1);
   fs.writeFileSync(path.join(dir,'fishing-collection.json.bak'),'bad');assert.throws(()=>s.load());
-  s.merge({version:1,profileId:'restored',catches:[fish()]});assert.equal(s.read().catches.length,1);
+  s.merge({version:SAVE_VERSION,profileId:'restored',catches:[fish()]});assert.equal(s.read().catches.length,1);
 }));
 
 test('real room protocol sends mid-session rosters and retains neighboring seats after leave/rejoin',async()=>{
@@ -166,7 +184,7 @@ test('rooms of games without handoff still close when the host leaves',async()=>
 });
 
 test('10,000 saved fish remain readable and no import can duplicate catches',()=>storeTest(s=>{
-  const catches=Array.from({length:10000},(_,i)=>fish('load-'+i));const data={version:1,profileId:'large',catches};
+  const catches=Array.from({length:10000},(_,i)=>fish('load-'+i));const data={version:SAVE_VERSION,profileId:'large',catches};
   s.merge(data);s.merge(data);assert.equal(s.read().catches.length,10000);assert.ok(isFishingSave(s.read()));
 }));
 

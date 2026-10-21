@@ -1,4 +1,4 @@
-import { RARITIES, SPECIES_BY_ID, validCatch } from '../../../shared/fishing.js';
+import { RARITIES, SAVE_VERSION, SPECIES_BY_ID, validCatch } from '../../../shared/fishing.js';
 import type { FishingSave, FishCatch, FishingAction, FishingReply } from '../../../shared/fishing.js';
 import type { GameMatch, GameModule, Viewport } from '../types.js';
 import { FishingEngine, emptyWorld, WIDTHS } from './engine.js';
@@ -21,7 +21,7 @@ export function validWorld(value: unknown): value is FishingWorld {
 }
 export class FishingMatch implements GameMatch {
   private engine: FishingEngine | null; private world=emptyWorld(); private commands:Command[]=[];private seq=0;
-  private held=false;private ui?:FishingUi;private save:FishingSave={version:1,profileId:'',catches:[]};
+  private held=false;private ui?:FishingUi;private save:FishingSave={version:SAVE_VERSION,profileId:'',catches:[]};
   private ready=false;private saving=false;private pending?:FishCatch;private savedId='';private disposed=false;private closed=false;private previewPos=.5;
   private known:string[]=[];private retryAt=0;private loadError='';
   constructor(private isHost:boolean,private myId:string,private myName:string,private solo=false){
