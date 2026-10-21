@@ -93,6 +93,22 @@ app.whenReady().then(async()=>{
   assert.ok(await js(`document.querySelector('.fish-panel').textContent.includes('발견 1/120종')`));
   assert.equal(await js(`document.querySelectorAll('.fish-card').length`),6);await pause(60);
   fs.writeFileSync(path.join(root,'output/fishing/collection.png'),(await win.webContents.capturePage()).toPNG());
+  // Custom dropdowns replace native selects: mouse pick, keyboard pick, Esc and outside click all close them.
+  assert.equal(await js(`document.querySelectorAll('#fishing-ui select').length`),0);
+  const key=(sel,k)=>js(`document.querySelector(${JSON.stringify(sel)}).dispatchEvent(new KeyboardEvent('keydown',{key:'${k}',code:'${k==='Enter'?'Enter':k}',bubbles:true,cancelable:true}))`);
+  await js(`document.querySelectorAll('.fish-select')[0].click()`);
+  assert.equal(await js(`document.querySelectorAll('.fish-menu:not([hidden]) li').length`),7);
+  await pause(200);fs.writeFileSync(path.join(root,'output/fishing/dropdown.png'),(await win.webContents.capturePage()).toPNG());
+  await js(`document.querySelectorAll('.fish-menu li')[6].click()`);
+  assert.equal(await js(`document.querySelectorAll('.fish-menu:not([hidden])').length`),0);
+  assert.equal(await js(`document.querySelectorAll('.fish-card').length`),5,'신화 filter leaves the five mythic species');
+  assert.ok(await js(`document.querySelectorAll('.fish-select')[0].textContent.includes('신화')`));
+  await key('.fish-dropdown:nth-of-type(2) .fish-select','ArrowDown');await key('.fish-dropdown[data-open] .fish-select','ArrowDown');await key('.fish-dropdown[data-open] .fish-select','Enter');
+  assert.ok(await js(`document.querySelectorAll('.fish-select')[1].textContent.includes('크기')`),'arrows and Enter pick the next sort');
+  await js(`document.querySelectorAll('.fish-select')[0].click()`);await key('.fish-dropdown[data-open] .fish-select','Escape');
+  assert.equal(await js(`document.querySelectorAll('.fish-dropdown[data-open]').length`),0);assert.equal(await js(`testMatch.ui.opened`),true,'Esc closes only the menu');
+  await js(`document.querySelectorAll('.fish-select')[0].click();document.querySelector('.fish-panel h3, .fish-stats').dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}))`);
+  assert.equal(await js(`document.querySelectorAll('.fish-dropdown[data-open]').length`),0,'outside click closes the menu');
   await js(`testMatch.ui.close();const ctx=document.getElementById('field').getContext('2d');window.drawnLabels=[];const original=ctx.fillText;ctx.fillText=function(text,...args){drawnLabels.push(text);return original.call(this,text,...args)};testMatch.render(ctx,{width:320,height:280,pixelRatio:devicePixelRatio});ctx.fillText=original;void 0;`);
   assert.equal(await js(`drawnLabels.includes('빈자리')`),false);
   assert.ok(await js(`drawnLabels.some(t=>t.includes('Space 던지기'))`));

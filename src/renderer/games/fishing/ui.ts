@@ -47,6 +47,18 @@ const CSS = `
 
 #fishing-ui .fish-filters{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:3px}
 #fishing-ui .fish-filters input{width:100%;min-width:0;padding-left:16px;background:var(--paper) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='none' stroke='%236b6f68' stroke-width='1.5'%3E%3Ccircle cx='4.2' cy='4.2' r='3'/%3E%3Cpath d='M6.5 6.5 9 9'/%3E%3C/svg%3E") 4px 50% no-repeat}
+#fishing-ui .fish-dropdown{position:relative}
+#fishing-ui .fish-select{position:relative;display:flex;align-items:center;gap:4px;padding:3px 17px 3px 7px;border-radius:999px;white-space:nowrap}
+#fishing-ui .fish-select::after{content:'';position:absolute;right:7px;top:50%;width:3.5px;height:3.5px;border:solid var(--ink);border-width:0 1.3px 1.3px 0;transform:translateY(-70%) rotate(45deg);transition:transform 120ms ease}
+#fishing-ui .fish-dropdown[data-open] .fish-select{border-color:var(--ink);background:var(--paper);box-shadow:0 2px 0 var(--ink)}
+#fishing-ui .fish-dropdown[data-open] .fish-select::after{transform:translateY(-25%) rotate(225deg)}
+#fishing-ui .fish-menu{position:absolute;top:calc(100% + 4px);right:0;z-index:5;min-width:100%;margin:0;padding:3px;list-style:none;box-sizing:border-box;background:var(--paper);border:1.5px solid var(--ink);border-radius:8px;box-shadow:2px 3px 0 var(--ink);animation:fish-pop 140ms cubic-bezier(.16,1,.3,1)}
+#fishing-ui .fish-menu li{display:flex;align-items:center;gap:5px;padding:3px 6px;border-radius:5px;white-space:nowrap;cursor:pointer}
+#fishing-ui .fish-menu li.fish-active{background:var(--paper-2)}
+#fishing-ui .fish-menu li[aria-selected="true"]{font-weight:700;color:var(--accent)}
+#fishing-ui .fish-menu li[aria-selected="true"]::after{content:'✓';margin-left:auto;padding-left:8px}
+#fishing-ui .fish-swatch{flex:none;width:7px;height:7px;border:1px solid var(--ink);border-radius:50%;box-sizing:border-box}
+#fishing-ui .fish-swatch.fish-any{border-style:dashed;border-color:var(--muted)}
 #fishing-ui .fish-filters button[aria-pressed="true"]{border-color:var(--accent);background:#f3e6d3;color:var(--accent)}
 
 #fishing-ui .fish-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}
@@ -208,8 +220,8 @@ export class FishingUi {
     if(this.selected){this.detail(this.selected);return;}
     const controls=el('div',undefined,'fish-filters');const search=el('input');search.placeholder='이름 검색';search.setAttribute('aria-label','물고기 이름 검색');search.value=this.query;
     search.oninput=()=>{this.query=search.value;this.page=0;this.renderRows();};controls.append(search);
-    const rarity=el('select');rarity.setAttribute('aria-label','등급 필터');['전체',...RARITIES].forEach((t,i)=>{const o=el('option',t);o.value=String(i-1);rarity.append(o);});rarity.value=String(this.rarity);rarity.onchange=()=>{this.rarity=Number(rarity.value);this.page=0;this.renderRows();};controls.append(rarity);
-    const sort=el('select');sort.setAttribute('aria-label','정렬');[['recent','최근'],['size','크기'],['rarity','등급'],['name','이름']].forEach(([v,t])=>{const o=el('option',t);o.value=v;sort.append(o);});sort.value=this.sort;sort.onchange=()=>{this.sort=sort.value;this.page=0;this.renderRows();};controls.append(sort);
+    controls.append(this.dropdown('등급 필터',['전체',...RARITIES].map((text,i)=>({value:String(i-1),text,color:i?RARITY_INK[i-1]:''})),String(this.rarity),v=>{this.rarity=Number(v);this.page=0;this.renderRows();}));
+    controls.append(this.dropdown('정렬',[['recent','최근'],['size','크기'],['rarity','등급'],['name','이름']].map(([value,text])=>({value,text})),this.sort,v=>{this.sort=v;this.page=0;this.renderRows();}));
     const fav=button(this.favorites?'★':'☆',()=>{this.favorites=!this.favorites;this.page=0;this.renderCollection();});fav.title='즐겨찾기만 보기';fav.setAttribute('aria-label','즐겨찾기만 보기');fav.setAttribute('aria-pressed',String(this.favorites));
     controls.append(fav);this.panel.append(controls);
     const rows=el('div');rows.dataset.rows='true';rows.style.display='contents';this.panel.append(rows);this.renderRows();
@@ -242,6 +254,31 @@ export class FishingUi {
     if(fish?.favorite)card.append(el('span','★','fish-star'));
     card.setAttribute('aria-label',`${known?s.name:'미발견 물고기'}, ${RARITIES[s.rarity]}${fish?`, ${cm(fish.sizeMm)}`:''}`);
     return card;
+  }
+  /** Paper-styled stand-in for <select>: a pill trigger over a sketch-card listbox, for mouse or ↑↓/Enter/Esc. `color` adds a rarity dot ('' = hollow "any"). */
+  private dropdown(label:string,options:{value:string;text:string;color?:string}[],value:string,change:(v:string)=>void):HTMLDivElement{
+    const wrap=el('div',undefined,'fish-dropdown'),list=el('ul',undefined,'fish-menu');list.setAttribute('role','listbox');list.setAttribute('aria-label',label);list.hidden=true;
+    const trigger=button('',()=>list.hidden?open():close(),'fish-select');trigger.setAttribute('aria-haspopup','listbox');trigger.setAttribute('aria-expanded','false');trigger.title=label;
+    let active=0;
+    const face=(o:{text:string;color?:string})=>{const parts:HTMLElement[]=[];if(o.color!==undefined){const dot=el('i',undefined,o.color?'fish-swatch':'fish-swatch fish-any');if(o.color)dot.style.background=o.color;parts.push(dot);}parts.push(el('span',o.text));return parts;};
+    const paint=()=>{
+      const current=options.find(o=>o.value===value)??options[0];trigger.replaceChildren(...face(current));trigger.setAttribute('aria-label',`${label}: ${current.text}`);
+      list.replaceChildren(...options.map((o,i)=>{const li=el('li');li.append(...face(o));li.setAttribute('role','option');li.setAttribute('aria-selected',String(o.value===value));li.classList.toggle('fish-active',i===active);
+        li.onpointerdown=e=>e.preventDefault();li.onpointerenter=()=>{active=i;mark();};li.onclick=()=>pick(o.value);return li;}));
+    };
+    const mark=()=>[...list.children].forEach((li,i)=>li.classList.toggle('fish-active',i===active));
+    const outside=(e:PointerEvent)=>{if(!wrap.contains(e.target as Node))close();};
+    const open=()=>{active=Math.max(0,options.findIndex(o=>o.value===value));list.hidden=false;wrap.dataset.open='';trigger.setAttribute('aria-expanded','true');paint();document.addEventListener('pointerdown',outside,true);};
+    const close=()=>{list.hidden=true;delete wrap.dataset.open;trigger.setAttribute('aria-expanded','false');document.removeEventListener('pointerdown',outside,true);};
+    const pick=(v:string)=>{close();if(v===value)return;value=v;paint();change(v);};
+    // While open, the fishing input source leaves these keys to the menu (see input.ts).
+    wrap.onkeydown=e=>{
+      if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();if(list.hidden){open();return;}active=(active+(e.key==='ArrowDown'?1:options.length-1))%options.length;mark();}
+      else if((e.key==='Enter'||e.key===' ')&&!list.hidden){e.preventDefault();pick(options[active].value);}
+      else if(e.key==='Escape'&&!list.hidden){e.preventDefault();close();trigger.focus();}
+      else if(e.key==='Tab')close();
+    };
+    paint();wrap.append(trigger,list);return wrap;
   }
   private importScreen():void{
     this.panel.replaceChildren(this.header(),el('h3','수집 데이터 가져오기'),el('p','선택한 파일을 현재 수집함과 합칩니다. 방생 기록은 유지하고, 가져오기 전 백업을 남깁니다.'),

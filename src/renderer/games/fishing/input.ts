@@ -5,6 +5,8 @@ export function createInputSource(target: Window) {
   target.addEventListener('keydown', e => {
     if (!active() || target.document.getElementById('settings-panel')?.hidden === false) return;
     if ((e.target as HTMLElement)?.closest('input,select,textarea')) { e.stopImmediatePropagation(); return; }
+    // An open collection dropdown owns Space/Esc/arrows until it closes.
+    if ((e.target as HTMLElement)?.closest('.fish-dropdown[data-open]')) return;
     if (!['Space','Escape','KeyE','KeyB','KeyC','Digit1','Digit2','Digit3','Digit4','Digit5','Digit6','Digit7','Digit8'].includes(e.code)) return;
     e.preventDefault(); e.stopImmediatePropagation();
     if (e.repeat) return;
