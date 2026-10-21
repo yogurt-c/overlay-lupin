@@ -67,7 +67,7 @@ export class FishingMatch implements GameMatch {
   step(raw:unknown):void{
     if(this.disposed)return;const i=raw as FishingInput|undefined;
     if(i?.cancel){this.held=false;if(this.ui?.opened&&!this.pending)this.ui.close();this.command('cancel');}
-    if(i?.collection)this.open();if(i?.emotes)this.ui?.toggleEmotes();if(i&&i.emoji>=0&&this.ui?.emotesOpen){this.command('emoji',{value:i.emoji});this.ui.toggleEmotes();}
+    if(i?.emotes)this.ui?.toggleEmotes();if(i&&i.emoji>=0&&this.ui?.emotesOpen){this.command('emoji',{value:i.emoji});this.ui.toggleEmotes();}
     if(i?.cast&&!this.ui?.resultSpace())this.cast();this.held=!this.ui?.opened&&!this.closed&&!!i?.held;
     const known=this.known;
     if(this.engine){const me=this.me();if(me)me.known=known;this.engine.input(this.myId,this.held,this.commands);this.engine.step();}
@@ -107,5 +107,5 @@ export class FishingMatch implements GameMatch {
   canLeave():boolean{if(this.pending||this.saving){this.ui?.message('잡은 물고기를 저장하는 중입니다. 저장 완료 후 나가 주세요.');return false;}return true;}
   dispose():void{this.disposed=true;this.ui?.dispose();}
 }
-export const fishingModule:GameModule={id:'fishing',label:'낚시',hint:'Space 던지기·챔질 · 누르면 오른쪽, 떼면 왼쪽 · C 수집함 · E 감정표현 · 최대 6명 · 잡은 물고기는 이 기기에 영구 저장',matching:'room',roomCapacity:6,
+export const fishingModule:GameModule={id:'fishing',label:'낚시',hint:'Space 던지기·챔질 · 누르면 오른쪽, 떼면 왼쪽 · E 감정표현 · 최대 6명 · 잡은 물고기는 이 기기에 영구 저장',matching:'room',roomCapacity:6,
   createMatch:(isHost,id,name)=>new FishingMatch(isHost,id,name),createSoloMatch:(id,name)=>new FishingMatch(true,id,name,true),createInputSource};

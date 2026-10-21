@@ -110,7 +110,7 @@ export class FishingUi {
     if(!document.getElementById('fishing-style')){const style=el('style');style.id='fishing-style';style.textContent=CSS;document.head.append(style);}
     this.root=el('div');this.root.id='fishing-ui';
     const top=el('div',undefined,'fish-tools fish-top');
-    top.append(button('수집함',()=>actions.open()),button('감정',()=>this.toggleEmotes()));
+    top.append(button('수집함',()=>actions.open()));
     this.panel=el('div',undefined,'fish-panel');this.panel.hidden=true;
     this.toast=el('div',undefined,'fish-toast');this.toast.hidden=true;this.toast.setAttribute('role','status');
     this.emotes=el('div',undefined,'fish-tools fish-emotes');this.emotes.hidden=true;

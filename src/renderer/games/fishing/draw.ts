@@ -1,5 +1,5 @@
 import type { Species } from '../../../shared/fishing.js';
-import { SPECIES_BY_ID, RARITIES, RARITY_SIGNS } from '../../../shared/fishing.js';
+import { SPECIES_BY_ID } from '../../../shared/fishing.js';
 import { beginSketchFrame, jitter, roughLimb, roughStroke } from '../../lib/sketch.js';
 import type { Viewport } from '../types.js';
 import { WIDTHS, CAST_SECONDS } from './engine.js';
@@ -207,9 +207,9 @@ export function drawFishing(c:CanvasRenderingContext2D,view:Viewport,w:FishingWo
     c.strokeStyle=INK;c.lineWidth=1;c.strokeRect(left+pos*width-windowW/2,y-8,windowW,16);
     c.fillStyle=INK;c.beginPath();c.arc(left+p.target*width,y,3,0,Math.PI*2);c.fill();
     line(c,40,220,280,220,'#a8ada6',1);line(c,40,220,40+p.progress*2.4,220,BROWN,2);
-    label(c,`${RARITY_SIGNS[s.rarity]} ${RARITIES[s.rarity]} · ${Math.round(p.progress)}%`,160,190,8);
+    label(c,`${Math.round(p.progress)}%`,160,190,8);
   }else label(c,p?.phase==='casting'?'찌를 던지는 중…':p?.phase==='waiting'?'찌를 바라보는 중…':p?.phase==='bite'?'입질! Space로 챔질':p?.phase==='result'?'잡았어요! 수집함에 저장 중…':p?.notice||'Space로 낚싯대를 던져 보세요',160,202,9);
   label(c,'Space 던지기·챔질 · 누르기/떼기로 당기기',150,250,8);
-  label(c,'C 수집함 · E 감정표현 · Esc 쉬기',150,265,8);
+  label(c,'E 감정표현 · Esc 쉬기',150,265,8);
   c.restore();
 }
