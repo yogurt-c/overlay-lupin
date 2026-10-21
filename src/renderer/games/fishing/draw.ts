@@ -374,6 +374,12 @@ function rainLevel(sky: Sky, tick: number): number {
 }
 /** Stable 0..1 hash so every drop, ring and splash keeps its own lane from frame to frame. */
 const hash = (n: number) => { const x = Math.sin(n*127.1+311.7)*43758.5453; return x-Math.floor(x); };
+/** A pale rim keeps rain visible over dark desktop content; the ink core survives light backgrounds. */
+function strokeRain(c: CanvasRenderingContext2D): void {
+  c.save();
+  c.strokeStyle = '#eef3ef'; c.lineWidth += .9; c.stroke();
+  c.restore(); c.stroke();
+}
 /** Thin slanted ink hairlines, rings opening on the water and tiny crowns on the planks. Drawn behind the anglers. */
 function drawRain(c: CanvasRenderingContext2D, level: number, tick: number): void {
   c.save(); c.strokeStyle = INK; c.lineCap = 'round';
@@ -386,15 +392,15 @@ function drawRain(c: CanvasRenderingContext2D, level: number, tick: number): voi
       if (li === 0) { c.moveTo(x,y); c.lineTo(x+dx,y+l.len); continue; }
       c.moveTo(x,y); c.lineTo(x+dx*.62,y+l.len*.62); c.moveTo(x+dx*.76,y+l.len*.76); c.lineTo(x+dx,y+l.len);
     }
-    c.stroke();
+    strokeRain(c);
   });
   // Rings: a quick crown where the drop lands, then two thin ellipses spreading and fading.
   c.lineWidth = .5;
   for (let i = 0; i < Math.round(11*level); i++) {
     const age = (tick+i*17)%RIPPLE_TICKS, cycle = Math.floor((tick+i*17)/RIPPLE_TICKS), f = age/RIPPLE_TICKS;
     const x = 18+hash(i*31+cycle)*284, y = WATER_Y+6+hash(i*13+cycle)*14;
-    c.globalAlpha = (1-f)*.7*level; c.beginPath(); c.ellipse(x,y,1.5+f*9,.5+f*2.2,0,0,Math.PI*2); c.stroke();
-    if (f > .25) { c.globalAlpha = (1-f)*.45*level; c.beginPath(); c.ellipse(x,y,(f-.25)*7,(f-.25)*1.6,0,0,Math.PI*2); c.stroke(); }
+    c.globalAlpha = (1-f)*.7*level; c.beginPath(); c.ellipse(x,y,1.5+f*9,.5+f*2.2,0,0,Math.PI*2); strokeRain(c);
+    if (f > .25) { c.globalAlpha = (1-f)*.45*level; c.beginPath(); c.ellipse(x,y,(f-.25)*7,(f-.25)*1.6,0,0,Math.PI*2); strokeRain(c); }
     if (age < SPLASH_TICKS) crown(c,x,y,age/SPLASH_TICKS,level);
   }
   for (let i = 0; i < Math.round(6*level); i++) {
@@ -407,7 +413,7 @@ function drawRain(c: CanvasRenderingContext2D, level: number, tick: number): voi
 function crown(c: CanvasRenderingContext2D, x: number, y: number, f: number, level: number): void {
   c.globalAlpha = (1-f)*.7*level; c.lineWidth = .5; c.beginPath();
   for (const a of [-2.3,-Math.PI/2,-.85]) { const r0 = 1+f*2, r1 = r0+1.6; c.moveTo(x+Math.cos(a)*r0,y+Math.sin(a)*r0); c.lineTo(x+Math.cos(a)*r1,y+Math.sin(a)*r1); }
-  c.stroke();
+  strokeRain(c);
 }
 function sparkle(c: CanvasRenderingContext2D, x: number, y: number, s: number, ink: string): void {
   c.beginPath(); c.moveTo(x,y-s*2); c.lineTo(x+s*.5,y-s*.5); c.lineTo(x+s*2,y); c.lineTo(x+s*.5,y+s*.5); c.lineTo(x,y+s*2); c.lineTo(x-s*.5,y+s*.5); c.lineTo(x-s*2,y); c.lineTo(x-s*.5,y-s*.5); c.closePath();
