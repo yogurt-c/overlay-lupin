@@ -1,6 +1,12 @@
 import { BrowserWindow } from 'electron';
 import path from 'node:path';
 
+// Native visibility remains authoritative when backgroundThrottling is disabled.
+export function attachOverlayVisibility(win: BrowserWindow): void {
+  win.on('hide', () => win.webContents.send('overlay:visibility', false));
+  win.on('show', () => win.webContents.send('overlay:visibility', true));
+}
+
 export function createGameWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 320,
@@ -24,6 +30,7 @@ export function createGameWindow(): BrowserWindow {
     }
   });
 
+  attachOverlayVisibility(win);
   win.setAlwaysOnTop(true, 'screen-saver');
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 

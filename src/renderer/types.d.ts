@@ -13,6 +13,7 @@ export interface OverlayLupinApi {
   recordGameStart(input: AnalyticsStart): void;
   getAnalyticsEnabled(): Promise<boolean>;
   setAnalyticsEnabled(enabled: boolean): Promise<{ ok: boolean; enabled: boolean }>;
+  onVisibilityChanged?(cb: (visible: boolean) => void): void;
   whoAmI(): Promise<{ id: string; name: string }>;
   /** Refused with `busy` while in a room, match or invite; `name` is always the resulting active nickname. */
   setNickname(name: string): Promise<{ ok: boolean; reason?: 'invalid' | 'busy' | 'save'; name: string }>;

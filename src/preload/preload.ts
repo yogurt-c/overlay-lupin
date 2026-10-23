@@ -5,6 +5,9 @@ import type { FishingAction, FishingReply } from '../shared/fishing.js';
 import type { AnalyticsStart } from '../shared/analytics.js';
 
 contextBridge.exposeInMainWorld('overlayLupin', {
+  onVisibilityChanged: (cb: (visible: boolean) => void) => {
+    ipcRenderer.on('overlay:visibility', (_e, visible: boolean) => cb(visible));
+  },
   fishingLoad: (): Promise<FishingReply> => ipcRenderer.invoke('fishing:load'),
   fishingAct: (action: FishingAction): Promise<FishingReply> => ipcRenderer.invoke('fishing:act', action),
   fishingExport: (): Promise<FishingReply> => ipcRenderer.invoke('fishing:export'),

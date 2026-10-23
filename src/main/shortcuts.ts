@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, Menu } from 'electron';
+import { app, BrowserWindow, globalShortcut, Menu, webContents } from 'electron';
 import { DEFAULT_VISIBILITY_SHORTCUTS } from './settings.js';
 import type { VisibilityShortcuts } from '../shared/shortcuts.js';
 
@@ -22,6 +22,20 @@ export function installQuitMenu(): void {
   ];
 
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+
+  // Games bind plain letter keys (W to jump, Q to resign) and preventDefault them, which also swallows
+  // the menu accelerators above. Catch the quit combos before the page sees them so no game can block quitting.
+  const guard = (contents: Electron.WebContents) => contents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown' || input.alt || input.shift) return;
+    const key = input.key.toLowerCase();
+    const quit = isMac ? input.meta && (key === 'q' || key === 'w') : input.control && key === 'q';
+    if (!quit) return;
+    event.preventDefault();
+    app.quit();
+  });
+  // The game window already exists by the time this runs; later windows are caught as they're created.
+  webContents.getAllWebContents().forEach(guard);
+  app.on('web-contents-created', (_event, contents) => guard(contents));
 }
 
 /** Whichever hide/show pair is currently held by the OS, so it can be released precisely on update/uninstall. */

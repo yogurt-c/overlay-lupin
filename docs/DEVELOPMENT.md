@@ -7,6 +7,8 @@ npm install
 npm run dev      # 빌드 후 실행
 npm test         # 전체 게임 시뮬레이션 및 동물탑 동기화 테스트
 npm run test:tower-ui # Electron 동물탑 UI/두 창 대전 검사
+npm run test:gomoku # 오목 규칙·AI·통신 검사
+npm run test:gomoku-ui # Electron 오목 키보드·AI Worker·두 창 대전 검사
 ```
 
 ## 매칭 구조

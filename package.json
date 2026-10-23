@@ -9,7 +9,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.main.json && tsc -p tsconfig.renderer.json && npm run build:physics && npm run build:fishing-store && npm run copy-assets",
     "copy-assets": "node -e \"const fs=require('fs');fs.mkdirSync('dist/renderer',{recursive:true});fs.copyFileSync('src/renderer/index.html','dist/renderer/index.html')\"",
-    "test": "npm run build && node --test tests/network-shutdown.test.mjs tests/nickname.test.mjs && node tests/simulation.test.mjs && node tests/cell.test.mjs && node tests/fence.test.mjs && node tests/worm.test.mjs && node tests/merandi.test.mjs && node tests/tower.test.mjs && node tests/jumpmap.test.mjs && node tests/jumpmap-network.test.mjs && node tests/jumpmap-generation.test.mjs && node tests/survivor.test.mjs && node tests/merge.test.mjs && node tests/web-trial.test.mjs && node --test tests/fishing.test.mjs",
+    "test": "npm run build && node --test tests/network-shutdown.test.mjs tests/nickname.test.mjs && node tests/simulation.test.mjs && node tests/cell.test.mjs && node tests/fence.test.mjs && node tests/worm.test.mjs && node tests/merandi.test.mjs && node tests/tower.test.mjs && node tests/jumpmap.test.mjs && node tests/jumpmap-network.test.mjs && node tests/jumpmap-generation.test.mjs && node tests/survivor.test.mjs && node tests/merge.test.mjs && node tests/web-trial.test.mjs && node --test tests/fishing.test.mjs && node --test tests/gomoku.test.mjs",
     "dev": "npm run build && electron .",
     "start": "electron .",
     "release:mac": "npm run build && electron-builder --mac --publish=never",
@@ -23,7 +23,9 @@
     "test:analytics": "npm run build && node --test tests/analytics.test.mjs tests/analytics-edge.test.mjs",
     "build:fishing-store": "esbuild src/main/fishing-store.ts --bundle --platform=node --format=cjs --outfile=dist/main/fishing-store.js",
     "test:fishing": "npm run build && node --test tests/fishing.test.mjs",
-    "test:fishing-ui": "npm run build && electron tests/fishing-renderer.cjs"
+    "test:fishing-ui": "npm run build && electron tests/fishing-renderer.cjs",
+    "test:gomoku": "npm run build && node --test tests/gomoku.test.mjs",
+    "test:gomoku-ui": "npm run build && electron tests/gomoku-renderer.cjs"
   },
   "dependencies": {
     "electron-updater": "^6.8.9",
