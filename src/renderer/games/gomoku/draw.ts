@@ -3,7 +3,7 @@ import type { Viewport } from '../types.js';
 import type { Side, World } from './types.js';
 import { stoneFor } from './types.js';
 const INK = '#14181a', PAPER = '#fffefa', FADED = '#7a827c', ACCENT = '#9a4a3f', EMBER = '#e2795f';
-const HALO = 'rgba(255,255,255,0.92)', GRID = 'rgba(20,24,26,0.38)', FLOOR = 'rgba(255,253,248,0.55)';
+const HALO = 'rgba(255,255,255,0.92)', GRID = 'rgba(20,24,26,0.38)', GRID_HALO = 'rgba(255,255,255,0.3)';
 /** Board geometry: no coordinate labels, so the grid takes the space the old header used (status lives in the shell HUD). */
 const GAP = 15, SPAN = GAP * 14, LEFT = (320 - SPAN) / 2, TOP = 33, STONE_R = 6.3;
 const STAR_POINTS = [48, 56, 112, 168, 176];
@@ -37,12 +37,16 @@ function stone(ctx: CanvasRenderingContext2D, cell: number, color: number, alpha
   ctx.restore();
 }
 function drawBoard(ctx: CanvasRenderingContext2D): void {
-  ctx.fillStyle = FLOOR; ctx.fillRect(LEFT - 10, TOP - 10, SPAN + 20, SPAN + 20);
   // Frame first: its halo would otherwise erase the ends of the grid lines where they meet it.
   roughStroke(ctx, LEFT, TOP, LEFT + SPAN, TOP, 1.8, INK, HALO);
   roughStroke(ctx, LEFT, TOP + SPAN, LEFT + SPAN, TOP + SPAN, 1.8, INK, HALO);
   roughStroke(ctx, LEFT, TOP, LEFT, TOP + SPAN, 1.8, INK, HALO);
   roughStroke(ctx, LEFT + SPAN, TOP, LEFT + SPAN, TOP + SPAN, 1.8, INK, HALO);
+  // No floor under the board: a faint halo keeps the grid readable on dark desktops without showing on light ones.
+  for (let i = 1; i < 14; i++) {
+    roughSegment(ctx, LEFT, TOP + i * GAP, LEFT + SPAN, TOP + i * GAP, 2.4, GRID_HALO, 1);
+    roughSegment(ctx, LEFT + i * GAP, TOP, LEFT + i * GAP, TOP + SPAN, 2.4, GRID_HALO, 1);
+  }
   for (let i = 1; i < 14; i++) {
     roughSegment(ctx, LEFT, TOP + i * GAP, LEFT + SPAN, TOP + i * GAP, 0.8, GRID, 1);
     roughSegment(ctx, LEFT + i * GAP, TOP, LEFT + i * GAP, TOP + SPAN, 0.8, GRID, 1);
