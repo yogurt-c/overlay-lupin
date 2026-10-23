@@ -14,7 +14,7 @@ export function validWorld(value: unknown): value is FishingWorld {
   return Number.isSafeInteger(w.tick)&&w.tick>=0&&Number.isSafeInteger(w.rainFrom)&&Number.isSafeInteger(w.rainUntil)&&w.rainFrom<=w.rainUntil&&Array.isArray(w.players)&&w.players.length<=6&&
     new Set(w.players.map(p=>p?.id)).size===w.players.length&&new Set(w.players.map(p=>p?.seat)).size===w.players.length&&w.players.every(p=>
       p&&typeof p.id==='string'&&p.id.length<=120&&typeof p.name==='string'&&p.name.length<=24&&Number.isInteger(p.seat)&&p.seat>=0&&p.seat<6&&
-      ['idle','casting','waiting','bite','fight','result'].includes(p.phase)&&[p.time,p.pos,p.target,p.progress,p.seed,p.emoji,p.emojiUntil,p.showUntil,p.ack,p.attempts,p.lastInput].every(Number.isFinite)&&
+      ['idle','casting','reeling','waiting','bite','fight','result'].includes(p.phase)&&[p.time,p.pos,p.target,p.progress,p.seed,p.emoji,p.emojiUntil,p.showUntil,p.ack,p.attempts,p.lastInput].every(Number.isFinite)&&
       p.pos>=0&&p.pos<=1&&p.target>=0&&p.target<=1&&p.progress>=0&&p.progress<=100&&typeof p.notice==='string'&&p.notice.length<200&&
       (!p.fish||validCatch(p.fish))&&(!p.shown||validCatch(p.shown))&&(!['casting','fight','result','bite','waiting'].includes(p.phase)||!!p.fish)&&
       Array.isArray(p.known)&&p.known.length<=120&&p.known.every(id=>SPECIES_BY_ID.has(id)));
@@ -78,6 +78,7 @@ export class FishingMatch implements GameMatch {
   step(raw:unknown):void{
     if(this.disposed)return;const i=raw as FishingInput|undefined;
     if(i?.cancel){this.held=false;if(this.ui?.opened&&!this.pending)this.ui.close();this.command('cancel');}
+    if(i?.close&&this.ui?.opened&&!this.pending)this.ui.close();
     if(i?.emotes)this.ui?.toggleEmotes();if(i&&i.emoji>=0&&this.ui?.emotesOpen){this.command('emoji',{value:i.emoji});this.ui.toggleEmotes();}
     if(i?.collection&&!this.ui?.showingResult){if(this.ui?.opened)this.ui.close();else this.open();}
     if(i?.brag){const fish=this.ui?.resultBrag();if(fish)this.show(fish);}

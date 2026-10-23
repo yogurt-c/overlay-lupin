@@ -1,6 +1,6 @@
-export interface FishingInput { held: boolean; cast: boolean; cancel: boolean; emotes: boolean; emoji: number; brag: boolean; collection: boolean }
+export interface FishingInput { held: boolean; cast: boolean; cancel: boolean; close: boolean; emotes: boolean; emoji: number; brag: boolean; collection: boolean }
 export function createInputSource(target: Window) {
-  let held = false, cast = false, cancel = false, emotes = false, brag = false, collection = false, emoji = -1;
+  let held = false, cast = false, cancel = false, close = false, emotes = false, brag = false, collection = false, emoji = -1;
   const active = () => target.document.body.dataset.game === 'fishing';
   target.addEventListener('keydown', e => {
     if (!active() || target.document.getElementById('settings-panel')?.hidden === false) return;
@@ -11,7 +11,7 @@ export function createInputSource(target: Window) {
     e.preventDefault(); e.stopImmediatePropagation();
     if (e.repeat) return;
     if (e.code === 'Space') { held = true; cast = true; }
-    if (e.code === 'Escape') cancel = true;
+    if (e.code === 'Escape') close = true;
     if (e.code === 'KeyE') emotes = true;
     if (e.code === 'KeyB') brag = true;
     if (e.code === 'KeyC') collection = true;
@@ -20,6 +20,6 @@ export function createInputSource(target: Window) {
   target.addEventListener('keyup', e => { if (e.code === 'Space') held = false; });
   target.addEventListener('blur', () => { held = false; cast = false; cancel = true; });
   target.document.addEventListener('visibilitychange', () => { if (target.document.hidden) { held = false; cast = false; cancel = true; } });
-  return { read(): FishingInput { const out = { held, cast, cancel, emotes, emoji, brag, collection }; cast = cancel = emotes = brag = collection = false; emoji = -1; return out; },
-    clear(): void { held = cast = cancel = emotes = brag = collection = false; emoji = -1; } };
+  return { read(): FishingInput { const out = { held, cast, cancel, close, emotes, emoji, brag, collection }; cast = cancel = close = emotes = brag = collection = false; emoji = -1; return out; },
+    clear(): void { held = cast = cancel = close = emotes = brag = collection = false; emoji = -1; } };
 }

@@ -4,6 +4,7 @@ export const WIDTHS = [.36,.31,.26,.22,.19,.17];
 export const LIMITS = [12,14,16,18,20,22];
 const GAIN = [22,20,18,16,14,13], LOSS = [10,12,14,16,18,19];
 export const CAST_SECONDS = 1.0;
+export const REEL_SECONDS = .7;
 export const EMOTE_TICKS = 120;
 export const EMOTE_COUNT = 8;
 export const SHOW_TICKS = 300;
@@ -12,7 +13,7 @@ export const RAIN_CHECK_TICKS = 3600;
 const RAIN_CHANCE = .2, RAIN_MIN_TICKS = 3600, RAIN_EXTRA_TICKS = 3600;
 /** Rain-only fish are three times as likely as their tier-mates while it rains, so a shower is worth waiting for. */
 const RAIN_BOOST = 3;
-export type Phase = 'casting' | 'idle' | 'waiting' | 'bite' | 'fight' | 'result';
+export type Phase = 'casting' | 'reeling' | 'idle' | 'waiting' | 'bite' | 'fight' | 'result';
 export interface Fisher {
   id: string; name: string; seat: number; phase: Phase; time: number; pos: number; target: number; progress: number;
   fish?: FishCatch; seed: number; emoji: number; emojiUntil: number; showUntil: number; shown?: FishCatch;
@@ -80,7 +81,8 @@ export class FishingEngine {
           p.fish = { id: this.uid(), speciesId: s.id, sizeMm: Math.round(s.minMm + ratio * (s.maxMm-s.minMm)), caughtAt: this.now(), favorite: false, released: false };
           p.phase = 'casting'; p.time = 0; p.seed = Math.floor(this.rng()*100000);
           p.notice = '';
-        } else if (p.phase === 'bite') { p.phase = 'fight'; p.time = 0; p.progress = 25; p.pos = .5; p.attempts++; }
+        } else if (p.phase === 'waiting') { p.phase = 'reeling'; p.time = 0; p.fish = undefined; p.notice = ''; }
+        else if (p.phase === 'bite') { p.phase = 'fight'; p.time = 0; p.progress = 25; p.pos = .5; p.attempts++; }
       }
     }
   }
@@ -97,6 +99,9 @@ export class FishingEngine {
       if (p.phase === 'casting') {
         p.time += 1/60;
         if (p.time >= CAST_SECONDS) { p.phase = 'waiting'; p.time = 3 + this.rng()*5; }
+      } else if (p.phase === 'reeling') {
+        p.time += 1/60;
+        if (p.time >= REEL_SECONDS) { p.phase = 'idle'; p.notice = '낚싯대를 회수했어요'; }
       } else if (p.phase === 'waiting' || p.phase === 'bite') {
         p.time -= 1/60;
         if (p.time <= 0) {
