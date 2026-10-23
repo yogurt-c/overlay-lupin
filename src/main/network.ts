@@ -3,6 +3,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import type { PeerInfo, RoomInfo, RoomRoster } from '../shared/protocol.js';
+import { broadcastAddresses } from './broadcast.js';
 
 export type { PeerInfo, RoomInfo, RoomRoster };
 
@@ -141,6 +142,11 @@ export declare interface GameNetwork {
   on(event: 'room-member-left', listener: (peerId: string) => void): this;
 }
 
+function sameRoomInfo(a: RoomInfo, b: RoomInfo): boolean {
+  return a.name === b.name && a.gameId === b.gameId && a.hostId === b.hostId
+    && a.memberCount === b.memberCount && a.capacity === b.capacity;
+}
+
 /**
  * Two sockets, two jobs:
  *  - `discoverySocket` is bound to the fixed, well-known DISCOVERY_PORT and only
@@ -170,6 +176,8 @@ export class GameNetwork extends EventEmitter {
   private sweepTimer?: ReturnType<typeof setInterval>;
   /** `window-all-closed` and `before-quit` both call stop() during a quit-and-install — closing an already-closed socket throws. */
   private stopped = false;
+  /** HELLOs fail every 2s while a route is broken — log each target/error pair once, not on every tick. */
+  private loggedSendErrors = new Set<string>();
 
   /** Set only while I'm hosting a room; authoritative membership lives here. */
   private hostedRoom: HostedRoom | null = null;
@@ -203,6 +211,9 @@ export class GameNetwork extends EventEmitter {
   start(): void {
     this.discoverySocket.on('message', (buf, rinfo) => this.handleMessage(buf, rinfo));
     this.replySocket.on('message', (buf, rinfo) => this.handleMessage(buf, rinfo));
+    // Without listeners, a failed bind is an uncaught exception in the main process.
+    this.discoverySocket.on('error', (err) => console.error('[network] discovery socket error:', err));
+    this.replySocket.on('error', (err) => console.error('[network] reply socket error:', err));
 
     this.replySocket.bind(0, () => {
       this.replyPort = this.replySocket.address().port;
@@ -373,7 +384,24 @@ export class GameNetwork extends EventEmitter {
     // Renderer IPC can still arrive after before-quit has closed the sockets.
     if (this.stopped) return;
     const buf = Buffer.from(JSON.stringify(msg));
-    this.replySocket.send(buf, target.replyPort, target.address);
+    this.replySocket.send(buf, target.replyPort, target.address, (err) => {
+      if (err) this.logSendError(target.address, err);
+    });
+  }
+
+  private broadcast(buf: Buffer): void {
+    for (const address of broadcastAddresses()) {
+      this.discoverySocket.send(buf, DISCOVERY_PORT, address, (err) => {
+        if (err) this.logSendError(address, err);
+      });
+    }
+  }
+
+  private logSendError(address: string, err: NodeJS.ErrnoException): void {
+    const key = `${address}:${err.code ?? err.message}`;
+    if (this.loggedSendErrors.has(key)) return;
+    this.loggedSendErrors.add(key);
+    console.warn(`[network] send to ${address} failed:`, err.code ?? err.message);
   }
 
   private broadcastHello(): void {
@@ -381,7 +409,7 @@ export class GameNetwork extends EventEmitter {
     const buf = Buffer.from(
       JSON.stringify({ t: 'HELLO', id: this.myId, name: this.myName, replyPort: this.replyPort })
     );
-    this.discoverySocket.send(buf, DISCOVERY_PORT, '255.255.255.255');
+    this.broadcast(buf);
   }
 
   private broadcastRoomOpen(): void {
@@ -399,7 +427,7 @@ export class GameNetwork extends EventEmitter {
         replyPort: this.replyPort
       })
     );
-    this.discoverySocket.send(buf, DISCOVERY_PORT, '255.255.255.255');
+    this.broadcast(buf);
   }
 
   /** Host only: pushes the current membership to every member, then updates my own view. */
@@ -502,8 +530,9 @@ export class GameNetwork extends EventEmitter {
         }
         break;
 
-      case 'ROOM_OPEN':
-        this.openRooms.set(msg.roomId, {
+      case 'ROOM_OPEN': {
+        const previous = this.openRooms.get(msg.roomId);
+        const room: OpenRoom = {
           id: msg.roomId,
           name: msg.name,
           gameId: msg.gameId,
@@ -513,9 +542,12 @@ export class GameNetwork extends EventEmitter {
           hostAddress: rinfo.address,
           hostReplyPort: msg.replyPort,
           lastSeen: Date.now()
-        });
-        this.emitRooms();
+        };
+        this.openRooms.set(msg.roomId, room);
+        // Adverts repeat every HELLO tick (and once per subnet) — only a visible change re-renders the list.
+        if (!previous || !sameRoomInfo(previous, room)) this.emitRooms();
         break;
+      }
 
       case 'ROOM_JOIN': {
         const room = this.hostedRoom;
