@@ -2,6 +2,7 @@ import type { PeerInfo, RoomInfo, RoomRoster } from '../shared/protocol.js';
 import type { VisibilityShortcuts } from '../shared/shortcuts.js';
 import type { FishingAction, FishingReply } from '../shared/fishing.js';
 import type { AnalyticsStart } from '../shared/analytics.js';
+import type { UpdateInfo, UpdateState } from '../shared/update.js';
 
 export type { PeerInfo, RoomInfo, RoomRoster, VisibilityShortcuts };
 
@@ -55,6 +56,14 @@ export interface OverlayLupinApi {
   sendRoomState(payload: unknown): void;
 
   quit(): void;
+
+  /** Running version plus whatever the updater is doing — pulled once on load, since pushes sent before the page loaded are lost. */
+  getUpdateInfo(): Promise<UpdateInfo | null>;
+  onUpdateState(cb: (state: UpdateState) => void): void;
+  /** User-initiated check: unlike the periodic one, it reports "checking", "latest" and check failures. Also retries a failed download. */
+  checkForUpdate(): void;
+  /** Quits and installs; ignored unless the update is already downloaded. */
+  installUpdate(): void;
 
   /** Moves the window by a relative offset (CSS px) — for games that need `#field` to be a `no-drag` region (so it can receive mouse events) but still want click-and-drag-to-move on empty space. */
   moveWindowBy(dx: number, dy: number): void;

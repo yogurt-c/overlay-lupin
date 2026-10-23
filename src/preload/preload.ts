@@ -3,6 +3,7 @@ import type { PeerInfo, RoomInfo, RoomRoster } from '../shared/protocol.js';
 import type { VisibilityShortcuts } from '../shared/shortcuts.js';
 import type { FishingAction, FishingReply } from '../shared/fishing.js';
 import type { AnalyticsStart } from '../shared/analytics.js';
+import type { UpdateInfo, UpdateState } from '../shared/update.js';
 
 contextBridge.exposeInMainWorld('overlayLupin', {
   onVisibilityChanged: (cb: (visible: boolean) => void) => {
@@ -80,6 +81,13 @@ contextBridge.exposeInMainWorld('overlayLupin', {
   sendRoomState: (payload: unknown) => ipcRenderer.send('net:room-pos', payload),
 
   quit: () => ipcRenderer.send('app:quit'),
+
+  getUpdateInfo: (): Promise<UpdateInfo | null> => ipcRenderer.invoke('update:get'),
+  onUpdateState: (cb: (state: UpdateState) => void) => {
+    ipcRenderer.on('update:state', (_e, state: UpdateState) => cb(state));
+  },
+  checkForUpdate: () => ipcRenderer.send('update:check'),
+  installUpdate: () => ipcRenderer.send('update:install'),
 
   moveWindowBy: (dx: number, dy: number) => ipcRenderer.send('win:move-by', { dx, dy }),
 

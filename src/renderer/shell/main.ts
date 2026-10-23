@@ -2,6 +2,7 @@ import { advanceSendClock } from '../lib/send-clock.js';
 import { advanceSketchSeed } from '../lib/sketch.js';
 import { acceleratorFromKeyboardEvent } from '../lib/accelerator.js';
 import { GAME_MODULES } from '../games/registry.js';
+import { installUpdateNotice, setUpdateNoticeSuppressed } from './update.js';
 import type { GameMatch, GameModule } from '../games/types.js';
 import type { PeerInfo, RoomInfo, RoomRoster, VisibilityShortcuts } from '../types.js';
 
@@ -138,6 +139,7 @@ function setUiState(next: UiState): void {
   // waiting for a syncHud() that won't run again until the next match starts.
   if (next !== 'play') bannerEl.hidden = true;
   reconnectMsg.hidden = next !== 'reconnecting';
+  setUpdateNoticeSuppressed(next === 'play' || next === 'reconnecting');
   syncNicknameAvailability();
   if (next !== 'play') {
     for (const src of inputSources.values()) src.clear();
@@ -352,6 +354,7 @@ function renderLobby(roster: RoomRoster): void {
 }
 
 quitBtn.addEventListener('click', () => window.overlayLupin.quit());
+installUpdateNotice();
 
 /* ------------------------------------------------------------- Shortcuts panel */
 
