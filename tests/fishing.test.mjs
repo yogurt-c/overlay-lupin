@@ -210,3 +210,15 @@ test('casting completes before bite waiting; repeated cast cannot skip it and ca
   e.input('me',false,[{seq:3,kind:'cancel'},{seq:4,kind:'cast'}]);assert.equal(p.phase,'casting');
   e.input('me',false,[{seq:5,kind:'cancel'}]);assert.equal(p.phase,'idle');assert.equal(p.fish,undefined);
 });
+
+test('pressing cast while waiting for a bite reels the line back in',()=>{
+  const e=new FishingEngine(rng(9));const p=e.ensure('me','me');
+  e.input('me',false,[{seq:1,kind:'cast'}]);
+  for(let n=0;n<60;n++){e.input('me',false,[]);e.step();}
+  assert.equal(p.phase,'waiting');
+  e.input('me',false,[{seq:2,kind:'cast'}]);assert.equal(p.phase,'reeling');assert.equal(p.fish,undefined);assert.ok(validWorld(e.snapshot()));
+  e.input('me',false,[{seq:3,kind:'cast'}]);assert.equal(p.phase,'reeling','casting again waits for the reel-in to finish');
+  for(let n=0;n<45;n++){e.input('me',false,[]);e.step();}
+  assert.equal(p.phase,'idle');assert.equal(p.notice,'낚싯대를 회수했어요');
+  e.input('me',false,[{seq:4,kind:'cast'}]);assert.equal(p.phase,'casting');
+});

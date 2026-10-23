@@ -2,7 +2,7 @@ import type { FishCatch, Species } from '../../../shared/fishing.js';
 import { RARITIES, SPECIES_BY_ID } from '../../../shared/fishing.js';
 import { beginSketchFrame, jitter, roughLimb, roughStroke } from '../../lib/sketch.js';
 import type { Viewport } from '../types.js';
-import { WIDTHS, CAST_SECONDS, EMOTE_TICKS, SHOW_TICKS } from './engine.js';
+import { WIDTHS, CAST_SECONDS, REEL_SECONDS, EMOTE_TICKS, SHOW_TICKS } from './engine.js';
 import { LEGEND_ART } from './legend-art.js';
 import { EPIC_ART } from './epic-art.js';
 import type { FishingWorld, Fisher } from './engine.js';
@@ -67,10 +67,19 @@ const CAST_KEYS: [number,Pose][] = [
   [1.01, { lean:1, crouch:0, rod:-.62, bend:1, grip:[8,-8], face:'calm' }]
 ];
 const SNAP_AT = .38, LAND_AT = .8;
+/** The cast played backwards: dip to take up slack → yank the rod over the shoulder → float flies home → settle. */
+const REEL_KEYS: [number,Pose][] = [
+  [.15, { lean:1, crouch:1, rod:-.45, bend:2, grip:[9,-8], face:'focus' }],
+  [.45, { lean:-4, crouch:-1, rod:-1.9, bend:-2, grip:[2,-15], face:'focus', arc:true }],
+  [.75, { lean:-2, crouch:0, rod:-1.05, bend:2, grip:[6,-10], face:'calm' }],
+  [1.01, IDLE]
+];
+const LIFT_AT = .15, HOME_AT = .7;
 function poseOf(p: Fisher, tick: number): Pose {
   const beat = Math.floor(tick/5)%2;
   switch (p.phase) {
     case 'casting': { const t = p.time/CAST_SECONDS; return (CAST_KEYS.find(([end]) => t < end) ?? CAST_KEYS[CAST_KEYS.length-1])[1]; }
+    case 'reeling': { const t = p.time/REEL_SECONDS; return (REEL_KEYS.find(([end]) => t < end) ?? REEL_KEYS[REEL_KEYS.length-1])[1]; }
     case 'waiting': return { ...IDLE, rod:-.62 };
     case 'bite': return beat ? { lean:1, crouch:1, rod:-.5, bend:6, grip:[8,-8], face:'wow' } : { lean:0, crouch:0, rod:-.62, bend:3, grip:[8,-8], face:'wow' };
     case 'fight': {
@@ -200,6 +209,7 @@ function person(c: CanvasRenderingContext2D,p: Fisher,x:number, tick:number, loc
   c.restore();
   const tx=x+tip[0], ty=y+tip[1];
   if(p.phase==='casting') drawFlight(c,p.time/CAST_SECONDS,tx,ty,x,ink);
+  else if(p.phase==='reeling') drawReel(c,p.time/REEL_SECONDS,tx,ty,x,ink);
   else if(['waiting','bite','fight'].includes(p.phase)){
     const fight=p.phase==='fight', beat=Math.floor(tick/5)%2;
     const fx=x+FLOAT_DX+(fight?(p.target-.5)*12:0), fy=WATER_Y+(p.phase==='bite'?(beat?6:2):fight?4:Math.floor(tick/24+p.seat)%2);
@@ -241,6 +251,20 @@ function drawFlight(c: CanvasRenderingContext2D, t: number, tx: number, ty: numb
   c.save(); c.globalAlpha=1-s*.8; c.strokeStyle=ink; c.lineWidth=.8;
   c.beginPath(); c.ellipse(landX,WATER_Y+3,4+10*s,1.4+2*s,0,0,Math.PI*2); c.stroke();
   c.fillStyle=ink; for (const [dx,h] of [[-6,7],[-2,10],[3,9],[7,6]]) { c.beginPath(); c.arc(landX+dx*(1+s),WATER_Y-h*(1-s*.6)+s*5,1.1,0,Math.PI*2); c.fill(); }
+  c.restore();
+}
+/** Mirror of drawFlight: the float tears off the water with a ripple, arcs back over and swings under the tip. */
+function drawReel(c: CanvasRenderingContext2D, t: number, tx: number, ty: number, x: number, ink: string): void {
+  const startX=x+FLOAT_DX, hangX=tx+1, hangY=ty+7;
+  if (t < LIFT_AT) { slackLine(c,tx,ty,startX,WATER_Y,0,ink); drawFloat(c,startX,WATER_Y,ink); return; }
+  if (t >= HOME_AT) { slackLine(c,tx,ty,hangX,hangY,1,ink); drawFloat(c,hangX,hangY,ink); return; }
+  const f=(t-LIFT_AT)/(HOME_AT-LIFT_AT), ease=f*f;
+  const fx=startX+(hangX-startX)*ease, fy=WATER_Y+(hangY-WATER_Y)*f-26*Math.sin(Math.PI*f);
+  slackLine(c,tx,ty,fx,fy,(1-f)*-4,ink); drawFloat(c,fx,fy,ink);
+  const s=Math.min(2,Math.floor(f*6))/3; // three held ripple frames where the float left the water
+  c.save(); c.globalAlpha=1-s; c.strokeStyle=ink; c.lineWidth=.8;
+  c.beginPath(); c.ellipse(startX,WATER_Y+3,5+9*s,1.5+1.8*s,0,0,Math.PI*2); c.stroke();
+  c.fillStyle=ink; for (const [dx,h] of [[-4,5],[0,8],[4,6]]) { c.beginPath(); c.arc(startX+dx*(1+s),WATER_Y-h*(1-s*.5)+s*4,1,0,Math.PI*2); c.fill(); }
   c.restore();
 }
 function bubble(c: CanvasRenderingContext2D, x: number, y: number, text: string, ink: string): void {
@@ -441,8 +465,8 @@ export function drawFishing(c:CanvasRenderingContext2D,view:Viewport,w:FishingWo
     c.fillStyle=INK;c.beginPath();c.arc(left+p.target*width,y,3,0,Math.PI*2);c.fill();
     line(c,40,220,280,220,'#a8ada6',1);line(c,40,220,40+p.progress*2.4,220,BROWN,2);
     label(c,`${Math.round(p.progress)}%`,160,190,8);
-  }else label(c,p?.phase==='casting'?'찌를 던지는 중…':p?.phase==='waiting'?'찌를 바라보는 중…':p?.phase==='bite'?'입질! Space로 챔질':p?.phase==='result'?'잡았어요! 수집함에 저장 중…':p?.notice||'Space로 낚싯대를 던져 보세요',160,202,9);
-  label(c,'Space 던지기·챔질 · 누르기/떼기로 당기기',150,250,8);
-  label(c,'E 감정표현 · C 수집함 · Esc 쉬기',150,265,8);
+  }else label(c,p?.phase==='casting'?'찌를 던지는 중…':p?.phase==='reeling'?'낚싯대를 회수하는 중…':p?.phase==='waiting'?'찌를 바라보는 중… Space로 회수':p?.phase==='bite'?'입질! Space로 챔질':p?.phase==='result'?'잡았어요! 수집함에 저장 중…':p?.notice||'Space로 낚싯대를 던져 보세요',160,202,9);
+  label(c,'Space 던지기·챔질·회수',150,250,8);
+  label(c,'E 감정표현 · C 수집함',150,265,8);
   c.restore();
 }

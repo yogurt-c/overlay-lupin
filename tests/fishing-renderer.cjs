@@ -8,7 +8,7 @@ const pause=ms=>new Promise(r=>setTimeout(r,ms));
 const reply=fn=>{try{return{ok:true,data:fn()};}catch(e){return{ok:false,error:e.message};}};
 ipcMain.handle('net:whoami',()=>({id:'me',name:'테스트'}));ipcMain.handle('shortcuts:get',()=>({hide:'PageDown',show:'PageUp'}));ipcMain.handle('analytics:get',()=>false);
 ipcMain.handle('fishing:load',()=>reply(()=>store.load()));ipcMain.handle('fishing:act',(_e,a)=>reply(()=>store.act(a)));
-ipcMain.handle('fishing:export',()=>({ok:false,cancelled:true}));ipcMain.handle('fishing:import',()=>({ok:false,cancelled:true}));
+ipcMain.handle('update:get',()=>({currentVersion:'0.0.0',state:{kind:'idle'}}));ipcMain.handle('fishing:export',()=>({ok:false,cancelled:true}));ipcMain.handle('fishing:import',()=>({ok:false,cancelled:true}));
 app.whenReady().then(async()=>{
   win=new BrowserWindow({width:320,height:280,useContentSize:true,frame:false,show:false,transparent:true,webPreferences:{preload:path.join(root,'dist/preload/preload.js'),contextIsolation:true,backgroundThrottling:false}});
   win.webContents.on('console-message',event=>{if(event.level==='error')errors.push(event.message);});
@@ -32,6 +32,8 @@ app.whenReady().then(async()=>{
   assert.equal(await js(`testMatch.engine.world.players[0].phase`),'casting');
   const castFrames=await js(`(()=>{const ctx=document.getElementById('field').getContext('2d'),frames=[];for(const t of [.1,.45,.85]){testMatch.engine.world.players[0].time=t;testMatch.render(ctx,{width:320,height:280,pixelRatio:devicePixelRatio});frames.push(document.getElementById('field').toDataURL());}testMatch.engine.world.players[0].time=0;return frames;})()`);
   assert.equal(new Set(castFrames).size,3,'backswing, flight and splash render differently');
+  const reelFrames=await js(`(()=>{const ctx=document.getElementById('field').getContext('2d'),p=testMatch.engine.world.players[0],saved={phase:p.phase,time:p.time},frames=[];p.phase='reeling';for(const t of [.05,.35,.6]){p.time=t;testMatch.render(ctx,{width:320,height:280,pixelRatio:devicePixelRatio});frames.push(document.getElementById('field').toDataURL());}Object.assign(p,saved);return frames;})()`);
+  assert.equal(new Set(reelFrames).size,3,'lift, yank and float flight render differently while reeling in');
   await js(`for(let i=0;i<650 && testMatch.engine.world.players[0].phase!=='bite';i++)testMatch.step({});testMatch.step({cast:true});`);
   assert.equal(await js(`testMatch.engine.world.players[0].phase`),'fight');
   await js(`testMatch.render(document.getElementById('field').getContext('2d'),{width:320,height:280,pixelRatio:devicePixelRatio});`);
