@@ -12,6 +12,8 @@ export const RIPPLE_TICKS = 45;
 export interface Presentation {
   cursor: number; menu: boolean; selected: number; actions: string[];
   setup: boolean; pending: number | null; message: string; lastAge: number;
+  /** Footer shown while placing stones: the move keys plus this mode's shortcuts. */
+  controls: string;
 }
 const at = (cell: number): [number, number] => [LEFT + cell % 15 * GAP, TOP + Math.floor(cell / 15) * GAP];
 function text(ctx: CanvasRenderingContext2D, s: string, x: number, y: number, size = 9, color = INK): void {
@@ -103,6 +105,6 @@ export function renderGomoku(ctx: CanvasRenderingContext2D, viewport: Viewport, 
     if (on) roughStroke(ctx, x - 22, menuY + 5, x + 22, menuY + 5, 1.6, INK, HALO);
     text(ctx, label, x, menuY, on ? 10 : 9, on ? INK : FADED);
   });
-  text(ctx, ui.message || (ui.setup ? '← → 선택 · Space 시작' : ui.menu ? '← → 선택 · Space 확인 · ↑ 보드' : '방향키 이동 · Space 착수 · 맨 아래 ↓ 메뉴'), 160, 278, 7.5, FADED);
+  text(ctx, ui.message || (ui.setup ? '← → 선택 · Space 시작' : ui.menu ? '← → 선택 · Space 확인' : ui.controls), 160, 278, 7.5, FADED);
   ctx.restore();
 }

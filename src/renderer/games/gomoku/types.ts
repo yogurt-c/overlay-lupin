@@ -26,7 +26,7 @@ export interface Command {
   kind: 'place' | 'rematch' | 'resign';
   cell: number;
 }
-export interface GomokuInput { left: boolean; right: boolean; up: boolean; down: boolean; place: boolean }
-export const NO_INPUT: GomokuInput = { left: false, right: false, up: false, down: false, place: false };
+export interface GomokuInput { left: boolean; right: boolean; up: boolean; down: boolean; place: boolean; undo: boolean; resign: boolean }
+export const NO_INPUT: GomokuInput = { left: false, right: false, up: false, down: false, place: false, undo: false, resign: false };
 export const stoneFor = (w: World, side: Side): Stone => w.black === side ? 1 : 2;
 export const turnStone = (w: World): Stone => w.turn % 2 === 0 ? 1 : 2;

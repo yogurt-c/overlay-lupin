@@ -10,6 +10,7 @@ const LEVELS: Difficulty[] = ['easy', 'normal', 'hard'];
 const LABELS = ['쉬움', '보통', '어려움'];
 /** The result banner pops over the board briefly, then leaves the final position readable; the HUD keeps the result. */
 const BANNER_TICKS = 150;
+const RESIGN_CONFIRM_TICKS = 180;
 let lastDifficulty = 1;
 
 export class GomokuMatch implements GameMatch {
@@ -31,7 +32,8 @@ export class GomokuMatch implements GameMatch {
   private heldTicks = 0;
   private message = '';
   private messageTicks = 0;
-  private confirmResign = false;
+  /** Ticks left to press Q again and confirm resigning; 0 means no confirmation is open. */
+  private resignTicks = 0;
   private disconnected = false;
   private closed = false;
   private disposed = false;
@@ -51,11 +53,10 @@ export class GomokuMatch implements GameMatch {
   current(): World | null { return this.engine?.world ?? this.received; }
   private actions(): string[] {
     if (this.setup) return LABELS;
-    if (this.confirmResign) return ['계속하기', '기권하기'];
     const w = this.current();
     if (this.disconnected) return ['나가기'];
     if (w?.result) return [this.solo ? '다시하기' : w.ready[this.side] ? '동의 대기' : '재대결', '나가기'];
-    return this.solo ? ['보드로', '무르기', '기권'] : ['보드로', '기권'];
+    return [];
   }
   private tell(message: string) { this.message = message; this.messageTicks = 150; }
   private cancelBot() {
@@ -73,21 +74,21 @@ export class GomokuMatch implements GameMatch {
       this.difficulty = this.selected; lastDifficulty = this.selected;
       this.setup = false; this.menu = false; this.selected = 0; return;
     }
-    if (this.confirmResign) {
-      if (this.selected === 1) { this.send('resign'); this.cancelBot(); }
-      this.confirmResign = false; this.selected = 0; return;
-    }
     const action = this.actions()[this.selected];
     if (action === '나가기') { this.closed = true; return; }
     if (action === '다시하기') { this.cancelBot(); this.engine!.restart(); return; }
-    if (action === '재대결') { this.send('rematch'); return; }
-    if (action === '보드로') { this.menu = false; return; }
-    if (action === '무르기') {
-      if (this.engine?.undo(this.side)) { this.cancelBot(); this.menu = false; }
-      else this.tell('되돌릴 내 수가 없습니다');
-      return;
-    }
-    if (action === '기권') { this.confirmResign = true; this.selected = 0; }
+    if (action === '재대결') this.send('rematch');
+  }
+  /** Z: take back my last move (and the AI reply). Solo only, since a duel opponent never agreed to it. */
+  private undo() {
+    if (!this.solo) return;
+    if (this.engine?.undo(this.side)) this.cancelBot();
+    else this.tell('되돌릴 내 수가 없습니다');
+  }
+  /** Q twice: the first press arms a short confirmation window, the second resigns. */
+  private resign() {
+    if (!this.resignTicks) { this.resignTicks = RESIGN_CONFIRM_TICKS; return; }
+    this.resignTicks = 0; this.send('resign'); this.cancelBot();
   }
   step(raw: unknown): void {
     if (this.disposed || this.closed) return;
@@ -96,11 +97,11 @@ export class GomokuMatch implements GameMatch {
     const w = this.current();
     if (w && w.round !== this.observedRound) {
       this.observedRound = w.round; this.observedResult = 0;
-      this.cursor = 112; this.menu = this.disconnected; this.selected = 0; this.confirmResign = false;
+      this.cursor = 112; this.menu = this.disconnected; this.selected = 0; this.resignTicks = 0;
       this.pending = null; this.message = ''; this.cancelBot();
     }
     if (w?.result && !this.observedResult) {
-      this.observedResult = w.result; this.menu = true; this.selected = 0; this.confirmResign = false; this.cancelBot();
+      this.observedResult = w.result; this.menu = true; this.selected = 0; this.resignTicks = 0; this.cancelBot();
       this.bannerTicks = BANNER_TICKS;
     }
     if (this.bannerTicks > 0) this.bannerTicks--;
@@ -109,18 +110,24 @@ export class GomokuMatch implements GameMatch {
     const direction = input.left ? 'left' : input.right ? 'right' : input.up ? 'up' : input.down ? 'down' : '';
     const move = !!direction && (direction !== this.direction || (this.heldTicks >= 18 && this.heldTicks % 5 === 0));
     this.heldTicks = direction === this.direction ? this.heldTicks + 1 : 0; this.direction = direction;
+    // Any other key cancels a pending resign, so a stray Q never ends the game on its own.
+    if (this.resignTicks > 0 && (move || input.place || input.undo)) this.resignTicks = 0;
+    else if (this.resignTicks > 0) this.resignTicks--;
     if (move) {
       if (this.menu) {
         if (direction === 'left') this.selected = Math.max(0, this.selected - 1);
         if (direction === 'right') this.selected = Math.min(this.actions().length - 1, this.selected + 1);
-        if (direction === 'up' && !this.setup && !w?.result && !this.disconnected) { this.menu = false; this.confirmResign = false; }
       } else {
         const x = this.cursor % 15, y = Math.floor(this.cursor / 15);
         if (direction === 'left' && x > 0) this.cursor--;
         if (direction === 'right' && x < 14) this.cursor++;
         if (direction === 'up' && y > 0) this.cursor -= 15;
-        if (direction === 'down') { if (y < 14) this.cursor += 15; else { this.menu = true; this.selected = 0; } }
+        if (direction === 'down' && y < 14) this.cursor += 15;
       }
+    }
+    if (!this.menu && w && !w.result && !this.disconnected) {
+      if (input.undo) this.undo();
+      if (input.resign) this.resign();
     }
     if (input.place) {
       if (this.menu) this.activate();
@@ -159,7 +166,8 @@ export class GomokuMatch implements GameMatch {
   render(ctx: CanvasRenderingContext2D, viewport: Viewport): void {
     renderGomoku(ctx, viewport, this.current(), this.side, { cursor: this.cursor, menu: this.menu, selected: this.selected,
       actions: this.actions(), setup: this.setup, pending: this.pending?.kind === 'place' ? this.pending.cell : null,
-      message: this.confirmResign ? '기권하면 상대가 승리합니다 · Space 확인' : this.message, lastAge: this.lastAge });
+      message: this.resignTicks ? '기권하려면 Q를 한 번 더 · 다른 키는 취소' : this.message, lastAge: this.lastAge,
+      controls: this.solo ? '방향키 이동 · Space 착수 · Z 무르기 · Q 기권' : '방향키 이동 · Space 착수 · Q 기권' });
   }
   private resultText(w: World): string {
     const text = w.result === 3 ? '무승부' : w.result === stoneFor(w, this.side) ? '승리!' : '패배';
@@ -185,7 +193,7 @@ export class GomokuMatch implements GameMatch {
     if (this.solo && !visible) this.cancelBot();
   }
   connectionLost() {
-    this.disconnected = true; this.pending = null; this.confirmResign = false; this.menu = true; this.selected = 0; this.cancelBot();
+    this.disconnected = true; this.pending = null; this.resignTicks = 0; this.menu = true; this.selected = 0; this.cancelBot();
   }
   buildOutgoingPacket(): unknown {
     return this.engine ? encodeWorld(this.engine.world) : { t: 'gomoku-input', cmd: this.pending };
@@ -208,7 +216,7 @@ export class GomokuMatch implements GameMatch {
 }
 export const gomokuModule: GameModule = {
   id: 'gomoku', label: '오목', matching: 'duel',
-  hint: '방향키 이동 · Space 착수 · 맨 아래에서 ↓ 메뉴\n15×15 자유룰 · 5개 이상 연결 · 금수 없음 · 혼자하기 AI 3단계',
+  hint: '방향키 이동 · Space 착수 · Z 무르기(혼자하기) · Q 두 번 기권\n15×15 자유룰 · 5개 이상 연결 · 금수 없음 · 혼자하기 AI 3단계',
   createMatch: isHost => new GomokuMatch(isHost),
   createSoloMatch: () => new GomokuMatch(true, true), createInputSource
 };

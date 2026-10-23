@@ -110,10 +110,10 @@ test('two matches recover lost requests/snapshots, ignore reordered snapshots an
   press(next, 'right'); press(next, 'place'); sync(guest, host);
   sync(host, guest); guest.applyOpponentPacket(old);
   assert.equal(host.current().turn, 2); assert.deepEqual(guest.current(), host.current());
-  // Navigate host to the bottom menu and resign using only arrows + Space.
-  for (let i = 0; i < 8; i++) press(host, 'down');
-  press(host, 'right'); press(host, 'place'); press(host, 'right'); press(host, 'place');
-  assert.equal(host.current().reason, 'resign');
+  // Z is solo-only; Q needs a second press, and any other key in between cancels it.
+  press(host, 'undo'); assert.equal(host.current().turn, 2);
+  press(host, 'resign'); press(host, 'left'); press(host, 'resign'); assert.equal(host.current().result, 0);
+  press(host, 'resign'); assert.equal(host.current().reason, 'resign');
   // Dropped winning snapshot: repeated snapshots still deliver the result.
   sync(host, guest); host.step(NO_INPUT); guest.step(NO_INPUT);
   assert.equal(guest.current().result, host.current().result);
@@ -130,6 +130,9 @@ test('two matches recover lost requests/snapshots, ignore reordered snapshots an
 test('Space is buffered once per press, Enter is not bound, and blur clears movement', () => {
   const target = new EventTarget(); const source = createInputSource(target);
   const emit = (type, code) => { const e = new Event(type); Object.defineProperty(e, 'code', {value:code}); target.dispatchEvent(e); };
+  emit('keydown','KeyZ'); emit('keydown','KeyQ');
+  const shortcuts = source.read(); assert.equal(shortcuts.undo, true); assert.equal(shortcuts.resign, true);
+  emit('keyup','KeyZ'); emit('keyup','KeyQ');
   emit('keydown','Space'); assert.equal(source.read().place, true);
   emit('keydown','Space'); assert.equal(source.read().place, false);
   emit('keyup','Space'); emit('keydown','Space'); assert.equal(source.read().place, true);

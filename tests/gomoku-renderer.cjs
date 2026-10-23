@@ -64,9 +64,8 @@ app.whenReady().then(async () => {
   assert.equal(await run(a, 'testMatch.current().board[112]'), 1);
   fs.mkdirSync(path.join(root,'output/gomoku'), {recursive:true});
   fs.writeFileSync(path.join(root,'output/gomoku/solo.png'), (await a.webContents.capturePage()).toPNG());
-  // Arrow navigation into the keyboard toolbar, then undo the human + AI pair.
-  for (let i=0;i<8;i++) await press(a,'ArrowDown');
-  await press(a,'ArrowRight'); await press(a,'Space');
+  // Z undoes the human + AI pair without opening any menu.
+  await press(a,'KeyZ');
   assert.equal(await run(a,'testMatch.current().turn'),0);
   // Leave via the existing confirmed shell button; then exercise a live duel.
   await run(a, `document.getElementById('leave-btn').click(); document.getElementById('leave-btn').click()`);
