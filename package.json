@@ -1,6 +1,6 @@
 {
   "name": "overlay-lupin",
-  "version": "0.11.2",
+  "version": "0.12.0",
   "description": "같은 Wi-Fi/LAN에서 즉석으로 붙는, 화면 위에 몰래 떠 있는 미니게임 모음 오버레이",
   "author": "hyungi",
   "license": "MIT",
@@ -9,7 +9,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.main.json && tsc -p tsconfig.renderer.json && npm run build:physics && npm run build:fishing-store && npm run copy-assets",
     "copy-assets": "node -e \"const fs=require('fs');fs.mkdirSync('dist/renderer',{recursive:true});fs.copyFileSync('src/renderer/index.html','dist/renderer/index.html')\"",
-    "test": "npm run build && node --test tests/network-shutdown.test.mjs tests/nickname.test.mjs tests/updater.test.mjs && node tests/simulation.test.mjs && node tests/cell.test.mjs && node tests/fence.test.mjs && node tests/worm.test.mjs && node tests/merandi.test.mjs && node tests/tower.test.mjs && node tests/jumpmap.test.mjs && node tests/jumpmap-network.test.mjs && node tests/jumpmap-generation.test.mjs && node tests/survivor.test.mjs && node tests/merge.test.mjs && node tests/web-trial.test.mjs && node --test tests/fishing.test.mjs && node --test tests/gomoku.test.mjs",
+    "test": "npm run build && node --test tests/network-shutdown.test.mjs tests/broadcast.test.mjs tests/network-rooms.test.mjs tests/nickname.test.mjs tests/updater.test.mjs && node tests/simulation.test.mjs && node tests/cell.test.mjs && node tests/fence.test.mjs && node tests/worm.test.mjs && node tests/merandi.test.mjs && node tests/tower.test.mjs && node tests/jumpmap.test.mjs && node tests/jumpmap-network.test.mjs && node tests/jumpmap-generation.test.mjs && node tests/survivor.test.mjs && node tests/merge.test.mjs && node tests/web-trial.test.mjs && node --test tests/fishing.test.mjs && node --test tests/gomoku.test.mjs",
     "dev": "npm run build && electron .",
     "start": "electron .",
     "release:mac": "npm run build && electron-builder --mac --publish=never",
