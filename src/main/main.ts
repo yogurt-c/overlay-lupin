@@ -67,7 +67,7 @@ app.whenReady().then(() => {
 
   installQuitMenu();
   installVisibilityShortcuts(() => win, loadVisibilityShortcuts());
-  installAutoUpdater();
+  installAutoUpdater(() => win);
 
   net.on('peers', (peers) => win?.webContents.send('net:peers', peers));
   net.on('invite-sent', (peer) => win?.webContents.send('net:invite-sent', peer));
