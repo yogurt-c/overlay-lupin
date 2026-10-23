@@ -1,5 +1,6 @@
 import { gomokuModule } from './gomoku/module.js';
 import { fishingModule } from './fishing/module.js';
+import { insectModule } from './insect/module.js';
 import { towerModule } from './tower/module.js';
 import { soccerModule } from './soccer/module.js';
 import { volleyballModule } from './volleyball/module.js';
@@ -27,7 +28,8 @@ export const GAME_MODULES: GameModule[] = [
   survivorModule,
   mergeModule,
   slideModule,
-  fishingModule
+  fishingModule,
+  insectModule
 ];
 
 /** Games shown in the main tab row. */
