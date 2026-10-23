@@ -35,6 +35,9 @@ export interface GameVariant {
 }
 
 export interface GameMatch {
+  /** Retain a game-owned result screen after a duel disconnects. */
+  connectionLost?(): void;
+  visibilityChanged?(visible: boolean): void;
   /** Release game-owned DOM and event handlers when leaving. */
   dispose?(): void;
   canLeave?(): boolean;

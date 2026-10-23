@@ -172,6 +172,7 @@ function startMatch(mode: 'duel' | 'room', isHost: boolean, gameId: string, vari
   activeMatch?.dispose?.();
   activeMatch = module.createMatch(isHost, myId, myName, knownVariant(module, variant));
   activeInput = inputSources.get(module.id) ?? null;
+  activeInput?.clear();
   stepAccumulator = 0;
   lastFrameAt = performance.now();
   lastScoreText = null;
@@ -188,6 +189,7 @@ function beginSoloMatch(): void {
   activeMatch?.dispose?.();
   activeMatch = module.createSoloMatch(myId, myName, variantOf(module));
   activeInput = inputSources.get(module.id) ?? null;
+  activeInput?.clear();
   stepAccumulator = 0;
   lastFrameAt = performance.now();
   lastScoreText = null;
@@ -624,6 +626,11 @@ document.addEventListener(
 
 /* --------------------------------------------------------------- Networking */
 
+window.overlayLupin.onVisibilityChanged?.((visible) => {
+  activeInput?.clear();
+  activeMatch?.visibilityChanged?.(visible);
+});
+
 window.overlayLupin.onPeers((list) => {
   peers = list;
   statusDot.dataset.state = list.length > 0 ? 'found' : '';
@@ -649,6 +656,14 @@ window.overlayLupin.onInviteCleared(() => {
 window.overlayLupin.onMatchFound((_peer, isHost, gameId, variant) => beginMatch(isHost, gameId, variant));
 
 window.overlayLupin.onMatchLost((reason) => {
+  if (uiState === 'play' && activeMatchMode === 'duel' && activeMatch?.connectionLost) {
+    activeMatch.connectionLost();
+    activeMatchMode = 'solo'; // Keep the final board without sending to the departed peer.
+    return;
+  }
+  activeMatch?.dispose?.();
+  activeMatch = null;
+  activeMatchMode = null;
   if (reason === 'left') {
     setUiState('idle');
     return;

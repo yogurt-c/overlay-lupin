@@ -1,3 +1,4 @@
+import { gomokuModule } from './gomoku/module.js';
 import { fishingModule } from './fishing/module.js';
 import { towerModule } from './tower/module.js';
 import { soccerModule } from './soccer/module.js';
@@ -20,6 +21,7 @@ export const GAME_MODULES: GameModule[] = [
   wormModule,
   merandiModule,
   towerModule,
+  gomokuModule,
   jumpmapModule,
   survivorModule,
   mergeModule,
