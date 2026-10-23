@@ -11,7 +11,8 @@ function button(text:string,click:()=>void,className?:string):HTMLButtonElement 
 const PAGE_SIZE=6, TOAST_MS=3500, RESULT_LOCK_MS=800;
 const cm=(mm:number)=>`${(mm/10).toFixed(1)}cm`;
 const specimenNo=(s:Species)=>`No.${String(SPECIES.indexOf(s)+1).padStart(3,'0')}`;
-const CSS = `
+/** Also re-scoped to #insect-ui by the insect collection, so both notebooks share one paper look. */
+export const CSS = `
 #fishing-ui{--paper:#fffdf7;--paper-2:#f4eee2;--ink:#14181a;--muted:#6b6f68;--line:#ddd5c5;--accent:#7a5433;
   position:absolute;inset:30px 7px 7px;pointer-events:none;color:var(--ink);font:10px Menlo,Consolas,sans-serif;z-index:4}
 #fishing-ui [hidden]{display:none!important}

@@ -1,6 +1,7 @@
 import type { PeerInfo, RoomInfo, RoomRoster } from '../shared/protocol.js';
 import type { VisibilityShortcuts } from '../shared/shortcuts.js';
 import type { FishingAction, FishingReply } from '../shared/fishing.js';
+import type { InsectAction, InsectReply } from '../shared/insect.js';
 import type { AnalyticsStart } from '../shared/analytics.js';
 
 export type { PeerInfo, RoomInfo, RoomRoster, VisibilityShortcuts };
@@ -10,6 +11,10 @@ export interface OverlayLupinApi {
   fishingAct(action: FishingAction): Promise<FishingReply>;
   fishingExport(): Promise<FishingReply>;
   fishingImport(): Promise<FishingReply>;
+  insectLoad(): Promise<InsectReply>;
+  insectAct(action: InsectAction): Promise<InsectReply>;
+  insectExport(): Promise<InsectReply>;
+  insectImport(): Promise<InsectReply>;
   recordGameStart(input: AnalyticsStart): void;
   getAnalyticsEnabled(): Promise<boolean>;
   setAnalyticsEnabled(enabled: boolean): Promise<{ ok: boolean; enabled: boolean }>;

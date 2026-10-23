@@ -2,6 +2,8 @@ import { app, ipcMain, BrowserWindow, dialog } from 'electron';
 import fs from 'node:fs';
 import { FishingStore } from './fishing-store';
 import type { FishingAction, FishingReply } from '../shared/fishing';
+import { InsectStore } from './insect-store';
+import type { InsectAction, InsectReply } from '../shared/insect';
 import { createGameWindow } from './window';
 import { GameNetwork } from './network';
 import {
@@ -62,6 +64,28 @@ app.whenReady().then(() => {
       const filename = result.filePaths[0];
       if (fs.statSync(filename).size > 100 * 1024 * 1024) throw new Error('100MB 이하 파일을 선택해 주세요.');
       return { ok: true, data: fishing.merge(JSON.parse(fs.readFileSync(filename, 'utf8'))) };
+    });
+  });
+  const insects = new InsectStore(app.getPath('userData'));
+  const insectReply = (fn: () => InsectReply): InsectReply => {
+    try { return fn(); } catch (error) { return { ok: false, error: error instanceof Error ? error.message : '저장하지 못했습니다.' }; }
+  };
+  ipcMain.handle('insect:load', () => insectReply(() => ({ ok: true, data: insects.load() })));
+  ipcMain.handle('insect:act', (_event, action: InsectAction) => insectReply(() => ({ ok: true, data: insects.act(action) })));
+  ipcMain.handle('insect:export', async () => {
+    if (!win) return { ok: false };
+    const result = await dialog.showSaveDialog(win, { title: '곤충 채집 데이터 내보내기', defaultPath: 'insect-collection-backup.json', filters: [{ name: 'JSON', extensions: ['json'] }] });
+    if (result.canceled || !result.filePath) return { ok: false, cancelled: true };
+    return insectReply(() => { fs.writeFileSync(result.filePath!, JSON.stringify(insects.read(), null, 2), 'utf8'); return { ok: true }; });
+  });
+  ipcMain.handle('insect:import', async () => {
+    if (!win) return { ok: false };
+    const result = await dialog.showOpenDialog(win, { title: '곤충 채집 데이터 합치기', properties: ['openFile'], filters: [{ name: 'JSON', extensions: ['json'] }] });
+    if (result.canceled || !result.filePaths[0]) return { ok: false, cancelled: true };
+    return insectReply(() => {
+      const filename = result.filePaths[0];
+      if (fs.statSync(filename).size > 100 * 1024 * 1024) throw new Error('100MB 이하 파일을 선택해 주세요.');
+      return { ok: true, data: insects.merge(JSON.parse(fs.readFileSync(filename, 'utf8'))) };
     });
   });
 

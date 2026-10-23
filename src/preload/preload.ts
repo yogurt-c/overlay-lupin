@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { PeerInfo, RoomInfo, RoomRoster } from '../shared/protocol.js';
 import type { VisibilityShortcuts } from '../shared/shortcuts.js';
 import type { FishingAction, FishingReply } from '../shared/fishing.js';
+import type { InsectAction, InsectReply } from '../shared/insect.js';
 import type { AnalyticsStart } from '../shared/analytics.js';
 
 contextBridge.exposeInMainWorld('overlayLupin', {
@@ -9,6 +10,10 @@ contextBridge.exposeInMainWorld('overlayLupin', {
   fishingAct: (action: FishingAction): Promise<FishingReply> => ipcRenderer.invoke('fishing:act', action),
   fishingExport: (): Promise<FishingReply> => ipcRenderer.invoke('fishing:export'),
   fishingImport: (): Promise<FishingReply> => ipcRenderer.invoke('fishing:import'),
+  insectLoad: (): Promise<InsectReply> => ipcRenderer.invoke('insect:load'),
+  insectAct: (action: InsectAction): Promise<InsectReply> => ipcRenderer.invoke('insect:act', action),
+  insectExport: (): Promise<InsectReply> => ipcRenderer.invoke('insect:export'),
+  insectImport: (): Promise<InsectReply> => ipcRenderer.invoke('insect:import'),
   recordGameStart: (input: AnalyticsStart): void => ipcRenderer.send('analytics:start', input),
   getAnalyticsEnabled: (): Promise<boolean> => ipcRenderer.invoke('analytics:get'),
   setAnalyticsEnabled: (enabled: boolean): Promise<{ ok: boolean; enabled: boolean }> => ipcRenderer.invoke('analytics:set', enabled),
