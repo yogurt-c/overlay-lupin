@@ -354,6 +354,8 @@
     font-variant-numeric: tabular-nums;
     transition: opacity 150ms ease;
   }
+  #hud-detail { display: block; text-align: center; font-size: 11px; font-weight: 500; margin-top: 3px; }
+  #hud-detail[hidden] { display: none; }
   #hud:hover { opacity: 1; }
   #hud[hidden] { display: none; }
 
@@ -371,6 +373,7 @@
     text-shadow: 0 0 4px #fff, 0 0 4px #fff, 0 0 10px #fff;
     animation: banner-pop 220ms cubic-bezier(0.16, 1, 0.3, 1);
   }
+  #banner { white-space: pre-line; text-align: center; width: max-content; max-width: 92vw; }
   #banner[hidden] { display: none; }
   #banner[data-kind="kickoff"] { font-size: 36px; opacity: 0.45; }
   #banner[data-kind="over"] { font-size: 22px; opacity: 0.85; }
@@ -504,7 +507,7 @@
 </head>
 <body>
   <canvas id="field"></canvas>
-  <div id="hud" hidden><span id="score"></span></div>
+  <div id="hud" hidden><span id="score"></span><span id="hud-detail" hidden></span></div>
   <div id="banner" hidden></div>
   <div id="reconnect-msg" hidden>재연결 대기 중…</div>
   <div id="update-notice" role="status" hidden>

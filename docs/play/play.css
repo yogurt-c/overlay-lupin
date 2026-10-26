@@ -47,3 +47,5 @@
   .mobile-note{display:block;border:1px dashed #cbd2bc;border-radius:6px;padding:16px;font-size:13px;color:#4c5b43;background:#eff1e6;margin:0 0 20px}
   .trial-layout{display:flex;flex-direction:column-reverse}
 }
+
+.game-status,.game-banner{white-space:pre-line}

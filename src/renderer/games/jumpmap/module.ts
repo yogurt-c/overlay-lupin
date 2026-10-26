@@ -1,3 +1,4 @@
+import { PersonalRecord, formatRaceTime } from './records.js';
 import { encodeWorld, decodeWorld, inputBits, inputFromBits } from './wire.js';
 import type { WorldPacket } from './wire.js';
 import type { InputFrame } from './types.js';
@@ -58,6 +59,7 @@ type RacePacket = WorldPacket & { courseId: number };
 const CHUNK_SIZE = 4;
 
 class JumpmapMatch implements GameMatch {
+  private record: PersonalRecord;
   private platforms = PLATFORMS;
   private courseId = 0;
   private loading = true;
@@ -94,6 +96,7 @@ class JumpmapMatch implements GameMatch {
     private myName: string,
     private solo = false
   ) {
+    this.record = new PersonalRecord(solo);
     this.engine = isHost ? new JumpmapEngine() : null;
     this.engine?.ensurePlayer(myId, myName);
     this.prediction.ensurePlayer(myId, myName);
@@ -118,6 +121,7 @@ class JumpmapMatch implements GameMatch {
   }
 
   private resetPrediction(): void {
+    this.record.reset();
     this.pending = []; this.sequence = 0; this.receivedTick = -1;
     this.snapshots = []; this.displayTick = 0; this.correction = { x: 0, y: 0 };
     this.snapCamera = true;
@@ -184,6 +188,7 @@ class JumpmapMatch implements GameMatch {
     }
     this.engine.setInput(this.myId, this.lastInput);
     this.engine.step();
+    this.recordFinish();
   }
 
   render(ctx: CanvasRenderingContext2D, viewport: Viewport): void {
@@ -214,20 +219,31 @@ class JumpmapMatch implements GameMatch {
     renderJumpmapScene(ctx, world, this.myId, this.camera, viewport, this.anim, this.platforms);
   }
 
+  private recordFinish(): void {
+    const me = this.currentWorld().players.find(p => p.id === this.myId);
+    if (me?.finish !== undefined) this.record.finish(me.elapsedTicks);
+  }
+
   hud(): MatchHud {
     if (this.loading) return { status: `맵 생성 중 ${this.progress}%`, banner: '', bannerKind: '' };
     const world = this.currentWorld();
     const me = world.players.find((p) => p.id === this.myId);
     if (!me) return { status: '', banner: '', bannerKind: '' };
+    const finished = me.finish !== undefined;
+    const detail = this.record.detail(me.elapsedTicks, finished);
+    const time = me.elapsedTicks === undefined ? '' : ` ${formatRaceTime(me.elapsedTicks)}`;
+    const result = this.record.result ? `\n${this.record.result}` : '';
     if (this.solo) {
-      const finished = me.finish !== undefined;
       return {
+        detail,
         status: finished ? '혼자하기 · 완주!' : `혼자하기 · ${ZONE_STYLE[zoneAt(me.y)].label} · ${progressOf(me)}%`,
-        banner: finished ? `완주! ${Math.ceil(world.timerMs / 1000)}초 뒤 새 맵에 도전` : '',
+        banner: finished ? `완주!${time} · ${Math.ceil(world.timerMs / 1000)}초 뒤 새 맵에 도전${result}` : '',
         bannerKind: finished ? 'over' : ''
       };
     }
-    return { status: statusFor(world, this.myId), ...bannerFor(world, this.myId) };
+    const banner = bannerFor(world, this.myId);
+    if (finished) banner.banner = `${me.finish}위 도착!${time}${result}`;
+    return { status: statusFor(world, this.myId), detail, ...banner };
   }
 
   isOver(): boolean {
@@ -306,6 +322,8 @@ class JumpmapMatch implements GameMatch {
     this.receivedTick = world.tick;
     const roundChanged = this.world.phase === 'intermission' && world.phase === 'race';
     this.world = world;
+    if (roundChanged) this.record.reset();
+    this.recordFinish();
     if (roundChanged) this.snapshots = [];
     this.snapshots.push(world);
     if (this.snapshots.length > 12) this.snapshots.shift();

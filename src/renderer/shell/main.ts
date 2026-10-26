@@ -32,6 +32,7 @@ const modeBackBtn = document.getElementById('mode-back-btn') as HTMLButtonElemen
 const peerListEl = document.getElementById('peer-list') as HTMLUListElement;
 const roomListEl = document.getElementById('room-list') as HTMLUListElement;
 const hud = document.getElementById('hud') as HTMLDivElement;
+const detailEl = document.getElementById('hud-detail') as HTMLSpanElement;
 const scoreEl = document.getElementById('score') as HTMLSpanElement;
 const bannerEl = document.getElementById('banner') as HTMLDivElement;
 const reconnectMsg = document.getElementById('reconnect-msg') as HTMLDivElement;
@@ -730,7 +731,9 @@ function drawFrame(alpha: number): void {
 
 function syncHud(): void {
   if (!activeMatch) return;
-  const { status, banner, bannerKind } = activeMatch.hud();
+  const { status, detail = '', banner, bannerKind } = activeMatch.hud();
+  if (detailEl.textContent !== detail) detailEl.textContent = detail;
+  detailEl.hidden = detail === '';
 
   if (status !== lastScoreText) {
     scoreEl.textContent = status;

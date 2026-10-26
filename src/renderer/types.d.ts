@@ -7,6 +7,7 @@ import type { UpdateInfo, UpdateState } from '../shared/update.js';
 export type { PeerInfo, RoomInfo, RoomRoster, VisibilityShortcuts };
 
 export interface OverlayLupinApi {
+  jumpmapRecord?(mode: 'solo' | 'multi', ticks?: number): { ok: boolean; best?: number };
   fishingLoad(): Promise<FishingReply>;
   fishingAct(action: FishingAction): Promise<FishingReply>;
   fishingExport(): Promise<FishingReply>;

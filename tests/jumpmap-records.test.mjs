@@ -1,0 +1,74 @@
+import assert from 'node:assert/strict';
+import { PersonalRecord, formatRaceTime } from '../dist/renderer/games/jumpmap/records.js';
+import { JumpmapEngine } from '../dist/renderer/games/jumpmap/engine.js';
+import { jumpmapModule } from '../dist/renderer/games/jumpmap/module.js';
+import { encodeWorld, decodeWorld } from '../dist/renderer/games/jumpmap/wire.js';
+import { PLATFORMS, WORLD_HEIGHT, RESPAWN_WORLD_MARGIN } from '../dist/renderer/games/jumpmap/field.js';
+
+const saved = new Map();
+globalThis.window = { localStorage: { getItem: key => saved.get(key) ?? null, setItem: (key, value) => saved.set(key, value) } };
+const solo = new PersonalRecord(true);
+assert.equal(solo.best, undefined);
+solo.finish(600);
+assert.equal(solo.result, '첫 완주 기록!');
+assert.equal(new PersonalRecord(true).best, 600);
+assert.equal(new PersonalRecord(false).best, undefined);
+solo.reset(); solo.finish(601);
+assert.equal(solo.best, 600);
+assert.equal(solo.result, '');
+solo.reset(); solo.finish(600);
+assert.equal(solo.result, '');
+solo.reset(); solo.finish(540);
+assert.match(solo.result, /1.00초 단축/);
+solo.finish(500);
+assert.equal(solo.best, 540, 'duplicate finish cannot change a round result');
+assert.equal(formatRaceTime(16321), '04:32.01');
+
+const engine = new JumpmapEngine();
+engine.ensurePlayer('me', 'Me');
+for (let i = 0; i < 120; i++) engine.step();
+const me = engine.players.get('me');
+me.y = WORLD_HEIGHT + RESPAWN_WORLD_MARGIN + 1;
+engine.step();
+assert.equal(me.elapsedTicks, 121, 'falling does not reset the clock');
+engine.ensurePlayer('late', 'Late');
+engine.step();
+assert.equal(engine.players.get('late').elapsedTicks, 1, 'late join starts at spawn');
+const goal = PLATFORMS.find(p => p.kind === 'goal');
+Object.assign(me, { x: goal.x + goal.w / 2, y: goal.y - 20, vy: 0, airborne: true, standingOn: null });
+for (let i = 0; i < 60 && me.finish === undefined; i++) engine.step();
+assert.equal(me.finish, 1);
+const finishTicks = me.elapsedTicks;
+for (let i = 0; i < 60; i++) engine.step();
+assert.equal(me.elapsedTicks, finishTicks, 'arrival freezes the clock');
+const packet = encodeWorld(engine.snapshot(true));
+assert.equal(decodeWorld(packet).players[0].elapsedTicks, finishTicks);
+const legacy = structuredClone(packet);
+legacy.runners.forEach(([, values]) => values.pop());
+assert.equal(decodeWorld(legacy).players[0].elapsedTicks, undefined);
+
+// The guest records only authoritative snapshots, and only its own finish.
+const guest = jumpmapModule.createMatch(false, 'me', 'Me');
+guest.courseReady = true;
+guest.loading = false;
+guest.applyOpponentPacket({ ...packet, courseId: 0 });
+assert.equal(new PersonalRecord(false).best, finishTicks);
+assert.match(guest.hud().detail, /완주 .*개인 최고/);
+assert.match(guest.hud().banner, /1위 도착!.*\n첫 완주 기록!/);
+assert.equal(guest.buildOutgoingPacket().best, undefined);
+engine.resetRound();
+assert.equal(me.elapsedTicks, 0);
+engine.step();
+guest.applyOpponentPacket({ ...encodeWorld(engine.snapshot(true)), courseId: 0 });
+assert.equal(new PersonalRecord(false).best, finishTicks, 'new round preserves personal best');
+
+// Storage failures and corrupt records cannot break gameplay.
+window.localStorage.getItem = () => 'Infinity';
+assert.equal(new PersonalRecord(true).best, undefined);
+window.localStorage.getItem = () => { throw Error('blocked'); };
+window.localStorage.setItem = () => { throw Error('blocked'); };
+const blocked = new PersonalRecord(true);
+blocked.finish(60);
+assert.equal(blocked.best, 60);
+delete globalThis.window;
+console.log('PASS personal records, mode separation, host timing, guest persistence, legacy packets and unavailable storage');

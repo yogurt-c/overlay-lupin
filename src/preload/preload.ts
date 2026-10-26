@@ -6,6 +6,9 @@ import type { AnalyticsStart } from '../shared/analytics.js';
 import type { UpdateInfo, UpdateState } from '../shared/update.js';
 
 contextBridge.exposeInMainWorld('overlayLupin', {
+  // Synchronous only at match creation / a new best: acknowledge the disk write before showing success.
+  jumpmapRecord: (mode: 'solo' | 'multi', ticks?: number): { ok: boolean; best?: number } =>
+    ipcRenderer.sendSync('jumpmap:record', mode, ticks),
   onVisibilityChanged: (cb: (visible: boolean) => void) => {
     ipcRenderer.on('overlay:visibility', (_e, visible: boolean) => cb(visible));
   },

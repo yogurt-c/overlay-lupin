@@ -22,7 +22,7 @@ export function encodeWorld(world: JumpmapWorld, platforms = PLATFORMS): WorldPa
         platforms.findIndex(p => p.id === s.standingOn), poseIndex(s.pose), s.poseTimer,
         s.finish ?? 0, p.ack ?? 0,
         s.impact ? platforms.findIndex(p => p.id === s.impact!.platformId) : -1,
-        s.impact?.x ?? 0, s.impact?.tick ?? 0, s.vx, Number(s.iceMomentum)].map(rounded)];
+        s.impact?.x ?? 0, s.impact?.tick ?? 0, s.vx, Number(s.iceMomentum), s.elapsedTicks ?? -1].map(rounded)];
     }) };
 }
 export function decodeWorld(packet: WorldPacket, platforms = PLATFORMS): JumpmapWorld {
@@ -30,11 +30,12 @@ export function decodeWorld(packet: WorldPacket, platforms = PLATFORMS): Jumpmap
     players: packet.runners.map(([id, a]) => {
       const state: RunnerState = { x: a[0], y: a[1], vx: a.length >= 21 ? (a[19] ?? 0) : 0, vy: a[2], facing: a[3] as 1 | -1,
         iceMomentum: !!a[20],
+        elapsedTicks: a[21] >= 0 ? a[21] : undefined,
         airborne: !!a[4], knockVX: a[5], stunTicks: a[6], attackCooldown: a[7], atkAnim: a[8],
         jumpHeld: !!a[9], attackHeld: !!a[10], standingOn: platforms[a[11]]?.id ?? null,
         pose: poseAt(a[12]), poseTimer: a[13], finish: a[14] || undefined,
         impact: a[16] >= 0 ? { platformId: platforms[a[16]].id, x: a[17], tick: a[18] } : undefined };
       return { id, x: state.x, y: state.y, facing: state.facing, p: a[12],
-        finish: state.finish, atk: state.atkAnim || undefined, impact: state.impact, ack: a[15], state };
+        finish: state.finish, elapsedTicks: state.elapsedTicks, atk: state.atkAnim || undefined, impact: state.impact, ack: a[15], state };
     }) };
 }

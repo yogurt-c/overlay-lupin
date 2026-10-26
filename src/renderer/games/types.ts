@@ -16,6 +16,8 @@ export interface Viewport {
 export interface MatchHud {
   /** Persistent status line shown while a match is live (a scoreboard, a rank, ...). */
   status: string;
+  /** Optional smaller personal information beneath the status. */
+  detail?: string;
   /** Transient banner text; '' hides it. */
   banner: string;
   /** Opaque to the shell — forwarded as-is so the game's own CSS can style it. */

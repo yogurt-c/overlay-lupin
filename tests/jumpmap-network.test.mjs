@@ -247,7 +247,7 @@ console.log('PASS 30Hz send cadence at 60/120/144Hz');
     assert.equal(host.players.get('guest').standingOn, guest.players.get('guest').standingOn);
   }
   const oldPacket = encodeWorld(host.snapshot(true), platforms);
-  oldPacket.runners[0][1].pop();
+  oldPacket.runners[0][1].length = 20; // Legacy tuple before ice momentum and race timing.
   assert.equal(decodeWorld(oldPacket, platforms).players[0].state.vx, 0);
   console.log('PASS ice momentum wire roundtrip and prediction replay');
 }

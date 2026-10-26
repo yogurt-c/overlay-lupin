@@ -1,5 +1,6 @@
 import { app, ipcMain, BrowserWindow, dialog } from 'electron';
 import fs from 'node:fs';
+import { JumpmapRecords } from './jumpmap-records';
 import { FishingStore } from './fishing-store';
 import type { FishingAction, FishingReply } from '../shared/fishing';
 import { createGameWindow } from './window';
@@ -39,6 +40,11 @@ app.whenReady().then(() => {
     if (typeof enabled !== 'boolean') return { ok: false, enabled: await analytics.getEnabled() };
     const ok = await analytics.setEnabled(enabled);
     return { ok, enabled: await analytics.getEnabled() };
+  });
+  const jumpmapRecords = new JumpmapRecords(app.getPath('userData'));
+  ipcMain.on('jumpmap:record', (event, mode: unknown, ticks: unknown) => {
+    event.returnValue = event.sender === win?.webContents
+      ? jumpmapRecords.update(mode, ticks) : { ok: false };
   });
   win = createGameWindow();
   net.start();

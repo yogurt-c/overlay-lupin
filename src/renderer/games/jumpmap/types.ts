@@ -35,6 +35,8 @@ export interface PlayerView {
   p: number;
   /** The order this runner touched the goal in this round; absent until they do. */
   finish?: number;
+  /** Authoritative active race ticks, frozen on arrival. Absent for older peers. */
+  elapsedTicks?: number;
   /** Frames left in the shove swing's visual, omitted when there isn't one. */
   atk?: number;
   /** Short-lived authoritative landing event, also used for spring and finish effects. */
@@ -80,6 +82,6 @@ export interface RunnerState {
   iceMomentum: boolean;
   knockVX: number; stunTicks: number; attackCooldown: number; atkAnim: number;
   jumpHeld: boolean; attackHeld: boolean; standingOn: string | null;
-  pose: Pose; poseTimer: number; finish?: number; impact?: PlayerView['impact'];
+  pose: Pose; poseTimer: number; finish?: number; elapsedTicks?: number; impact?: PlayerView['impact'];
 }
 export interface InputFrame { seq: number; input: JumpmapInput }

@@ -97,8 +97,9 @@ function draw(alpha: number): void {
 
 function syncHud(): void {
   if (!match) return;
-  const { status, banner, bannerKind } = match.hud();
-  if (statusEl.textContent !== status) statusEl.textContent = status;
+  const { status, detail, banner, bannerKind } = match.hud();
+  const text = [status, detail].filter(Boolean).join('\n');
+  if (statusEl.textContent !== text) statusEl.textContent = text;
   if (bannerEl.textContent !== banner) bannerEl.textContent = banner;
   bannerEl.hidden = banner === '' || state === 'over';
   bannerEl.dataset.kind = bannerKind;

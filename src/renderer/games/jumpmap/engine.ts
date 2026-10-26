@@ -119,6 +119,7 @@ export class JumpmapEngine {
       pose: 'idle',
       poseTimer: 0,
       finish: undefined,
+      elapsedTicks: 0,
       input: NO_INPUT
     });
   }
@@ -165,6 +166,7 @@ export class JumpmapEngine {
           player.input = next.input;
         }
       }
+      if (player.finish === undefined) player.elapsedTicks = (player.elapsedTicks ?? 0) + 1;
       this.stepPlayer(player);
     }
 
@@ -429,6 +431,7 @@ export class JumpmapEngine {
       player.atkAnim = 0;
       player.standingOn = 'start';
       player.finish = undefined;
+      player.elapsedTicks = 0;
       player.impact = undefined;
       player.pose = 'idle';
       player.poseTimer = 0;
@@ -458,6 +461,7 @@ export class JumpmapEngine {
         facing: player.facing,
         p: poseIndex(player.pose),
         finish: player.finish,
+        elapsedTicks: player.elapsedTicks,
         atk: player.atkAnim > 0 ? player.atkAnim : undefined,
         impact: player.impact && this.tick - player.impact.tick < 45 ? player.impact : undefined
       }))
