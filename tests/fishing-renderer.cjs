@@ -115,6 +115,19 @@ app.whenReady().then(async()=>{
   assert.equal(await js(`drawnLabels.includes('빈자리')`),false);
   assert.ok(await js(`drawnLabels.some(t=>t.includes('Space 던지기'))`));
   await pause(60);fs.writeFileSync(path.join(root,'output/fishing/solo.png'),(await win.webContents.capturePage()).toPNG());
+  // Long whiskers, horns and tails must fit the real list, result and detail canvases, including their halo.
+  const artIssues=await js(`(async()=>{
+    const {drawFish}=await import('./games/fishing/draw.js'),{SPECIES}=await import('../shared/fishing.js'),issues=[];
+    for(const s of SPECIES)for(const [height,size] of [[64,78],[90,105],[100,100]]){
+      const canvas=document.createElement('canvas');canvas.width=160;canvas.height=height;
+      const c=canvas.getContext('2d');drawFish(c,s,80,height*.55,size);
+      const pixels=c.getImageData(0,0,160,height).data;let edge=false,visible=false;
+      for(let y=0;y<height;y++)for(let x=0;x<160;x++)if(pixels[(y*160+x)*4+3]>20){visible=true;if(x===0||x===159||y===0||y===height-1)edge=true;}
+      if(edge||!visible)issues.push(s.id+' '+height+'px: '+(edge?'clipped':'empty'));
+      if(!c.getTransform().isIdentity||c.globalAlpha!==1||c.getLineDash().length)issues.push(s.id+': context leak');
+    }return issues;
+  })()`);
+  assert.deepEqual(artIssues,[],'all 120 fish fit every collection canvas and restore the drawing context');
   await js(`testMatch.dispose();`);assert.equal(await js(`document.querySelectorAll('#fishing-ui').length`),0);
   assert.deepEqual(errors,[]);console.log('Fishing renderer: shell entry/exit, 4 seats, gauge, IPC capture, favorite, release confirmation, persistent catalog passed.');
 }).catch(e=>{console.error(e);process.exitCode=1;}).finally(()=>{win?.destroy();fs.rmSync(directory,{recursive:true,force:true});app.exit(process.exitCode||0);});

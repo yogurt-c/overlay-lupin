@@ -4,51 +4,33 @@ import { beginSketchFrame, jitter, roughLimb, roughStroke } from '../../lib/sket
 import type { Viewport } from '../types.js';
 import { WIDTHS, CAST_SECONDS, REEL_SECONDS, EMOTE_TICKS, SHOW_TICKS } from './engine.js';
 import { LEGEND_ART } from './legend-art.js';
+import { drawCommonFish } from './common-art.js';
 import { EPIC_ART } from './epic-art.js';
 import type { FishingWorld, Fisher } from './engine.js';
 const INK = '#14181a', BROWN = '#7a5433', HALO = 'rgba(255,255,255,.94)';
 export const EMOTES = ['안녕','좋아요','하트','놀람','축하','아쉬움','별로','눈웃음'];
 /** Stamp inks per rarity, muted so they sit on the same paper as the sketch scene. */
 export const RARITY_INK = ['#7d857b','#4f8a5b','#3d74a8','#8a5bb0','#c08416','#c4473a'];
+/** Keep long fins, whiskers and the white halo inside all three collection canvas sizes. */
+const ART_FIT: Readonly<Record<string, number>> = {
+  'fish-0-9': .90, 'fish-0-17': .90, 'fish-0-18': .90,
+  'fish-1-17': .98, 'fish-1-19': .97,
+  'fish-2-7': .98, 'fish-2-15': .98, 'fish-2-19': .88,
+  'fish-3-17': .88,
+  'fish-4-2': .94, 'fish-4-18': .90, 'fish-4-19': .92,
+  'fish-5-15': .95, 'fish-5-17': .95, 'fish-5-18': .93, 'fish-5-19': .96
+};
 function line(c: CanvasRenderingContext2D, x: number,y: number,a: number,b: number, color = INK, w = 1.2): void { roughStroke(c,x,y,a,b,w,color,HALO); }
 function label(c: CanvasRenderingContext2D, text: string, x: number,y: number, size=9,color=INK): void {
   c.font = `${size}px Menlo, sans-serif`; c.textAlign = 'center'; c.lineWidth = 3; c.strokeStyle = HALO; c.strokeText(text,x,y); c.fillStyle = color; c.fillText(text,x,y);
 }
 /** Data-driven silhouettes: body family, proportions, fins, tail, markings and fantasy appendages. 에픽 and up use bespoke art. */
 export function drawFish(c: CanvasRenderingContext2D, s: Species, x: number,y: number, size: number, ink = INK): void {
-  c.save(); c.translate(x,y); c.scale(size/60,size/60); c.lineJoin = c.lineCap = 'round';
+  const scale = size / 60 * (ART_FIT[s.id] ?? 1);
+  c.save(); c.translate(x,y); c.scale(scale,scale); c.lineJoin = c.lineCap = 'round';
   const art = LEGEND_ART[s.id] ?? EPIC_ART[s.id];
   if (art) { art(c,ink); c.restore(); return; }
-  const f = s.feature, h = s.shape === 'eel' ? 5 : s.shape === 'slim' ? 9 : s.shape === 'flat' ? 17 : 14 + f%4;
-  const body = new Path2D();
-  if (s.shape === 'eel') {
-    body.moveTo(-24,0); body.bezierCurveTo(-20,-18,8,13,23,-9); body.bezierCurveTo(36,-27,38,5,23,9); body.bezierCurveTo(5,23,-20,0,-24,7); body.closePath();
-  } else {
-    body.moveTo(-27,0); body.quadraticCurveTo(-10,-h*1.5,16,-h*.35);
-    body.lineTo(29,-h*(.6+f%3*.12)); body.lineTo(26,0); body.lineTo(29,h*(.6+f%3*.12)); body.lineTo(16,h*.4);
-    body.quadraticCurveTo(-10,h*1.5,-27,0); body.closePath();
-  }
-  c.strokeStyle=HALO; c.lineWidth=5; c.stroke(body); c.fillStyle='#fffefa'; c.fill(body); c.strokeStyle=ink; c.lineWidth=1.5; c.stroke(body);
-  c.beginPath(); c.arc(-16,s.shape==='eel'?0:-2,1.3,0,Math.PI*2); c.fillStyle=ink; c.fill();
-  c.beginPath(); c.moveTo(-8,-h*.45); c.quadraticCurveTo(-4,0,-8,h*.45); c.stroke();
-  if (s.shape !== 'eel') {
-    c.beginPath(); c.moveTo(-5,-h*.8); c.lineTo(f%2?4:-2,-h-5-s.artVariant); c.lineTo(12,-h*.6); c.stroke();
-    c.beginPath(); c.moveTo(2,1); c.lineTo(7,5+f%4); c.lineTo(10,1); c.stroke();
-  }
-  // Species-specific marks remain visible without color.
-  for (let i=0;i<1+f%4;i++) {
-    const mx=-1+i*4;
-    c.beginPath();
-    if (f%3===0) { c.moveTo(mx,-h*.45); c.lineTo(mx-2,h*.4); c.stroke(); }
-    else { c.arc(mx,(i%2?1:-1)*h*.3,.7+s.artVariant*.08,0,Math.PI*2); c.fill(); }
-  }
-  if (s.shape==='puffer') for (let i=0;i<5;i++) { const a=Math.PI*(.3+i*.33); c.beginPath(); c.moveTo(Math.cos(a)*16,Math.sin(a)*h); c.lineTo(Math.cos(a)*20,Math.sin(a)*(h+4)); c.stroke(); }
-  if (s.shape==='angler') { c.beginPath(); c.moveTo(-7,-h); c.quadraticCurveTo(-7,-h-15,-21,-h-7); c.stroke(); c.beginPath(); c.arc(-21,-h-6,2,0,Math.PI*2); c.stroke(); }
-  if (s.shape==='dragon') {
-    c.beginPath(); c.moveTo(-12,-h*.6); c.lineTo(-13,-h-8); c.lineTo(-6,-h*.7);
-    c.moveTo(-24,3); c.bezierCurveTo(-37,14,-22,20,-15,12); c.moveTo(-22,5); c.bezierCurveTo(-30,19,-16,26,-4,13); c.stroke();
-  }
-  if (s.fantasy) { c.beginPath(); const a=10,b=-h-7; c.moveTo(a,b-3); c.lineTo(a+1,b-1); c.lineTo(a+4,b); c.lineTo(a+1,b+1); c.lineTo(a,b+4); c.lineTo(a-1,b+1); c.lineTo(a-4,b); c.lineTo(a-1,b-1); c.closePath(); c.stroke(); }
+  drawCommonFish(c,s,ink);
   c.restore();
 }
 type Face = 'calm'|'focus'|'wow'|'strain'|'joy'|'sad';
