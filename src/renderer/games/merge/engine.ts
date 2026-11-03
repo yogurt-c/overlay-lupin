@@ -15,7 +15,7 @@ export const COOLDOWN_TICKS = 36;
 /** A freshly dropped or merged animal may pass the danger line while it settles. */
 export const GRACE_TICKS = 60;
 /** Ticks an animal may sit above the line before the run ends. */
-export const DANGER_TICKS = 120;
+export const DANGER_TICKS = 180;
 /** How long the result stays on screen before the shell returns to idle. */
 export const OVER_HOLD_TICKS = 240;
 const WALL = 10;

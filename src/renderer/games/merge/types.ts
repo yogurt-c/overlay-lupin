@@ -1,11 +1,11 @@
 /** World layout in the same 320×280 design space every overlay game draws into. */
-export const BOX_LEFT = 80;
-export const BOX_RIGHT = 240;
+export const BOX_LEFT = 75;
+export const BOX_RIGHT = 245;
 export const BOX_BOTTOM = 262;
 /** Walls are drawn up to here; the danger line sits lower. */
 export const BOX_TOP = 50;
 /** An animal resting above this line for too long ends the run. */
-export const DANGER_Y = 80;
+export const DANGER_Y = 70;
 /** Where the held animal hangs before it is dropped. */
 export const DROP_Y = 34;
 
