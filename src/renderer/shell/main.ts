@@ -291,7 +291,8 @@ function renderPanelBody(): void {
   modeChoiceEl.hidden = !showMode;
   matchViewEl.hidden = showMode;
   if (showMode) {
-    panelTitle.textContent = currentModule().label;
+    // Inside the 무덤 the heading names the place; the highlighted tab shows which game is picked.
+    panelTitle.textContent = showGraveyard ? '무덤' : currentModule().label;
     soloBtn.disabled = !currentModule().createSoloMatch;
     versusBtn.disabled = !!currentModule().soloOnly;
   } else {
