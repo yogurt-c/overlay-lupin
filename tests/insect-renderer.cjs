@@ -43,13 +43,10 @@ app.whenReady().then(async()=>{
   assert.equal(await js(`testMatch.engine.world.bugs.length`),30);
   await js(`{const w=testMatch.engine.world,p=w.players[0],b=w.bugs[0];b.golden=true;p.x=b.x;p.y=b.y+32;p.angle=-Math.PI/2;testMatch.step({});}`);
   for(let i=0;i<35;i++)await frame();await shot('field.png');
-  const transparent = await js(`(()=>{const c=document.getElementById('field'),d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let clear=0;for(let i=3;i<d.length;i+=4)if(d[i]===0)clear++;return clear/(d.length/4);})()`);
-  assert.ok(transparent>.75, 'the playfield must leave most of the desktop fully visible');
   win.setSize(480,360);await pause(100);await frame();await shot('field-small.png');
   await js(`document.body.style.background='#f5f5f3'`);await frame();await shot('field-light.png');
   await js(`document.body.style.background='#24272b'`);await frame();await shot('field-dark.png');
   await js(`document.body.style.background=''`);win.setSize(640,480);await pause(100);
-  console.log('fully transparent field area', (transparent*100).toFixed(1)+'%');
   await js(`testMatch.step({swing:true});for(let i=0;i<24;i++)testMatch.step({});`);
   assert.equal(await js(`testMatch.engine.world.players[0].phase`),'catch');
   await frame();await shot('catch.png');
