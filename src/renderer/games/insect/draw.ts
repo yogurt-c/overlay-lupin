@@ -9,7 +9,7 @@ import type { Bug, Collector, InsectWorld } from './engine.js';
 import { WIDTH, HEIGHT, HABITATS, TREES, CAMP, behaviorOf, location } from './map.js';
 export const SEAT_INK = ['#303637', '#7a6353', '#756278', '#62747e'];
 export const RARITY_INK = ['#7d857b', '#4f8a5b', '#3d74a8', '#c08416'];
-const INK = '#343b38', PAPER = '#fffefa', HALO = 'rgba(255,255,255,.88)';
+const INK = '#343b38', PAPER = '#fffefa', HALO = 'rgba(255,255,255,.88)', GOLD_MARK = '#d29a1a', GOLD_GLINT = '#f0c24a';
 export function fieldSize(s: Species, mm: number): number { return [18,24,30][s.size] * (.9 + .2 * (mm - s.minMm) / (s.maxMm - s.minMm)); }
 function oval(c: CanvasRenderingContext2D, x: number, y: number, rx: number, ry: number, color: string, outline = '') {
   c.beginPath(); c.ellipse(x,y,rx,ry,0,0,Math.PI*2); c.fillStyle=color; c.fill(); if(outline) { c.strokeStyle=outline;c.lineWidth=1.4;c.stroke(); }
@@ -183,7 +183,7 @@ function collector(c:CanvasRenderingContext2D,p:Collector,tick:number,local:bool
 const shownBugs=new Map<number,{ox:number;oy:number;heading:number;seen:number}>();
 function insect(c:CanvasRenderingContext2D,b:Bug,p:Collector,tick:number) {
   const state=personal(b,p.id);if(!state||state.escaped)return;
-  const q=bugPoint(b,p.id),m=bugMotion(b,tick),prev=bugMotion(b,tick-3),behavior=behaviorOf(SPECIES_BY_ID.get(b.speciesId)!);
+  const species=SPECIES_BY_ID.get(b.speciesId)!,q=bugPoint(b,p.id),m=bugMotion(b,tick),prev=bugMotion(b,tick-3),behavior=behaviorOf(species);
   // Replaying the shared path keeps the mark on its hit point; only the offset from it is smoothed.
   const ox=q.x-m.x,oy=q.y-m.y;let s=shownBugs.get(b.id);if(!s||Math.hypot(ox-s.ox,oy-s.oy)>260)s={ox,oy,heading:0,seen:tick};
   const fleeX=ox-s.ox,fleeY=oy-s.oy,flee=Math.hypot(fleeX,fleeY);
@@ -196,6 +196,10 @@ function insect(c:CanvasRenderingContext2D,b:Bug,p:Collector,tick:number) {
   c.save();if(state.caught)c.globalAlpha=.16;
   oval(c,x,y+1,3.2*(1-Math.min(.5,lift/50)),1.2,'rgba(23,25,24,.14)');
   const by=y-lift,flier=behavior==='flower'||behavior==='patrol';
+  // 전설 and golden insects give themselves away a little: a slow breathing ring under the mark.
+  const legend=species.rarity===3,special=(legend||b.golden)&&!state.caught;
+  if(special){const pulse=.5+.5*Math.sin(tick*.07+b.seed);c.save();c.globalAlpha=.22+.38*pulse;
+    c.beginPath();c.ellipse(x,by,7+pulse*2.5,5.5+pulse*2,0,0,Math.PI*2);c.strokeStyle=HALO;c.lineWidth=2.6;c.stroke();c.strokeStyle=legend?RARITY_INK[3]:GOLD_MARK;c.lineWidth=1.1;c.stroke();c.restore();}
   c.save();c.translate(x,by);c.rotate(s.heading);
   if(flier&&lift>2){
     // Butterflies beat slowly; a dragonfly's wings stay a faint blur.
@@ -204,10 +208,11 @@ function insect(c:CanvasRenderingContext2D,b:Bug,p:Collector,tick:number) {
   }
   // The fine white rim keeps the same black bug mark readable over dark windows.
   c.beginPath();c.ellipse(0,0,3.6,2.9,0,0,Math.PI*2);c.fillStyle=PAPER;c.fill();
-  c.beginPath();c.ellipse(0,0,2.7,2,0,0,Math.PI*2);c.fillStyle='#171918';c.fill();
+  c.beginPath();c.ellipse(0,0,2.7,2,0,0,Math.PI*2);c.fillStyle=b.golden&&!state.caught?GOLD_MARK:'#171918';c.fill();
   c.restore();
-  // Every species shares one unreadable field mark; only a golden variant has a tiny glint.
-  if(b.golden&&!state.caught&&(tick+b.seed)%90<7)star(c,x+4,by-4,1.5,'#9c854f');
+  // Species stay unreadable in the field; a golden body glints and a 전설 sheds an occasional sparkle.
+  if(special&&b.golden&&(tick+b.seed)%40<12)star(c,x+4,by-5,1.4+Math.sin((tick+b.seed)%40/12*Math.PI)*1.2,GOLD_GLINT);
+  if(special&&legend&&(tick+b.seed*3)%70<10)star(c,x-5,by-6,1.6,RARITY_INK[3]);
   c.restore();
 }
 export interface FieldView { cameraX:number;cameraY:number;zoom:number;previewX?:number;previewY?:number;angle?:number;mapOpen:boolean;compact:boolean;hideEmotes:boolean;solo:boolean;known:number;gold:number }
