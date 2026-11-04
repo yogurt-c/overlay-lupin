@@ -6,7 +6,7 @@ import { drawInsect, SIDE_VIEW } from './art.js';
 import { RARITY_INK } from './draw.js';
 export interface InsectUiActions {
   open(): void; emoji(value: number): void; release(id: string): void; favorite(id: string): void; show(bug: InsectCatch): void;
-  retry(): void; export(): void; import(): void; continueSolo(): void; map(): void; compact(): void;
+  retry(): void; export(): void; import(): void; continueSolo(): void; map(): void; compact(): void; resize(width: number, height: number): void;
 }
 /** What the fresh catch earned, shown as stamps on the result card. */
 export interface Badges { first: boolean; record: boolean; goldFirst: boolean }
@@ -35,6 +35,9 @@ body[data-game="insect"] #field{-webkit-app-region:no-drag}
 #insect-ui .bug-card canvas{width:64px;height:auto;aspect-ratio:16/10}
 #insect-ui .bug-card p{margin:0;font-size:9px;line-height:1.35}
 #insect-ui .bug-badges{display:flex;flex-wrap:wrap;justify-content:center;gap:3px}
+#insect-ui .bug-grip{position:absolute;right:-6px;bottom:-6px;width:16px;height:16px;padding:0;min-height:0;border:0;background:transparent;cursor:nwse-resize;touch-action:none;
+  background-image:linear-gradient(135deg,transparent 45%,#9aa197 45% 52%,transparent 52% 64%,#9aa197 64% 71%,transparent 71% 83%,#9aa197 83% 90%,transparent 90%)}
+#insect-ui .bug-grip:hover{background-color:rgba(255,255,255,.65)}
 #insect-ui .bug-badge{font-size:8px;font-weight:700;padding:0 5px;border:1px solid currentColor;border-radius:999px;transform:rotate(-2deg)}
 `;
 export class InsectUi {
@@ -50,7 +53,8 @@ export class InsectUi {
     const top = el('div', undefined, 'fish-tools fish-top');
     const collection = button('수집함', () => actions.open()); collection.title = '수집함 (C)'; top.append(collection);
     top.append(button('지도', () => actions.map()));
-    const fold = button('접기', () => { actions.compact(); fold.textContent = fold.textContent === '접기' ? '펼치기' : '접기'; }); top.append(fold);
+    const grip = this.resizeGrip();
+    const fold = button('접기', () => { actions.compact(); fold.textContent = fold.textContent === '접기' ? '펼치기' : '접기'; grip.hidden = fold.textContent === '펼치기'; }); top.append(fold);
 
     this.panel = el('div', undefined, 'fish-panel'); this.panel.hidden = true;
     this.card = el('div', undefined, 'bug-card'); this.card.hidden = true; this.card.setAttribute('role', 'status');
@@ -60,11 +64,21 @@ export class InsectUi {
     EMOTES.forEach((name, i) => this.emotes.append(this.emoteButton(name, i)));
     const mute = button('남 숨김', () => { this.mute = !this.mute; mute.setAttribute('aria-pressed', String(this.mute)); }, 'fish-mute');
     mute.title = '다른 사람의 감정표현 숨기기'; mute.setAttribute('aria-pressed', 'false'); this.emotes.append(mute);
-    this.root.append(top, this.card, this.toast, this.emotes, this.panel);
+    this.root.append(top, this.card, this.toast, this.emotes, this.panel, grip);
     // Electron resolves -webkit-app-region in DOM order and this root inherits the body's drag region.
     // Mounting it right after the canvas keeps every later shell control (leave, settings) clickable.
     const field = document.getElementById('field');
     if (field) field.after(this.root); else document.body.append(this.root);
+  }
+  /** Drag the bottom-right corner to resize the window. It never takes focus, so keys keep driving the game. */
+  private resizeGrip(): HTMLButtonElement {
+    const grip = button('', () => undefined, 'bug-grip'); grip.title = '창 크기 조절 (드래그)'; grip.setAttribute('aria-label', '창 크기 조절');
+    let start: { x: number; y: number; width: number; height: number } | undefined;
+    grip.onpointerdown = e => { start = { x: e.screenX, y: e.screenY, width: window.innerWidth, height: window.innerHeight }; grip.setPointerCapture(e.pointerId); e.preventDefault(); };
+    grip.onpointermove = e => { if (start) this.actions.resize(start.width + e.screenX - start.x, start.height + e.screenY - start.y); };
+    grip.onpointerup = grip.onpointercancel = () => { start = undefined; };
+    grip.onmousedown = e => e.preventDefault(); grip.tabIndex = -1;
+    return grip;
   }
   private emoteButton(name: string, i: number): HTMLButtonElement {
     const b = button('', () => { this.actions.emoji(i); this.emotes.hidden = true; }, 'fish-emote'); b.title = `${i + 1} ${name}`; b.setAttribute('aria-label', name);

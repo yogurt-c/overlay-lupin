@@ -1,4 +1,4 @@
-import { app, ipcMain, BrowserWindow, dialog } from 'electron';
+import { app, ipcMain, BrowserWindow, dialog, screen } from 'electron';
 import fs from 'node:fs';
 import { JumpmapRecords } from './jumpmap-records';
 import { FishingStore } from './fishing-store';
@@ -49,12 +49,26 @@ app.whenReady().then(() => {
       ? jumpmapRecords.update(mode, ticks) : { ok: false };
   });
   win = createGameWindow();
+  // The insect field borrows a bigger window while it runs; its size is remembered until the app quits.
+  const INSECT_MIN = { width: 360, height: 270 };
   let insectBounds: Electron.Rectangle | undefined;
+  let insectSize = { width: 480, height: 360 };
+  let insectCompact = false;
   ipcMain.on('insect:window', (event, mode: unknown) => {
     if (!win || event.sender !== win.webContents) return;
-    if (mode === 'expand') { insectBounds ??= win.getBounds(); win.setMinimumSize(480, 360); win.setSize(480, 360); }
-    if (mode === 'compact' && insectBounds) { win.setMinimumSize(160, 120); win.setSize(320, 280); }
-    if (mode === 'restore' && insectBounds) { win.setMinimumSize(160, 120); win.setBounds(insectBounds); insectBounds = undefined; }
+    if (mode === 'expand') { insectBounds ??= win.getBounds(); insectCompact = false; win.setMinimumSize(INSECT_MIN.width, INSECT_MIN.height); win.setSize(insectSize.width, insectSize.height); }
+    if (mode === 'compact' && insectBounds) { insectCompact = true; win.setMinimumSize(160, 120); win.setSize(320, 280); }
+    if (mode === 'restore' && insectBounds) { insectCompact = false; win.setMinimumSize(160, 120); win.setBounds(insectBounds); insectBounds = undefined; }
+  });
+  ipcMain.on('insect:resize', (event, width: unknown, height: unknown) => {
+    if (!win || event.sender !== win.webContents || !insectBounds || insectCompact) return;
+    if (typeof width !== 'number' || typeof height !== 'number' || !Number.isFinite(width) || !Number.isFinite(height)) return;
+    const area = screen.getDisplayMatching(win.getBounds()).workArea;
+    insectSize = {
+      width: Math.round(Math.min(Math.max(width, INSECT_MIN.width), area.width)),
+      height: Math.round(Math.min(Math.max(height, INSECT_MIN.height), area.height))
+    };
+    win.setSize(insectSize.width, insectSize.height);
   });
   net.start();
   const fishing = new FishingStore(app.getPath('userData'));

@@ -14,6 +14,7 @@ export interface OverlayLupinApi {
   fishingExport(): Promise<FishingReply>;
   fishingImport(): Promise<FishingReply>;
   insectWindow(mode: 'expand' | 'compact' | 'restore'): void;
+  insectResize?(width: number, height: number): void;
   insectLoad(): Promise<InsectReply>;
   insectAct(action: InsectAction): Promise<InsectReply>;
   insectExport(): Promise<InsectReply>;
