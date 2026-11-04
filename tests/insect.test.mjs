@@ -45,8 +45,8 @@ test('2D movement, obstacle collision and pause', () => {
   const {e,p}=field(); p.x=900;p.y=900;const start={x:p.x,y:p.y};
   e.input('a',1,false,[],1);for(let t=0;t<30;t++)e.step();
   assert.ok(Math.abs(Math.hypot(p.x-start.x,p.y-start.y)-60)<.01);
-  const x=p.x;e.input('a',1,false,[],0,true);for(let t=0;t<20;t++)e.step();assert.equal(p.x-x,15);
-  e.input('a',1,false,[],1,true,true);const stop={x:p.x,y:p.y};for(let t=0;t<20;t++)e.step();assert.deepEqual({x:p.x,y:p.y},stop);
+  const x=p.x;e.input('a',1,true,[],0);for(let t=0;t<20;t++)e.step();assert.equal(p.x-x,15);
+  e.input('a',1,true,[],1,true);const stop={x:p.x,y:p.y};for(let t=0;t<20;t++)e.step();assert.deepEqual({x:p.x,y:p.y},stop);
   assert.deepEqual(movePoint(36,100,-2,0),{x:36,y:100});
   const tree=TREES[0];assert.ok(blocked(tree.x,tree.y));assert.deepEqual(movePoint(tree.x-23,tree.y,2,0),{x:tree.x-23,y:tree.y});
   assert.ok(blocked(1720,450));
@@ -64,7 +64,9 @@ test('all four collectors can catch the same golden specimen without consuming a
   assert.equal(e.ensure('overflow','overflow'),undefined);
   const b=e.world.bugs.at(-1);b.golden=true;e.world.bugs=[b];
   const ids=[];
-  for(const p of e.world.players){p.x=b.x;p.y=b.y+NET_AHEAD;p.angle=-Math.PI/2;swing(e,p);assert.equal(p.phase,'catch');assert.equal(p.bug.golden,true);ids.push(p.bug.id);}
+  // Place everyone before any step so the host's lag-compensation history sees them at the bug.
+  for(const p of e.world.players){p.x=b.x;p.y=b.y+NET_AHEAD;p.angle=-Math.PI/2;}
+  for(const p of e.world.players){swing(e,p);assert.equal(p.phase,'catch');assert.equal(p.bug.golden,true);ids.push(p.bug.id);}
   assert.equal(new Set(ids).size,4);assert.equal(e.world.bugs.some(q=>q.id===b.id),false);
 });
 test('miss and alert are personal; first miss creates a retry and second escape does not affect peers', () => {
