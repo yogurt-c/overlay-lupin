@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { SPECIES, ENVS, GOLDEN_CHANCE, SAVE_VERSION, isInsectSave } from '../dist/shared/insect.js';
-import { InsectEngine, pickSpecies, inReach, personal, bugPoint, netPoint, bugMotion, predictStep, NET_AHEAD, CATCH_TICKS, SWING_TICKS, HIT_STUN, MISS_STUN, HIT_W, netHits } from '../dist/renderer/games/insect/engine.js';
+import { InsectEngine, pickSpecies, inReach, personal, bugPoint, netPoint, bugMotion, predictStep, NET_AHEAD, CATCH_TICKS, SWING_TICKS, HIT_STUN, MISS_STUN, HIT_W, TRUST, netHits } from '../dist/renderer/games/insect/engine.js';
 import { WorldSender, WorldReceiver, encodeQuick, applyQuick } from '../dist/renderer/games/insect/wire.js';
 import { movePoint, blocked, TREES, WIDTH, HEIGHT } from '../dist/renderer/games/insect/map.js';
 import { validWorld } from '../dist/renderer/games/insect/module.js';
@@ -19,7 +19,7 @@ function field() {
   const b = e.world.bugs[0]; p.x = b.x; p.y = b.y + NET_AHEAD; p.angle = -Math.PI/2;
   return {e,p,b};
 }
-function swing(e,p,seq=1) { e.input(p.id,0,false,[{seq,kind:'swing',at:e.world.tick}],0,false); for(let t=0;t<SWING_TICKS;t++)e.step(); }
+function swing(e,p,seq=1) { e.input(p.id,0,false,[{seq,kind:'swing',at:e.world.tick,x:p.x,y:p.y,angle:p.angle}],0,false); for(let t=0;t<SWING_TICKS;t++)e.step(); }
 test('30 insects: 10 per habitat, each 4 일반 · 3 고급 · 2 희귀 · 1 전설, all real and drawable', () => {
   assert.equal(SPECIES.length, 30); assert.equal(new Set(SPECIES.map(s => s.id)).size, 30); assert.equal(new Set(SPECIES.map(s => s.name)).size, 30);
   for (const env of ENVS) assert.deepEqual([0, 1, 2, 3].map(r => SPECIES.filter(s => s.env === env && s.rarity === r).length), [4, 3, 2, 1]);
@@ -116,6 +116,17 @@ test('the net bonks anyone it visibly lands on, even off-centre, mid-recovery or
   {const {e,p,q}=setup(0,0);e.step();const at=e.world.tick;q.x+=80;for(let t=0;t<8;t++)e.step();
     e.input('a',0,false,[{seq:1,kind:'swing',at}],0,false);for(let t=0;t<SWING_TICKS;t++)e.step();assert.equal(q.phase,'hit','judged where the swinger saw them');}
   assert.ok(netHits({x:0,y:0},{x:0,y:0})&&!netHits({x:0,y:0},{x:0,y:-NET_AHEAD}),'the swinger\'s own spot stays safe');
+});
+test('a swing lands on the spot and facing the swinger saw, with the body planted there', () => {
+  const start=()=>{const e=new InsectEngine(rng(8)),p=e.ensure('a','a');e.world.bugs=[];p.x=900;p.y=900;p.angle=0;e.step();return {e,p};};
+  {const {e,p}=start();e.input('a',0,false,[{seq:1,kind:'swing',at:e.world.tick,x:930,y:910,angle:Math.PI/2}],0,false);
+    assert.deepEqual([p.strikeX,p.strikeY,p.x,p.y],[930,910,930,910]);assert.equal(p.angle,Math.PI/2);}
+  {const {e,p}=start();e.input('a',0,false,[{seq:1,kind:'swing',at:e.world.tick,x:900+TRUST+20,y:900,angle:1}],0,false);
+    assert.deepEqual([p.strikeX,p.x,p.angle],[900,900,0],'a spot far from the host copy falls back');}
+  {const {e,p}=start();e.input('a',0,false,[{seq:1,kind:'swing',at:e.world.tick,x:10,y:10,angle:1}],0,false);assert.equal(p.strikeX,900,'never inside a wall');}
+  {const {e,p}=field();const x=p.x,y=p.y;p.y+=30;e.step();
+    // The host's copy trails 30px behind, but the member's screen covered the bug: it is caught.
+    e.input('a',0,false,[{seq:1,kind:'swing',at:e.world.tick,x,y,angle:-Math.PI/2}],0,false);for(let t=0;t<SWING_TICKS;t++)e.step();assert.equal(p.phase,'catch');}
 });
 test('every packet carries quick player state, so members see motion before a full snapshot cycle completes', () => {
   const e=new InsectEngine(rng(21));e.ensure('a','a');e.ensure('b','b');for(let t=0;t<60;t++)e.step();

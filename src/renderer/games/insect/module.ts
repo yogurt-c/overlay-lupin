@@ -85,7 +85,9 @@ export class InsectMatch implements GameMatch {
   };
   private swing(): void {
     const me = this.me(); if (!this.ready || this.closed || this.paused || this.ui?.opened || this.pending || !me || me.phase !== 'free') return;
-    this.command('swing', { at: this.view().tick });
+    // Send the spot and facing this screen shows, so the slam lands where it was seen.
+    const angle = this.move || this.moveY ? Math.atan2(this.moveY, this.move) : me.angle;
+    this.command('swing', { at: this.view().tick, x: this.previewX ?? me.x, y: this.previewY ?? me.y, angle });
   }
   setMembers(members: { id: string; name: string }[]): void { if (this.engine) for (const m of members) this.engine.ensure(m.id, m.name); }
   removePeer(id: string): void { this.engine?.remove(id); }

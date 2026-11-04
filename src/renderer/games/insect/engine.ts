@@ -1,11 +1,13 @@
 import { GOLDEN_CHANCE, RARITY_WEIGHTS, SPECIES, SPECIES_BY_ID, validCatch } from '../../../shared/insect.js';
 import type { Env, InsectCatch, Species } from '../../../shared/insect.js';
-import { WIDTH, HEIGHT, CAMP, TREES, HABITATS, behaviorOf, habitatOf, clamp, movePoint } from './map.js';
+import { WIDTH, HEIGHT, CAMP, TREES, HABITATS, behaviorOf, habitatOf, clamp, movePoint, blocked } from './map.js';
 export const SEATS = 4, WALK = 2, SNEAK = .75, REACH = 46, NET_AHEAD = 32, CATCH_TICKS = 42, SWING_TICKS = 24, MISS_STUN = 18, HIT_STUN = 40;
 /** Where a landing net bonks a collector, relative to their feet: half-width, how far up over the drawn body, and how far below. */
 export const HIT_W = 26, HIT_UP = 26, HIT_DOWN = 18;
 /** How many ticks back a swing may be judged, to cover a member's view trailing the host. */
 const REWIND = 15;
+/** How far a swinger's own reported spot may sit from the host's copy of them and still be trusted. */
+export const TRUST = 64;
 export const EMOTE_TICKS = 120, SHOW_TICKS = 240;
 export type Phase = 'free' | 'swing' | 'stun' | 'hit' | 'catch' | 'result';
 export interface Collector {
@@ -20,7 +22,7 @@ export interface Bug {
   born: number; expires: number; seed: number; personal: PersonalBug[]; tutorial: boolean;
 }
 export interface InsectWorld { version: 3; tick: number; nextId: number; players: Collector[]; bugs: Bug[]; epoch: string }
-export interface Command { seq: number; kind: 'swing' | 'saved' | 'emoji' | 'show' | 'ping'; at?: number; value?: number; catchId?: string; shown?: InsectCatch; x?: number; y?: number }
+export interface Command { seq: number; kind: 'swing' | 'saved' | 'emoji' | 'show' | 'ping'; at?: number; angle?: number; value?: number; catchId?: string; shown?: InsectCatch; x?: number; y?: number }
 export function emptyWorld(): InsectWorld { return { version: 3, tick: 0, nextId: 1, players: [], bugs: [], epoch: crypto.randomUUID() }; }
 export const envOf = (b: Bug): Env => SPECIES_BY_ID.get(b.speciesId)!.env;
 export const personal = (b: Bug, id: string) => b.personal.find(s => s.owner === id);
@@ -116,7 +118,14 @@ export class InsectEngine {
         p.phase = 'swing'; p.t = SWING_TICKS;
         p.swingAt = Number.isSafeInteger(c.at) ? clamp(c.at!, this.world.tick - REWIND, this.world.tick) : this.world.tick;
         const seen = this.history.find(h => h.tick === p.swingAt)?.players.find(q => q.id === p.id);
-        p.strikeX = seen?.x ?? p.x; p.strikeY = seen?.y ?? p.y; if (seen) p.angle = seen.angle;
+        // The swinger's own screen is ahead of the host's copy, so its reported spot is the fairest
+        // place to land; a spot too far from either known position falls back to the rewound one.
+        const claim = Number.isFinite(c.x) && Number.isFinite(c.y) && !blocked(c.x!, c.y!) ? { x: c.x!, y: c.y! } : undefined;
+        const near = (q?: { x: number; y: number }) => !!q && !!claim && Math.hypot(q.x - claim.x, q.y - claim.y) <= TRUST;
+        const at = claim && (near(p) || near(seen)) ? claim : seen ?? p;
+        // The body plants where the net comes down, so every screen draws the two together.
+        p.strikeX = p.x = at.x; p.strikeY = p.y = at.y;
+        if (at === claim && Number.isFinite(c.angle)) p.angle = Math.atan2(Math.sin(c.angle!), Math.cos(c.angle!)); else if (seen) p.angle = seen.angle;
       }
       if (c.kind === 'saved' && p.phase === 'result' && p.bug && p.bug.id === c.catchId) { if (!p.known.includes(p.bug.speciesId)) p.known.push(p.bug.speciesId); p.phase = 'free'; p.bug = undefined; }
       if (c.kind === 'emoji' && Number.isInteger(c.value) && c.value! >= 0 && c.value! < 8 && this.world.tick >= p.emojiUntil) { p.emoji = c.value!; p.emojiUntil = this.world.tick + EMOTE_TICKS; }

@@ -136,7 +136,7 @@ function collector(c:CanvasRenderingContext2D,p:Collector,tick:number,local:bool
   const {x,y}=p,color=SEAT_INK[p.seat],walking=(p.move||p.moveY)&&!p.paused&&(p.phase==='free'||p.phase==='result');
   const facing=Math.cos(p.angle)<-.2?-1:1,view=Math.sin(p.angle),stride=walking?Math.sin(tick*.24):0,bob=walking?Math.abs(stride)*1.3:Math.sin(tick*.05)*.4;
   const pose=netPose(p,tick),striking=p.phase!=='free'&&p.phase!=='result'&&p.phase!=='hit';
-  const base=striking?{x:p.strikeX,y:p.strikeY}:{x,y},net=netAt(base.x,base.y,p.angle,pose.u,pose.side),lean=pose.lean*Math.cos(p.angle),leanY=pose.lean*Math.sin(p.angle)*.5;
+  const base={x,y},net=netAt(base.x,base.y,p.angle,pose.u,pose.side),lean=pose.lean*Math.cos(p.angle),leanY=pose.lean*Math.sin(p.angle)*.5;
   const hip=y-11+pose.crouch-bob,chest=y-21+pose.crouch*1.2-bob,head=y-30+pose.crouch*1.3-bob;
   oval(c,x,y+1,9,3,'rgba(20,24,26,.09)');
   // The net sits behind the body while it is raised behind the head or the collector faces away.
