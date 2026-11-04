@@ -24,6 +24,8 @@ function check(name, cond, extra = '') {
   check('merandi is retired to the graveyard', RETIRED_GAMES.includes(merandi) && !ACTIVE_GAMES.includes(merandi));
   const volleyball = GAME_MODULES.find((m) => m.id === 'volleyball');
   check('volleyball is retired to the graveyard', Boolean(volleyball) && RETIRED_GAMES.includes(volleyball) && !ACTIVE_GAMES.includes(volleyball));
+  const worm = GAME_MODULES.find((m) => m.id === 'worm');
+  check('worm is retired to the graveyard', Boolean(worm) && RETIRED_GAMES.includes(worm) && !ACTIVE_GAMES.includes(worm));
   check('main row keeps every other game', ACTIVE_GAMES.length + RETIRED_GAMES.length === GAME_MODULES.length && ACTIVE_GAMES.length > 0);
 }
 

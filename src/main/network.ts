@@ -18,7 +18,7 @@ const ROOM_TIMEOUT_MS = 6000;
 const ROOM_MEMBER_TIMEOUT_MS = 5000;
 const DEFAULT_ROOM_CAPACITY = 6;
 /** Rooms that outlive their host: when the host leaves mid-session, the earliest remaining member takes over. */
-const HANDOFF_GAMES = new Set(['fishing']);
+const HANDOFF_GAMES = new Set(['fishing', 'insect']);
 /** The handoff is a single UDP burst with no ack, so it goes out twice; duplicates are ignored. */
 const HANDOFF_SENDS = 2;
 
@@ -80,9 +80,9 @@ type WireMessage =
   /** `payload` is the active game's own in-match packet shape — opaque here. */
   | { t: 'POS'; id: string; payload: unknown }
   /** Broadcast by a room's host, same cadence as HELLO, so the room list stays live. */
-  | { t: 'ROOM_OPEN'; id: string; name: string; roomId: string; gameId: string; capacity: number; memberCount: number; replyPort: number }
+  | { t: 'ROOM_OPEN'; insectRevision?: number; id: string; name: string; roomId: string; gameId: string; capacity: number; memberCount: number; replyPort: number }
   /** A hopeful member, sent directly to the host learned from a ROOM_OPEN. */
-  | { t: 'ROOM_JOIN'; id: string; name: string; roomId: string; replyPort: number }
+  | { t: 'ROOM_JOIN'; insectRevision?: number; id: string; name: string; roomId: string; replyPort: number }
   /** The host's authoritative membership list, sent to every member after anything changes. */
   | {
       t: 'ROOM_ROSTER';
@@ -317,7 +317,7 @@ export class GameNetwork extends EventEmitter {
     if (!room) return;
     this.pendingJoinId = roomId;
     this.sendDirect(
-      { t: 'ROOM_JOIN', id: this.myId, name: this.myName, roomId, replyPort: this.replyPort },
+      { t: 'ROOM_JOIN', insectRevision: 4, id: this.myId, name: this.myName, roomId, replyPort: this.replyPort },
       { address: room.hostAddress, replyPort: room.hostReplyPort }
     );
   }
@@ -418,6 +418,7 @@ export class GameNetwork extends EventEmitter {
     const buf = Buffer.from(
       JSON.stringify({
         t: 'ROOM_OPEN',
+        insectRevision: room.gameId === 'insect' ? 4 : undefined,
         id: this.myId,
         name: room.name,
         roomId: room.id,
@@ -455,11 +456,11 @@ export class GameNetwork extends EventEmitter {
     this.broadcastRoomOpen();
   }
 
-  /** Host-only roster. Fishing also needs mid-session rosters to authorize and seat new arrivals. */
+  /** Host-only roster. Handoff rooms (fishing, insect) also need mid-session rosters to authorize and seat new arrivals. */
   private emitRoomRoster(): void {
     if (!this.hostedRoom) return;
     const room = this.hostedRoom;
-    if (room.status !== 'lobby' && room.gameId !== 'fishing') return;
+    if (room.status !== 'lobby' && !HANDOFF_GAMES.has(room.gameId)) return;
     this.emit('room-roster', {
       id: room.id,
       name: room.name,
@@ -531,6 +532,7 @@ export class GameNetwork extends EventEmitter {
         break;
 
       case 'ROOM_OPEN': {
+        if (msg.gameId === 'insect' && msg.insectRevision !== 4) return;
         const previous = this.openRooms.get(msg.roomId);
         const room: OpenRoom = {
           id: msg.roomId,
@@ -552,6 +554,7 @@ export class GameNetwork extends EventEmitter {
       case 'ROOM_JOIN': {
         const room = this.hostedRoom;
         if (!room || room.id !== msg.roomId || room.members.size >= room.capacity) return;
+        if (room.gameId === 'insect' && msg.insectRevision !== 4) return;
         room.members.set(msg.id, {
           id: msg.id,
           name: msg.name,

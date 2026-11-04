@@ -1,0 +1,80 @@
+/** Real 640×480 Electron shell smoke test for 곤충채집, plus art sheets for review. All saves are isolated in a temporary folder. */
+const {app,BrowserWindow,ipcMain}=require('electron');
+const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),assert=require('node:assert/strict');
+const {InsectStore}=require('../dist/main/insect-store.js');
+const directory=fs.mkdtempSync(path.join(os.tmpdir(),'lupin-insect-ui-')),store=new InsectStore(directory);
+const root=path.resolve(__dirname,'..'),out=path.join(root,'output/insect'),errors=[];let win;
+const pause=ms=>new Promise(r=>setTimeout(r,ms));
+const reply=fn=>{try{return{ok:true,data:fn()};}catch(e){return{ok:false,error:e.message};}};
+ipcMain.handle('net:whoami',()=>({id:'me',name:'테스트'}));ipcMain.handle('shortcuts:get',()=>({hide:'PageDown',show:'PageUp'}));ipcMain.handle('analytics:get',()=>false);ipcMain.handle('update:get',()=>({currentVersion:'test',state:{kind:'unsupported'}}));
+ipcMain.handle('insect:load',()=>reply(()=>store.load()));ipcMain.handle('insect:act',(_e,a)=>reply(()=>store.act(a)));
+ipcMain.handle('insect:export',()=>({ok:false,cancelled:true}));ipcMain.handle('insect:import',()=>({ok:false,cancelled:true}));
+ipcMain.on('insect:window',()=>{if(win)win.setSize(640,480);});
+const png=dataUrl=>Buffer.from(dataUrl.split(',')[1],'base64');
+app.whenReady().then(async()=>{
+  win=new BrowserWindow({width:640,height:480,useContentSize:true,frame:false,show:false,transparent:true,webPreferences:{preload:path.join(root,'dist/preload/preload.js'),contextIsolation:true,backgroundThrottling:false}});
+  win.webContents.on('console-message',event=>{if(event.level==='error')errors.push(event.message);});
+  const js=code=>win.webContents.executeJavaScript(code);
+  const frame=()=>js(`testMatch.render(document.getElementById('field').getContext('2d'),{width:innerWidth,height:innerHeight,pixelRatio:devicePixelRatio})`);
+  const shot=async name=>{await pause(60);fs.writeFileSync(path.join(out,name),(await win.webContents.capturePage()).toPNG());};
+  fs.mkdirSync(out,{recursive:true});
+  await win.loadFile(path.join(root,'dist/renderer/index.html'));
+  await js(`document.getElementById('idle-icon').click(); [...document.querySelectorAll('#game-tabs button')].find(b=>b.textContent==='곤충채집').click(); document.getElementById('solo-btn').click()`);
+  await pause(150);
+  assert.equal(await js(`document.body.dataset.game`),'insect');
+  assert.equal(await js(`document.querySelectorAll('#insect-ui').length`),1);
+  assert.equal(await js(`(()=>{const r=document.getElementById('leave-btn').getBoundingClientRect(),x=r.x+r.width/2,y=r.y+r.height/2;let region='none';
+    for(const n of document.querySelectorAll('body *')){const b=n.getBoundingClientRect();if(!n.getClientRects().length||x<b.left||x>b.right||y<b.top||y>b.bottom)continue;const v=getComputedStyle(n).webkitAppRegion;if(v&&v!=='none')region=v;}return region;})()`),'no-drag','leave button must not sit under a later drag region');
+  await js(`document.querySelector('#leave-btn').click();document.querySelector('#leave-btn').click()`);assert.equal(await js(`document.querySelectorAll('#insect-ui').length`),0);
+  // Art sheet: every species in the catalog plate style, normal and 금색 side by side, plus field sprites (idle, alert, flying).
+  const sheet=await js(`(async()=>{const {SPECIES}=await import('../shared/insect.js');const {drawInsect,SIDE_VIEW}=await import('./games/insect/art.js');const {fieldSize}=await import('./games/insect/draw.js');
+    const c=document.createElement('canvas'),cw=150,ch=104;c.width=cw*6;c.height=ch*Math.ceil(SPECIES.length/3);const x=c.getContext('2d');x.fillStyle='#f4f0e6';x.fillRect(0,0,c.width,c.height);
+    SPECIES.forEach((s,i)=>{const col=(i%3)*2,row=Math.floor(i/3),ox=col*cw,oy=row*ch;
+      for(const g of [0,1])drawInsect(x,s,ox+g*cw+cw/2,oy+ch/2-6,78,{detail:true,golden:!!g},SIDE_VIEW.has(s.plan));
+      ['idle','alert','fly'].forEach((pose,k)=>drawInsect(x,s,ox+14+k*24,oy+ch-14,fieldSize(s,s.maxMm),{pose,frame:k*4},SIDE_VIEW.has(s.plan)));
+      x.font='11px sans-serif';x.fillStyle='#14181a';x.fillText(s.name,ox+4,oy+12);});
+    return c.toDataURL();})()`);
+  fs.writeFileSync(path.join(out,'art-sheet.png'),png(sheet));
+  // Real renderer, 4-player field, spatial catch and persistent IPC save.
+  await js(`(async()=>{ const {InsectMatch}=await import('./games/insect/module.js'); window.testMatch=new InsectMatch(true,'me','나'); document.body.dataset.game='insect'; })()`);
+  await pause(150);
+  await js(`testMatch.setMembers([{id:'f1',name:'모모'},{id:'f2',name:'초록'},{id:'f3',name:'하늘'}]); for(let i=0;i<400;i++)testMatch.step({});`);
+  assert.equal(await js(`testMatch.engine.world.players.length`),4);
+  assert.equal(await js(`testMatch.engine.world.bugs.length`),30);
+  await js(`{const w=testMatch.engine.world,p=w.players[0],b=w.bugs[0];b.golden=true;p.x=b.x;p.y=b.y+32;p.angle=-Math.PI/2;testMatch.step({});}`);
+  for(let i=0;i<35;i++)await frame();await shot('field.png');
+  win.setSize(480,360);await pause(100);await frame();await shot('field-small.png');
+  await js(`document.body.style.background='#f5f5f3'`);await frame();await shot('field-light.png');
+  await js(`document.body.style.background='#24272b'`);await frame();await shot('field-dark.png');
+  await js(`document.body.style.background=''`);win.setSize(640,480);await pause(100);
+  await js(`testMatch.step({swing:true});for(let i=0;i<24;i++)testMatch.step({});`);
+  assert.equal(await js(`testMatch.engine.world.players[0].phase`),'catch');
+  await frame();await shot('catch.png');
+  await js(`for(let i=0;i<45;i++)testMatch.step({});`);await pause(150);await js(`testMatch.step({});`);
+  assert.equal(store.read().catches.length,1);assert.equal(store.read().catches[0].golden,true);
+  assert.equal(await js(`testMatch.engine.world.players[0].phase`),'free');
+  await frame();await shot('result-card.png');
+  await js(`testMatch.step({brag:true});for(let i=0;i<12;i++)testMatch.step({});`);
+  assert.equal(await js(`testMatch.engine.world.players[0].shown?.golden`),true);
+  await frame();await shot('brag.png');
+  await js(`testMatch.step({map:true});`);await frame();await shot('map.png');
+  await js(`document.getElementById('field').dispatchEvent(new PointerEvent('pointerdown',{clientX:300,clientY:250,bubbles:true}));testMatch.step({});`);
+  assert.ok(await js(`testMatch.engine.world.players[0].pingUntil>testMatch.engine.world.tick`));
+  await js(`testMatch.step({map:true});`);
+  for(const [name,x,y] of [['meadow',700,890],['trees',470,410],['pond',1430,430],['leaves',1360,1080]]) {
+    await js(`testMatch.engine.world.players[0].x=${x};testMatch.engine.world.players[0].y=${y};testMatch.step({});`);
+    for(let i=0;i<40;i++)await frame();await shot(name+'.png');
+  }
+  // C opens the notebook; the catalog lists all 30 with the gold counter.
+  await js(`testMatch.step({collection:true});`);assert.equal(await js(`testMatch.ui.opened`),true);
+  assert.ok(await js(`document.querySelector('#insect-ui .fish-stats').textContent.includes('도감 1/55 · 금색 1/55')`));
+  await shot('collection.png');
+  await js(`[...document.querySelectorAll('#insect-ui .fish-tab')].find(b=>b.textContent.startsWith('도감')).click()`);await shot('catalog.png');
+  await js(`document.querySelector('#insect-ui .fish-card').click()`);await shot('detail.png');
+  await js(`testMatch.step({collection:true});`);assert.equal(await js(`testMatch.ui.opened`),false);
+  const perf = await js(`(()=>{const times=[];for(let i=0;i<120;i++){const t=performance.now();testMatch.step({});testMatch.render(document.getElementById('field').getContext('2d'),{width:640,height:480,pixelRatio:devicePixelRatio});times.push(performance.now()-t);}times.sort((a,b)=>a-b);return {median:times[60],p95:times[114]};})()`);
+  console.log('insect render + simulation milliseconds', perf);
+  await js(`testMatch.dispose();`);assert.equal(await js(`document.querySelectorAll('#insect-ui').length`),0);
+  assert.deepEqual(errors,[]);
+  console.log('insect renderer smoke test passed');app.exit(0);
+}).catch(e=>{console.error(e);app.exit(1);});
