@@ -64,7 +64,7 @@
     background: transparent;
     cursor: pointer;
     -webkit-app-region: no-drag;
-    opacity: 0.32;
+    opacity: 0.6;
     transition: opacity 150ms ease;
     padding: 0;
     display: flex;
@@ -85,7 +85,7 @@
     background: transparent;
     cursor: pointer;
     -webkit-app-region: no-drag;
-    opacity: 0.32;
+    opacity: 0.6;
     transition: opacity 150ms ease;
     padding: 0;
     display: flex;
@@ -94,6 +94,7 @@
   }
   #settings-btn:hover { opacity: 1; }
   #settings-btn svg { width: 12px; height: 12px; }
+  #quit-btn svg, #settings-btn svg { overflow: visible; filter: drop-shadow(0 0 0.6px #fff) drop-shadow(0 0 0.6px #fff) drop-shadow(0 0 0.6px #fff); }
 
   #settings-panel {
     position: absolute;
