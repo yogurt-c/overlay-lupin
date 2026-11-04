@@ -1,7 +1,11 @@
 import { GOLDEN_CHANCE, RARITY_WEIGHTS, SPECIES, SPECIES_BY_ID, validCatch } from '../../../shared/insect.js';
 import type { Env, InsectCatch, Species } from '../../../shared/insect.js';
 import { WIDTH, HEIGHT, CAMP, TREES, HABITATS, behaviorOf, habitatOf, clamp, movePoint } from './map.js';
-export const SEATS = 4, WALK = 2, SNEAK = .75, REACH = 46, NET_AHEAD = 32, CATCH_TICKS = 42, SWING_TICKS = 24, MISS_STUN = 18, HIT_REACH = 24, HIT_STUN = 40;
+export const SEATS = 4, WALK = 2, SNEAK = .75, REACH = 46, NET_AHEAD = 32, CATCH_TICKS = 42, SWING_TICKS = 24, MISS_STUN = 18, HIT_STUN = 40;
+/** Where a landing net bonks a collector, relative to their feet: half-width, how far up over the drawn body, and how far below. */
+export const HIT_W = 26, HIT_UP = 26, HIT_DOWN = 18;
+/** How many ticks back a swing may be judged, to cover a member's view trailing the host. */
+const REWIND = 15;
 export const EMOTE_TICKS = 120, SHOW_TICKS = 240;
 export type Phase = 'free' | 'swing' | 'stun' | 'hit' | 'catch' | 'result';
 export interface Collector {
@@ -81,6 +85,7 @@ export function predictStep(w: InsectWorld): void {
   for (const p of w.players) { if (p.phase !== 'free' && p.phase !== 'result' && p.t > 1) p.t--; walk(p); }
   syncBugs(w);
 }
+export const netHits = (q: { x: number; y: number }, n: { x: number; y: number }) => Math.abs(n.x - q.x) <= HIT_W && n.y - q.y >= -HIT_UP && n.y - q.y <= HIT_DOWN;
 /** Host-authoritative state. Personal escape/catch flags never consume another collector's opportunity. */
 export class InsectEngine {
   world = emptyWorld();
@@ -109,7 +114,7 @@ export class InsectEngine {
       p.ack = c.seq;
       if (c.kind === 'swing' && !paused && p.phase === 'free') {
         p.phase = 'swing'; p.t = SWING_TICKS;
-        p.swingAt = Number.isSafeInteger(c.at) ? clamp(c.at!, this.world.tick - 9, this.world.tick) : this.world.tick;
+        p.swingAt = Number.isSafeInteger(c.at) ? clamp(c.at!, this.world.tick - REWIND, this.world.tick) : this.world.tick;
         const seen = this.history.find(h => h.tick === p.swingAt)?.players.find(q => q.id === p.id);
         p.strikeX = seen?.x ?? p.x; p.strikeY = seen?.y ?? p.y; if (seen) p.angle = seen.angle;
       }
@@ -146,14 +151,16 @@ export class InsectEngine {
     }
     if (bonked) this.say(p, `앗, ${bonked.name.slice(0, 6)}을(를) 쳤어요!`);
   }
-  /** A net that lands on another free collector bonks them: they freeze briefly, but nothing else is taken from them. */
+  /** A net that lands on another collector bonks them: they freeze briefly, but nothing else is taken from them. */
   private bonk(p: Collector, n: { x: number; y: number }): Collector | undefined {
     let bonked: Collector | undefined;
     const seen = this.history.find(h => h.tick === p.swingAt)?.players;
     for (const q of this.world.players) {
-      if (q === p || q.phase !== 'free') continue;
-      const at = seen?.find(s => s.id === q.id) ?? q;
-      if (Math.hypot(at.x - n.x, at.y - n.y) > HIT_REACH) continue;
+      // A raised net is interrupted too; only a collector holding a catch or already dazed is spared.
+      if (q === p || q.phase === 'catch' || q.phase === 'result' || q.phase === 'hit') continue;
+      // Either where the swinger saw them or where they stand now counts, so lag never eats a fair hit.
+      const at = seen?.find(s => s.id === q.id);
+      if (!netHits(q, n) && !(at && netHits(at, n))) continue;
       q.phase = 'hit'; q.t = HIT_STUN; q.move = q.moveY = 0;
       this.say(q, `${p.name.slice(0, 6)}의 잠자리채에 맞았어요!`); bonked ??= q;
     }
@@ -193,7 +200,8 @@ export class InsectEngine {
       this.spawnOne(s, x, y);
     }
     this.history.push({ tick: w.tick, players: w.players.map(({ id, x, y, angle }) => ({ id, x, y, angle })), bugs: w.bugs.map(({ id, x, y }) => ({ id, x, y })) });
-    if (this.history.length > 20) this.history.shift();
+    // Keep the rewound tick around until the slam that started there lands.
+    if (this.history.length > REWIND + SWING_TICKS + 1) this.history.shift();
   }
   private spawnOne(s: Species, x: number, y: number, tutorial = false): void {
     const w = this.world;

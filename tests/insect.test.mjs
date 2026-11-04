@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { SPECIES, ENVS, GOLDEN_CHANCE, SAVE_VERSION, isInsectSave } from '../dist/shared/insect.js';
-import { InsectEngine, pickSpecies, inReach, personal, bugPoint, netPoint, bugMotion, predictStep, NET_AHEAD, CATCH_TICKS, SWING_TICKS, HIT_STUN } from '../dist/renderer/games/insect/engine.js';
+import { InsectEngine, pickSpecies, inReach, personal, bugPoint, netPoint, bugMotion, predictStep, NET_AHEAD, CATCH_TICKS, SWING_TICKS, HIT_STUN, MISS_STUN, HIT_W, netHits } from '../dist/renderer/games/insect/engine.js';
 import { WorldSender, WorldReceiver, encodeQuick, applyQuick } from '../dist/renderer/games/insect/wire.js';
 import { movePoint, blocked, TREES, WIDTH, HEIGHT } from '../dist/renderer/games/insect/map.js';
 import { validWorld } from '../dist/renderer/games/insect/module.js';
@@ -104,6 +104,18 @@ test('wire snapshots reassemble reordered pages, recover from loss, reject stale
   assert.equal(validWorld({...result,players:[...result.players,result.players[0]]}),false);
   assert.equal(validWorld({...result,bugs:[{...result.bugs[0],x:NaN}]}),false);
   assert.equal(validWorld({...result,players:[{...result.players[0],phase:'result',bug:undefined}]}),false);
+});
+test('the net bonks anyone it visibly lands on, even off-centre, mid-recovery or after they stepped away', () => {
+  const setup=(dx,dy)=>{const e=new InsectEngine(rng(6)),p=e.ensure('a','a'),q=e.ensure('b','b');e.world.bugs=[];p.x=900;p.y=900;p.angle=-Math.PI/2;q.x=900-dx;q.y=900-NET_AHEAD-dy;e.step();return {e,p,q};}; // dx,dy: where the net lands relative to their feet
+  for(const [dx,dy] of [[HIT_W-2,0],[-(HIT_W-2),0],[0,-20],[0,15],[18,12]]){const {e,p,q}=setup(dx,dy);swing(e,p);assert.equal(q.phase,'hit',`offset ${dx},${dy}`);}
+  for(const [dx,dy] of [[HIT_W+8,0],[0,-40],[0,30]]){const {e,p,q}=setup(dx,dy);swing(e,p);assert.equal(q.phase,'free',`miss at ${dx},${dy}`);}
+  {const {e,p,q}=setup(0,0);q.phase='stun';q.t=MISS_STUN;swing(e,p);assert.equal(q.phase,'hit','a collector recovering from a miss can be bonked');}
+  {const {e,p,q}=setup(0,0);q.angle=Math.PI/2;e.input('b',0,false,[{seq:1,kind:'swing',at:e.world.tick}],0,false);for(let t=0;t<4;t++)e.step();assert.equal(q.phase,'swing');
+    swing(e,p);assert.equal(q.phase,'hit','a raised net is interrupted');for(let t=0;t<HIT_STUN;t++)e.step();assert.equal(q.bug,undefined,'the interrupted slam never lands');}
+  {const {e,p,q}=setup(0,0);q.phase='result';q.bug={id:'x'};swing(e,p);assert.equal(q.phase,'result','a fresh catch is never knocked away');}
+  {const {e,p,q}=setup(0,0);e.step();const at=e.world.tick;q.x+=80;for(let t=0;t<8;t++)e.step();
+    e.input('a',0,false,[{seq:1,kind:'swing',at}],0,false);for(let t=0;t<SWING_TICKS;t++)e.step();assert.equal(q.phase,'hit','judged where the swinger saw them');}
+  assert.ok(netHits({x:0,y:0},{x:0,y:0})&&!netHits({x:0,y:0},{x:0,y:-NET_AHEAD}),'the swinger\'s own spot stays safe');
 });
 test('every packet carries quick player state, so members see motion before a full snapshot cycle completes', () => {
   const e=new InsectEngine(rng(21));e.ensure('a','a');e.ensure('b','b');for(let t=0;t<60;t++)e.step();
