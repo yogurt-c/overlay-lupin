@@ -22,7 +22,9 @@ body[data-game="insect"] #field{-webkit-app-region:no-drag}
 body[data-game="insect"] #hud{top:calc(var(--insect-map-y,0px) + 12px)}
 #insect-ui .fish-top button{font-size:9px;padding:1px 3px;min-height:18px;border:0;border-radius:0;box-shadow:none;background:transparent;color:#656e65;text-shadow:0 0 1px rgba(255,255,255,.8)}
 #insect-ui .fish-top button:hover{transform:none;box-shadow:none;background:rgba(255,255,255,.65)}
-#insect-ui .fish-panel{font-size:14px;background:#fffaf0;inset:40px 12px 14px}
+#insect-ui .fish-panel{font-size:14px;background:#fffaf0}
+/* Centred on the window with even margins, clear of the top pills. */
+#insect-ui .fish-panel:not(.fish-result){position:fixed;inset:44px 20px}
 #insect-ui .fish-card .fish-name{font-size:12px}
 #insect-ui .bug-card{top:100px!important}
 #insect-ui .fish-top{align-items:center}

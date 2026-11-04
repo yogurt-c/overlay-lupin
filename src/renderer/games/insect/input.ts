@@ -3,7 +3,9 @@ const KEYS = new Set(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','KeyW','Key
 export function createInputSource(target: Window) {
   const held = new Set<string>(); let swing = false, cancel = false, emotes = false, emoji = -1, brag = false, collection = false, map = false;
   const active = () => target.document.body.dataset.game === 'insect';
-  const drop = () => { held.clear(); swing = false; cancel = true; };
+  // Losing focus only lets go of held keys; closing the collection or map is Escape's job, so switching apps keeps them open.
+  const release = () => { held.clear(); swing = false; };
+  const drop = () => { release(); cancel = true; };
   target.addEventListener('keydown', e => {
     if (!active()) return;
     if (target.document.getElementById('settings-panel')?.hidden === false || (e.target as HTMLElement)?.closest('input,select,textarea,.fish-dropdown[data-open]')) { drop(); return; }
@@ -19,8 +21,8 @@ export function createInputSource(target: Window) {
     if (e.code.startsWith('Digit')) emoji = Number(e.code.slice(-1)) - 1;
   }, true);
   target.addEventListener('keyup', e => { held.delete(e.code);  });
-  target.addEventListener('blur', drop);
-  target.document.addEventListener('visibilitychange', () => { if (target.document.hidden) drop(); });
+  target.addEventListener('blur', release);
+  target.document.addEventListener('visibilitychange', () => { if (target.document.hidden) release(); });
   return {
     read(): InsectInput {
       if (target.document.body.dataset.insectPaused === 'true') { held.clear(); swing = false; }
