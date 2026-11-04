@@ -3,7 +3,7 @@ import type { Env, InsectCatch, Species } from '../../../shared/insect.js';
 import { WIDTH, HEIGHT, CAMP, TREES, HABITATS, behaviorOf, habitatOf, clamp, movePoint, blocked } from './map.js';
 export const SEATS = 4, WALK = 2, SNEAK = .75, REACH = 46, NET_AHEAD = 32, CATCH_TICKS = 42, SWING_TICKS = 24, MISS_STUN = 18, HIT_STUN = 40;
 /** Where a landing net bonks a collector, relative to their feet: half-width, how far up over the drawn body, and how far below. */
-export const HIT_W = 26, HIT_UP = 26, HIT_DOWN = 18;
+export const HIT_W = 21, HIT_UP = 22, HIT_DOWN = 15;
 /** How many ticks back a swing may be judged, to cover a member's view trailing the host. */
 const REWIND = 15;
 /** How far a swinger's own reported spot may sit from the host's copy of them and still be trusted. */
