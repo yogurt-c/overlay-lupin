@@ -231,7 +231,14 @@ function renderGameTabs(): void {
   };
   const switchView = (graveyard: boolean): void => {
     showGraveyard = graveyard;
+    // The title, rules and buttons follow selectedGameId, so it has to move into the view being shown.
+    const shown = graveyard ? RETIRED_GAMES : ACTIVE_GAMES;
+    if (!shown.some((m) => m.id === selectedGameId)) {
+      selectedGameId = shown[0].id;
+      panelStep = 'mode';
+    }
     renderGameTabs();
+    renderPanelBody();
   };
   if (showGraveyard) addTab('← 돌아가기', false, () => switchView(false), 'graveyard-toggle');
   for (const module of showGraveyard ? RETIRED_GAMES : ACTIVE_GAMES) {
