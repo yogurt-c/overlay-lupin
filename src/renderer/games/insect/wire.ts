@@ -1,6 +1,7 @@
 import { SPECIES, SPECIES_BY_ID, validCatch } from '../../../shared/insect.js';
 import { WIDTH, HEIGHT } from './map.js';
-import type { InsectWorld, Collector, Bug } from './engine.js';
+import { syncBugs } from './engine.js';
+import type { InsectWorld, Collector, Bug, Phase } from './engine.js';
 const finite = (...v: unknown[]) => v.every(n => typeof n === 'number' && Number.isFinite(n));
 export function validWorld(raw: unknown): raw is InsectWorld {
   if (!raw || typeof raw !== 'object') return false;
@@ -23,7 +24,7 @@ export function validWorld(raw: unknown): raw is InsectWorld {
 const PLAYER_KEYS = ['id','name','seat','x','y','angle','move','moveY','sneak','paused','strikeX','strikeY','phase','t','bug','emoji','emojiUntil','showUntil','shown','notice','noticeUntil','ack','lastInput','known','caught','caughtUntil','pingX','pingY','pingUntil','swingAt'] as const;
 const round = (n:number) => Math.round(n*10)/10;
 function encode(w:InsectWorld):string {
-  return JSON.stringify([w.tick,w.nextId,w.epoch,w.players.map(p=>PLAYER_KEYS.map(k=>typeof p[k]==='number'&&['x','y'].includes(k)?round(p[k] as number):p[k])),w.bugs.map(b=>{
+  return JSON.stringify([w.tick,w.nextId,w.epoch,w.players.map(p=>PLAYER_KEYS.map(k=>k==='known'?[]:typeof p[k]==='number'&&['x','y'].includes(k)?round(p[k] as number):p[k])),w.bugs.map(b=>{
     let owners=0,caught=0,escaped=0;const states:number[][]=[];
     b.personal.forEach(s=>{const i=w.players.findIndex(p=>p.id===s.owner);if(i<0)return;owners|=1<<i;if(s.caught)caught|=1<<i;if(s.escaped)escaped|=1<<i;if(s.alert||s.misses||s.dx||s.dy||s.until)states.push([i,round(s.alert),s.misses,round(s.dx),round(s.dy),s.until]);});
     return [b.id,SPECIES.findIndex(s=>s.id===b.speciesId),b.sizeMm,+b.golden,round(b.x),round(b.y),round(b.hx),round(b.hy),b.born,b.expires,b.seed,+b.tutorial,owners,caught,escaped,states];
@@ -40,20 +41,50 @@ function decode(s:string):InsectWorld|undefined {
     return validWorld(world)?world:undefined;
   }catch{return;}
 }
-export interface WorldChunk {kind:'insect-world-v3';tick:number;index:number;total:number;data:string}
-/** A bounded, independently reassembled snapshot cycle. Each datagram stays below 1400 UTF-8 bytes. */
+const PHASES:Phase[]=['free','swing','stun','hit','catch','result'];
+/** Every collector's fast-changing state: [seat,x,y,angle,move,moveY,phase,t,sneak,paused,strikeX,strikeY,ack]. */
+export type QuickRow=number[];
+export type Quick=[tick:number,rows:QuickRow[]];
+const round2=(n:number)=>Math.round(n*100)/100;
+export function encodeQuick(w:InsectWorld):Quick {
+  return [w.tick,w.players.map(p=>[p.seat,round(p.x),round(p.y),round2(p.angle),round2(p.move),round2(p.moveY),PHASES.indexOf(p.phase),p.t,+p.sneak,+p.paused,round(p.strikeX),round(p.strikeY),p.ack])];
+}
+/**
+ * Lays the newest positions and timers over a (possibly older) full snapshot. A phase that needs
+ * a caught bug only lands once the full snapshot carrying that bug has arrived.
+ */
+export function applyQuick(w:InsectWorld,raw:unknown):boolean {
+  if(!Array.isArray(raw)||raw.length!==2||!Number.isSafeInteger(raw[0])||raw[0]<0||!Array.isArray(raw[1])||raw[1].length>4)return false;
+  const [tick,rows]=raw as Quick;
+  if(!rows.every(r=>Array.isArray(r)&&r.length===13&&finite(...r)))return false;
+  for(const [seat,x,y,angle,move,moveY,phase,t,sneak,paused,strikeX,strikeY,ack] of rows){
+    const p=w.players.find(p=>p.seat===seat);if(!p||!PHASES[phase]||x<0||x>WIDTH||y<0||y>HEIGHT||Math.abs(angle)>Math.PI+.01||Math.abs(move)>1||Math.abs(moveY)>1||!Number.isSafeInteger(ack))continue;
+    Object.assign(p,{x,y,angle,move,moveY,t,sneak:!!sneak,paused:!!paused,strikeX,strikeY,ack:Math.max(p.ack,ack)});
+    if(p.bug||!['catch','result'].includes(PHASES[phase]))p.phase=PHASES[phase];
+  }
+  w.tick=tick;syncBugs(w);return true;
+}
+export interface WorldChunk {kind:'insect-world-v3';tick:number;index:number;total:number;data:string;q?:Quick}
+/** Slice budget in JSON-escaped bytes, leaving room for the quick block and the room envelope. */
+const CHUNK_BYTES=820;
+const escapedBytes=(ch:string)=>new TextEncoder().encode(JSON.stringify(ch)).length-2;
+/**
+ * A bounded, independently reassembled snapshot cycle, one slice per packet. Every packet also
+ * carries the quick block, so motion stays at the send rate while the full world trickles in.
+ * Each datagram stays below 1400 UTF-8 bytes.
+ */
 export class WorldSender {
   private chunks:string[]=[];private index=0;private tick=0;
   next(w:InsectWorld):WorldChunk {
-    if(this.index>=this.chunks.length){const raw=encode(w);this.chunks=[];let chunk='',bytes=0;for(const ch of raw){const n=new TextEncoder().encode(ch).length;if(bytes+n>1050){this.chunks.push(chunk);chunk='';bytes=0;}chunk+=ch;bytes+=n;}if(chunk)this.chunks.push(chunk);this.index=0;this.tick=w.tick;}
-    const index=this.index++;return {kind:'insect-world-v3',tick:this.tick,index,total:this.chunks.length,data:this.chunks[index]};
+    if(this.index>=this.chunks.length){const raw=encode(w);this.chunks=[];let chunk='',bytes=0;for(const ch of raw){const n=escapedBytes(ch);if(bytes+n>CHUNK_BYTES){this.chunks.push(chunk);chunk='';bytes=0;}chunk+=ch;bytes+=n;}if(chunk)this.chunks.push(chunk);this.index=0;this.tick=w.tick;}
+    const index=this.index++;return {kind:'insect-world-v3',tick:this.tick,index,total:this.chunks.length,data:this.chunks[index],q:encodeQuick(w)};
   }
 }
 export class WorldReceiver {
   private batches=new Map<number,{total:number;parts:Map<number,string>}>();
   accept(raw:unknown):InsectWorld|undefined {
     const p=raw as WorldChunk;
-    if(!p||p.kind!=='insect-world-v3'||!Number.isSafeInteger(p.tick)||p.tick<0||!Number.isInteger(p.total)||p.total<1||p.total>24||!Number.isInteger(p.index)||p.index<0||p.index>=p.total||typeof p.data!=='string'||p.data.length>1050)return;
+    if(!p||p.kind!=='insect-world-v3'||!Number.isSafeInteger(p.tick)||p.tick<0||!Number.isInteger(p.total)||p.total<1||p.total>32||!Number.isInteger(p.index)||p.index<0||p.index>=p.total||typeof p.data!=='string'||p.data.length>1050)return;
     let b=this.batches.get(p.tick);if(!b){b={total:p.total,parts:new Map()};this.batches.set(p.tick,b);if(this.batches.size>3)this.batches.delete(this.batches.keys().next().value!);}
     if(b.total!==p.total)return;b.parts.set(p.index,p.data);if(b.parts.size!==b.total)return;
     this.batches.delete(p.tick);const world=decode(Array.from({length:b.total},(_,i)=>b!.parts.get(i)).join(''));

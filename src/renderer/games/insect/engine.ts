@@ -63,6 +63,24 @@ export function bugMotion(b: Bug, tick: number): { x: number; y: number; lift: n
   const out = clamp((t - 110) / 24, 0, 1), back = clamp((t - 240) / 24, 0, 1), a = b.seed * 2.4, d = out - back;
   return { x: b.hx + Math.cos(a) * 55 * d, y: b.hy + Math.sin(a) * 30 * d, lift: (Math.sin(out * Math.PI) + Math.sin(back * Math.PI)) * 16 };
 }
+function walk(p: Collector): void {
+  if (p.paused || (p.phase !== 'free' && p.phase !== 'result')) return;
+  const scale = (p.sneak ? SNEAK : WALK) / Math.max(1, Math.hypot(p.move, p.moveY));
+  Object.assign(p, movePoint(p.x, p.y, p.move * scale, p.moveY * scale));
+}
+/** Recomputes every free bug's shared path point for the world's current tick. */
+export function syncBugs(w: InsectWorld): void {
+  for (const b of w.bugs) if (!b.tutorial) { const m = bugMotion(b, w.tick); b.x = m.x; b.y = m.y; }
+}
+/**
+ * Member-side dead reckoning between host packets: replays only the deterministic parts of
+ * step() (walking, timers counting down, bug paths) and never resolves a swing or changes a phase.
+ */
+export function predictStep(w: InsectWorld): void {
+  w.tick++;
+  for (const p of w.players) { if (p.phase !== 'free' && p.phase !== 'result' && p.t > 1) p.t--; walk(p); }
+  syncBugs(w);
+}
 /** Host-authoritative state. Personal escape/catch flags never consume another collector's opportunity. */
 export class InsectEngine {
   world = emptyWorld();
@@ -148,10 +166,7 @@ export class InsectEngine {
       if (p.phase === 'swing' && --p.t <= 0) this.swing(p);
       else if ((p.phase === 'stun' || p.phase === 'hit') && --p.t <= 0) p.phase = 'free';
       else if (p.phase === 'catch' && --p.t <= 0) { p.phase = 'result'; p.caught = p.bug; p.caughtUntil = w.tick + 150; }
-      if (!p.paused && (p.phase === 'free' || p.phase === 'result')) {
-        const scale = (p.sneak ? SNEAK : WALK) / Math.max(1, Math.hypot(p.move, p.moveY));
-        Object.assign(p, movePoint(p.x, p.y, p.move * scale, p.moveY * scale));
-      }
+      walk(p);
     }
     for (const b of w.bugs) {
       if (!b.tutorial) { const m = bugMotion(b, w.tick); b.x = m.x; b.y = m.y; }

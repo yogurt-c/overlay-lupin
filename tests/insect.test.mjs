@@ -5,8 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { SPECIES, ENVS, GOLDEN_CHANCE, SAVE_VERSION, isInsectSave } from '../dist/shared/insect.js';
-import { InsectEngine, pickSpecies, inReach, personal, bugPoint, netPoint, NET_AHEAD, CATCH_TICKS, SWING_TICKS, HIT_STUN } from '../dist/renderer/games/insect/engine.js';
-import { WorldSender, WorldReceiver } from '../dist/renderer/games/insect/wire.js';
+import { InsectEngine, pickSpecies, inReach, personal, bugPoint, netPoint, bugMotion, predictStep, NET_AHEAD, CATCH_TICKS, SWING_TICKS, HIT_STUN } from '../dist/renderer/games/insect/engine.js';
+import { WorldSender, WorldReceiver, encodeQuick, applyQuick } from '../dist/renderer/games/insect/wire.js';
 import { movePoint, blocked, TREES, WIDTH, HEIGHT } from '../dist/renderer/games/insect/map.js';
 import { validWorld } from '../dist/renderer/games/insect/module.js';
 import { DRAWN_PLANS } from '../dist/renderer/games/insect/art.js';
@@ -104,6 +104,35 @@ test('wire snapshots reassemble reordered pages, recover from loss, reject stale
   assert.equal(validWorld({...result,players:[...result.players,result.players[0]]}),false);
   assert.equal(validWorld({...result,bugs:[{...result.bugs[0],x:NaN}]}),false);
   assert.equal(validWorld({...result,players:[{...result.players[0],phase:'result',bug:undefined}]}),false);
+});
+test('every packet carries quick player state, so members see motion before a full snapshot cycle completes', () => {
+  const e=new InsectEngine(rng(21));e.ensure('a','a');e.ensure('b','b');for(let t=0;t<60;t++)e.step();
+  const sender=new WorldSender(),receiver=new WorldReceiver();let world;
+  for(let i=0;i<8&&!world;i++)world=receiver.accept(sender.next(e.world));assert.ok(world,'full snapshot assembles');
+  e.input('a',1,false,[],0,false);for(let t=0;t<6;t++)e.step();
+  const page=sender.next(e.world);assert.ok(page.total>1&&page.index<page.total-1,'mid-cycle page');
+  assert.equal(receiver.accept(page),undefined);assert.ok(applyQuick(world,page.q));
+  const host=e.world.players.find(p=>p.id==='a'),seen=world.players.find(p=>p.id==='a');
+  assert.equal(world.tick,e.world.tick);assert.ok(Math.abs(seen.x-host.x)<.1&&seen.move===1);
+  for(const b of world.bugs)if(!b.tutorial)assert.equal(b.x,bugMotion(b,world.tick).x,'bug paths follow the quick tick');
+  // A catch phase waits for the full snapshot that carries the bug.
+  const q=encodeQuick(e.world);q[1].find(r=>r[0]===seen.seat)[6]=4;assert.ok(applyQuick(world,q));assert.equal(seen.phase,'free');
+  assert.equal(applyQuick(world,[1,[[0,NaN]]]),false);assert.equal(applyQuick(world,'x'),false);
+});
+test('members dead-reckon walking, timers and bug paths without resolving anything', () => {
+  const e=new InsectEngine(rng(22));const p=e.ensure('a','a');for(let t=0;t<30;t++)e.step();
+  const w=e.snapshot(),q=w.players[0];q.move=1;q.moveY=0;q.paused=false;const x=q.x,tick=w.tick;
+  predictStep(w);assert.equal(w.tick,tick+1);assert.ok(q.x>x,'walks forward');
+  for(const b of w.bugs)if(!b.tutorial)assert.equal(b.y,bugMotion(b,w.tick).y);
+  q.phase='swing';q.t=2;predictStep(w);predictStep(w);assert.equal(q.phase,'swing');assert.equal(q.t,1,'never resolves the swing locally');
+  assert.equal(p.phase,'free');
+});
+test('a member match moves other collectors on every host packet', async () => {
+  const {InsectMatch}=await import('../dist/renderer/games/insect/module.js');const host=new InsectMatch(true,'a','a');host.setMembers([{id:'b',name:'b'}]);
+  const guest=new InsectMatch(false,'b','b');for(let i=0;i<8;i++){host.step({});guest.applyOpponentPacket(host.buildOutgoingPacket());}
+  const xs=[];for(let i=0;i<4;i++){host.step({move:1,moveY:0});guest.applyOpponentPacket(host.buildOutgoingPacket());xs.push(guest.view().players.find(p=>p.id==='a').x);}
+  assert.ok(xs.every((x,i)=>i===0||x>xs[i-1]),`host walker advances each packet: ${xs}`);
+  guest.step({});assert.equal(guest.view().tick,host.view().tick+1,'predicts one tick ahead between packets');
 });
 test('handoff preserves per-player catches and pending result IDs', async () => {
   const {InsectMatch}=await import('../dist/renderer/games/insect/module.js');const host=new InsectMatch(true,'a','a');host.setMembers([{id:'b',name:'b'}]);

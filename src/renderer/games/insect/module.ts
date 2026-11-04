@@ -1,7 +1,7 @@
 import { RARITIES, SAVE_VERSION, SPECIES, SPECIES_BY_ID, validCatch } from '../../../shared/insect.js';
 import type { InsectAction, InsectCatch, InsectReply, InsectSave } from '../../../shared/insect.js';
 import type { GameMatch, GameModule, Viewport } from '../types.js';
-import { InsectEngine, emptyWorld, SEATS, SNEAK, WALK } from './engine.js';
+import { InsectEngine, emptyWorld, predictStep, SEATS, SNEAK, WALK } from './engine.js';
 import type { Collector, Command, InsectWorld } from './engine.js';
 import { createInputSource } from './input.js';
 import type { InsectInput } from './input.js';
@@ -9,10 +9,14 @@ import { drawInsectField } from './draw.js';
 import { InsectUi } from './ui.js';
 
 import { CAMP, WIDTH, HEIGHT, clamp, movePoint } from './map.js';
-import { WorldSender, WorldReceiver } from './wire.js';
+import { WorldSender, WorldReceiver, applyQuick } from './wire.js';
 export { validWorld } from './wire.js';
 /** Close enough to read the collector's swing and a bug's flutter; the map (M) covers the wide view. */
 const CAMERA_ZOOM = 1.5;
+/** How far a member keeps replaying the field past the last host packet before it waits. */
+const PREDICT_TICKS = 10;
+/** Own-position drift beyond which the walking preview is pulled firmly back to the host's view. */
+const DRIFT_PX = 40;
 
 export class InsectMatch implements GameMatch {
   private engine: InsectEngine | null; private world = emptyWorld(); private commands: Command[] = []; private seq = 0;
@@ -22,11 +26,14 @@ export class InsectMatch implements GameMatch {
   private move = 0; private sneak = false; private ui?: InsectUi; private save: InsectSave = { version: SAVE_VERSION, profileId: '', catches: [] };
   private ready = false; private saving = false; private pending?: InsectCatch; private savedId = ''; private disposed = false; private closed = false;
   private previewX?: number; private known: string[] = []; private retryAt = 0;
+  /** Member only: newest host tick applied, and the newest quick block to lay over a late full snapshot. */
+  private hostTick = 0; private fullTick = -1; private quick?: unknown;
   constructor(private isHost: boolean, private myId: string, private myName: string, private solo = false) {
     this.engine = isHost ? new InsectEngine() : null; this.engine?.ensure(myId, myName);
     if (typeof document !== 'undefined') {
       this.ui = new InsectUi({ open: () => this.ui?.open(), emoji: value => this.command('emoji', { value }), release: id => void this.mutate({ kind: 'release', id }), favorite: id => void this.mutate({ kind: 'favorite', id }),
-        show: bug => this.show(bug), retry: () => void this.persist(), export: () => void this.transfer('export'), import: () => void this.transfer('import'), continueSolo: () => this.continueSolo(), map: () => { this.mapOpen = !this.mapOpen; }, compact: () => { this.compact = !this.compact; window.overlayLupin.insectWindow?.(this.compact ? 'compact' : 'expand'); } }, this.solo);
+        show: bug => this.show(bug), retry: () => void this.persist(), export: () => void this.transfer('export'), import: () => void this.transfer('import'), continueSolo: () => this.continueSolo(), map: () => { this.mapOpen = !this.mapOpen; }, compact: () => { this.compact = !this.compact; window.overlayLupin.insectWindow?.(this.compact ? 'compact' : 'expand'); },
+        resize: (width, height) => window.overlayLupin.insectResize?.(width, height) }, this.solo);
       window.overlayLupin.insectWindow?.('expand');
       document.getElementById('field')?.addEventListener('pointerdown', this.mapClick);
       void this.load();
@@ -101,6 +108,7 @@ export class InsectMatch implements GameMatch {
     if (i?.swing && !i.cancel && !frozen) this.swing();
     this.move = frozen ? 0 : i?.move ?? 0; this.sneak = !frozen && !!i?.sneak;
     if (this.engine) { const me = this.me(); if (me) me.known = this.known; this.engine.input(this.myId, this.move, this.sneak, this.commands, this.moveY, this.paused); this.engine.step(); }
+    else if (!this.closed && this.world.tick < this.hostTick + PREDICT_TICKS) predictStep(this.world);
     const me = this.me();
     if (me) {
       this.commands = this.commands.filter(c => c.seq > me.ack);
@@ -110,7 +118,9 @@ export class InsectMatch implements GameMatch {
         const speed = (this.sneak ? SNEAK : WALK) / Math.max(1, Math.hypot(this.move, this.moveY));
         const walking = !this.paused && (me.phase === 'free' || me.phase === 'result');
         const next = movePoint(this.previewX ?? me.x, this.previewY ?? me.y, walking ? this.move * speed : 0, walking ? this.moveY * speed : 0);
-        this.previewX = next.x + (me.x - next.x) * .08; this.previewY = next.y + (me.y - next.y) * .08;
+        // The host's copy trails by the round trip while walking, so only lean on it gently then.
+        const drift = Math.hypot(me.x - next.x, me.y - next.y), pull = drift > DRIFT_PX ? .25 : walking && (this.move || this.moveY) ? .02 : .1;
+        this.previewX = next.x + (me.x - next.x) * pull; this.previewY = next.y + (me.y - next.y) * pull;
       }
     }
     if (this.pending && !this.saving && this.retryAt && Date.now() > this.retryAt) { this.retryAt = 0; void this.persist(); }
@@ -135,7 +145,12 @@ export class InsectMatch implements GameMatch {
       const member = this.engine.world.players.find(m => m.id === p.from); if (!member) return;
       if (Array.isArray(p.known) && p.known.length <= SPECIES.length && p.known.every(id => SPECIES_BY_ID.has(id))) member.known = p.known;
       this.engine.input(p.from, p.move!, p.sneak, p.commands.filter(c => c && (!c.shown || validCatch(c.shown))), p.moveY, p.paused);
-    } else { const world = this.receiver.accept(raw); if (world && world.tick > this.world.tick) this.world = world; }
+    } else {
+      const world = this.receiver.accept(raw);
+      if (world && world.tick > this.fullTick) { this.fullTick = world.tick; this.world = world; this.hostTick = Math.max(this.hostTick, world.tick); if (Array.isArray(this.quick) && this.quick[0] >= world.tick) applyQuick(this.world, this.quick); }
+      const quick = (raw as { q?: unknown }).q;
+      if (Array.isArray(quick) && Number.isSafeInteger(quick[0]) && quick[0] > this.hostTick && applyQuick(this.world, quick)) { this.quick = quick; this.hostTick = quick[0]; }
+    }
   }
   roomClosed(): void {
     // Finish persisting any received catch even after the room goes away.
