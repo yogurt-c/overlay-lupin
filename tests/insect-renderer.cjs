@@ -1,4 +1,4 @@
-/** Real 320×280 Electron shell smoke test for 곤충채집, plus art sheets for review. All saves are isolated in a temporary folder. */
+/** Real 640×480 Electron shell smoke test for 곤충채집, plus art sheets for review. All saves are isolated in a temporary folder. */
 const {app,BrowserWindow,ipcMain}=require('electron');
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),assert=require('node:assert/strict');
 const {InsectStore}=require('../dist/main/insect-store.js');
@@ -6,15 +6,16 @@ const directory=fs.mkdtempSync(path.join(os.tmpdir(),'lupin-insect-ui-')),store=
 const root=path.resolve(__dirname,'..'),out=path.join(root,'output/insect'),errors=[];let win;
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 const reply=fn=>{try{return{ok:true,data:fn()};}catch(e){return{ok:false,error:e.message};}};
-ipcMain.handle('net:whoami',()=>({id:'me',name:'테스트'}));ipcMain.handle('shortcuts:get',()=>({hide:'PageDown',show:'PageUp'}));ipcMain.handle('analytics:get',()=>false);
+ipcMain.handle('net:whoami',()=>({id:'me',name:'테스트'}));ipcMain.handle('shortcuts:get',()=>({hide:'PageDown',show:'PageUp'}));ipcMain.handle('analytics:get',()=>false);ipcMain.handle('update:get',()=>({currentVersion:'test',state:{kind:'unsupported'}}));
 ipcMain.handle('insect:load',()=>reply(()=>store.load()));ipcMain.handle('insect:act',(_e,a)=>reply(()=>store.act(a)));
 ipcMain.handle('insect:export',()=>({ok:false,cancelled:true}));ipcMain.handle('insect:import',()=>({ok:false,cancelled:true}));
+ipcMain.on('insect:window',(_e,mode)=>{if(win)win.setSize(mode==='compact'?320:640,mode==='compact'?280:480);});
 const png=dataUrl=>Buffer.from(dataUrl.split(',')[1],'base64');
 app.whenReady().then(async()=>{
-  win=new BrowserWindow({width:320,height:280,useContentSize:true,frame:false,show:false,transparent:true,webPreferences:{preload:path.join(root,'dist/preload/preload.js'),contextIsolation:true,backgroundThrottling:false}});
+  win=new BrowserWindow({width:640,height:480,useContentSize:true,frame:false,show:false,transparent:true,webPreferences:{preload:path.join(root,'dist/preload/preload.js'),contextIsolation:true,backgroundThrottling:false}});
   win.webContents.on('console-message',event=>{if(event.level==='error')errors.push(event.message);});
   const js=code=>win.webContents.executeJavaScript(code);
-  const frame=()=>js(`testMatch.render(document.getElementById('field').getContext('2d'),{width:320,height:280,pixelRatio:devicePixelRatio})`);
+  const frame=()=>js(`testMatch.render(document.getElementById('field').getContext('2d'),{width:innerWidth,height:innerHeight,pixelRatio:devicePixelRatio})`);
   const shot=async name=>{await pause(60);fs.writeFileSync(path.join(out,name),(await win.webContents.capturePage()).toPNG());};
   fs.mkdirSync(out,{recursive:true});
   await win.loadFile(path.join(root,'dist/renderer/index.html'));
@@ -34,33 +35,39 @@ app.whenReady().then(async()=>{
       x.font='11px sans-serif';x.fillStyle='#14181a';x.fillText(s.name,ox+4,oy+12);});
     return c.toDataURL();})()`);
   fs.writeFileSync(path.join(out,'art-sheet.png'),png(sheet));
-  // Mount the real module with four collectors and a full field.
+  // Real renderer, 4-player field, spatial catch and persistent IPC save.
   await js(`(async()=>{ const {InsectMatch}=await import('./games/insect/module.js'); window.testMatch=new InsectMatch(true,'me','나'); document.body.dataset.game='insect'; })()`);
   await pause(150);
   await js(`testMatch.setMembers([{id:'f1',name:'모모'},{id:'f2',name:'초록'},{id:'f3',name:'하늘'}]); for(let i=0;i<400;i++)testMatch.step({});`);
   assert.equal(await js(`testMatch.engine.world.players.length`),4);
-  assert.equal(await js(`testMatch.engine.world.bugs.filter(b=>b.state==='live').length`),6);
-  // Put a golden insect right under my net, mid-glint, with the ring showing; one insect nearly startled, a friend emoting, another sneaking.
-  await js(`{const w=testMatch.engine.world,me=w.players[0],b=w.bugs.find(b=>b.state==='live');me.x=b.x-.045;me.facing=1;b.golden=true;b.glintAt=w.tick+1;window.goldBug=b.id;
-    const other=w.bugs.find(o=>o!==b&&o.state==='live');other.alert=85;w.players[1].emoji=1;w.players[1].emojiUntil=w.tick+100;w.players[2].sneak=true;w.players[2].walking=true;w.players[2].move=1;
-    for(let i=0;i<4;i++)testMatch.engine.step();}`);
-  await frame();await shot('field.png');
-  await js(`document.body.style.background='#1b1d22'`);await frame();await shot('field-dark.png');await js(`document.body.style.background=''`);
-  // Catch it inside the window through the real input path; the save goes through main-process IPC.
-  await js(`{const w=testMatch.engine.world,me=w.players[0],b=w.bugs.find(b=>b.id===goldBug);b.timer=1e9;b.pauseUntil=1e9;
-    for(let i=0;i<200&&Math.abs((w.tick+b.seed)%72-36)>3;i++)testMatch.step({});
-    me.x=b.x-.045;me.facing=1;testMatch.step({swing:true});}`);
+  assert.equal(await js(`testMatch.engine.world.bugs.length`),30);
+  await js(`{const w=testMatch.engine.world,p=w.players[0],b=w.bugs[0];b.golden=true;p.x=b.x;p.y=b.y+32;p.angle=-Math.PI/2;testMatch.step({});}`);
+  for(let i=0;i<35;i++)await frame();await shot('field.png');
+  const transparent = await js(`(()=>{const c=document.getElementById('field'),d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let clear=0;for(let i=3;i<d.length;i+=4)if(d[i]===0)clear++;return clear/(d.length/4);})()`);
+  assert.ok(transparent>.75, 'the playfield must leave most of the desktop fully visible');
+  win.setSize(480,360);await pause(100);await frame();await shot('field-small.png');
+  await js(`document.body.style.background='#f5f5f3'`);await frame();await shot('field-light.png');
+  await js(`document.body.style.background='#24272b'`);await frame();await shot('field-dark.png');
+  await js(`document.body.style.background=''`);win.setSize(640,480);await pause(100);
+  console.log('fully transparent field area', (transparent*100).toFixed(1)+'%');
+  await js(`testMatch.step({swing:true});for(let i=0;i<24;i++)testMatch.step({});`);
   assert.equal(await js(`testMatch.engine.world.players[0].phase`),'catch');
-  await js(`for(let i=0;i<40;i++)testMatch.step({});`);await frame();await shot('catch.png');
-  await js(`for(let i=0;i<30;i++)testMatch.step({});`);await pause(150);await js(`testMatch.step({});`);
-  assert.equal(store.read().catches.length,1,'catch saved by real main-process IPC');assert.equal(store.read().catches[0].golden,true);
-  assert.equal(await js(`testMatch.engine.world.players[0].phase`),'free','saved acknowledgement frees the collector');
-  assert.ok(await js(`!document.querySelector('.bug-card').hidden && document.querySelector('.bug-card').textContent.includes('금색 첫 발견')`));
+  await frame();await shot('catch.png');
+  await js(`for(let i=0;i<45;i++)testMatch.step({});`);await pause(150);await js(`testMatch.step({});`);
+  assert.equal(store.read().catches.length,1);assert.equal(store.read().catches[0].golden,true);
+  assert.equal(await js(`testMatch.engine.world.players[0].phase`),'free');
   await frame();await shot('result-card.png');
-  // B brags from the card; the trophy shows over my head for everyone.
   await js(`testMatch.step({brag:true});for(let i=0;i<12;i++)testMatch.step({});`);
   assert.equal(await js(`testMatch.engine.world.players[0].shown?.golden`),true);
   await frame();await shot('brag.png');
+  await js(`testMatch.step({map:true});`);await frame();await shot('map.png');
+  await js(`document.getElementById('field').dispatchEvent(new PointerEvent('pointerdown',{clientX:300,clientY:250,bubbles:true}));testMatch.step({});`);
+  assert.ok(await js(`testMatch.engine.world.players[0].pingUntil>testMatch.engine.world.tick`));
+  await js(`testMatch.step({map:true});`);
+  for(const [name,x,y] of [['meadow',700,890],['trees',470,410],['pond',1430,430],['leaves',1360,1080]]) {
+    await js(`testMatch.engine.world.players[0].x=${x};testMatch.engine.world.players[0].y=${y};testMatch.step({});`);
+    for(let i=0;i<40;i++)await frame();await shot(name+'.png');
+  }
   // C opens the notebook; the catalog lists all 30 with the gold counter.
   await js(`testMatch.step({collection:true});`);assert.equal(await js(`testMatch.ui.opened`),true);
   assert.ok(await js(`document.querySelector('#insect-ui .fish-stats').textContent.includes('도감 1/30 · 금색 1/30')`));
@@ -68,6 +75,9 @@ app.whenReady().then(async()=>{
   await js(`[...document.querySelectorAll('#insect-ui .fish-tab')].find(b=>b.textContent.startsWith('도감')).click()`);await shot('catalog.png');
   await js(`document.querySelector('#insect-ui .fish-card').click()`);await shot('detail.png');
   await js(`testMatch.step({collection:true});`);assert.equal(await js(`testMatch.ui.opened`),false);
+  const perf = await js(`(()=>{const times=[];for(let i=0;i<120;i++){const t=performance.now();testMatch.step({});testMatch.render(document.getElementById('field').getContext('2d'),{width:640,height:480,pixelRatio:devicePixelRatio});times.push(performance.now()-t);}times.sort((a,b)=>a-b);return {median:times[60],p95:times[114]};})()`);
+  console.log('insect render + simulation milliseconds', perf);
+  await js(`testMatch.dispose();`);assert.equal(await js(`document.querySelectorAll('#insect-ui').length`),0);
   assert.deepEqual(errors,[]);
   console.log('insect renderer smoke test passed');app.exit(0);
 }).catch(e=>{console.error(e);app.exit(1);});

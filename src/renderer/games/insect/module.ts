@@ -1,30 +1,24 @@
 import { RARITIES, SAVE_VERSION, SPECIES, SPECIES_BY_ID, validCatch } from '../../../shared/insect.js';
 import type { InsectAction, InsectCatch, InsectReply, InsectSave } from '../../../shared/insect.js';
 import type { GameMatch, GameModule, Viewport } from '../types.js';
-import { InsectEngine, emptyWorld, inReach, netX, MAX_X, MIN_X, SEATS, SNEAK, WALK } from './engine.js';
+import { InsectEngine, emptyWorld, SEATS, SNEAK, WALK } from './engine.js';
 import type { Collector, Command, InsectWorld } from './engine.js';
 import { createInputSource } from './input.js';
 import type { InsectInput } from './input.js';
 import { drawInsectField } from './draw.js';
 import { InsectUi } from './ui.js';
 
-const finite = (...n: unknown[]) => n.every(Number.isFinite);
-export function validWorld(value: unknown): value is InsectWorld {
-  if (!value || typeof value !== 'object') return false;
-  const w = value as InsectWorld;
-  return Number.isSafeInteger(w.tick) && w.tick >= 0 && Number.isSafeInteger(w.nextId) && Array.isArray(w.respawns) && w.respawns.length <= 32 && w.respawns.every(Number.isFinite)
-    && Array.isArray(w.recent) && w.recent.length <= 32 && w.recent.every(r => r && finite(r.x, r.tick))
-    && Array.isArray(w.players) && w.players.length <= SEATS && new Set(w.players.map(p => p?.id)).size === w.players.length && new Set(w.players.map(p => p?.seat)).size === w.players.length
-    && w.players.every(p => p && typeof p.id === 'string' && p.id.length <= 120 && typeof p.name === 'string' && p.name.length <= 24 && Number.isInteger(p.seat) && p.seat >= 0 && p.seat < SEATS
-      && ['free', 'stun', 'catch', 'result'].includes(p.phase) && ['air', 'tree', 'ground'].includes(p.env) && (p.facing === 1 || p.facing === -1) && [-1, 0, 1].includes(p.move)
-      && typeof p.sneak === 'boolean' && typeof p.walking === 'boolean' && finite(p.x, p.t, p.since, p.emoji, p.emojiUntil, p.showUntil, p.noticeUntil, p.ack, p.lastInput, p.caughtUntil) && p.x >= 0 && p.x <= 1
-      && typeof p.notice === 'string' && p.notice.length < 200 && (!p.bug || validCatch(p.bug)) && (!p.shown || validCatch(p.shown)) && (!p.caught || validCatch(p.caught))
-      && (!['catch', 'result'].includes(p.phase) || !!p.bug) && Array.isArray(p.known) && p.known.length <= SPECIES.length && p.known.every(id => SPECIES_BY_ID.has(id)))
-    && Array.isArray(w.bugs) && w.bugs.length <= 12 && w.bugs.every(b => b && Number.isInteger(b.id) && SPECIES_BY_ID.has(b.speciesId) && typeof b.golden === 'boolean' && typeof b.reached === 'boolean'
-      && finite(b.sizeMm, b.x, b.y, b.hx, b.hy, b.timer, b.t, b.alert, b.seed, b.glintAt, b.pauseUntil) && (b.dir === 1 || b.dir === -1) && ['enter', 'live', 'flee'].includes(b.state));
-}
+import { CAMP, WIDTH, HEIGHT, clamp, movePoint } from './map.js';
+import { WorldSender, WorldReceiver } from './wire.js';
+export { validWorld } from './wire.js';
+/** Close enough to read the collector's swing and a bug's flutter; the map (M) covers the wide view. */
+const CAMERA_ZOOM = 1.5;
+
 export class InsectMatch implements GameMatch {
   private engine: InsectEngine | null; private world = emptyWorld(); private commands: Command[] = []; private seq = 0;
+  private sender = new WorldSender(); private receiver = new WorldReceiver();
+  private moveY = 0; private paused = false; private mapOpen = false; private compact = false;
+  private cameraX = CAMP.x; private cameraY = CAMP.y; private zoom = 1; private previewY?: number;
   private move = 0; private sneak = false; private ui?: InsectUi; private save: InsectSave = { version: SAVE_VERSION, profileId: '', catches: [] };
   private ready = false; private saving = false; private pending?: InsectCatch; private savedId = ''; private disposed = false; private closed = false;
   private previewX?: number; private known: string[] = []; private retryAt = 0;
@@ -32,7 +26,9 @@ export class InsectMatch implements GameMatch {
     this.engine = isHost ? new InsectEngine() : null; this.engine?.ensure(myId, myName);
     if (typeof document !== 'undefined') {
       this.ui = new InsectUi({ open: () => this.ui?.open(), emoji: value => this.command('emoji', { value }), release: id => void this.mutate({ kind: 'release', id }), favorite: id => void this.mutate({ kind: 'favorite', id }),
-        show: bug => this.show(bug), retry: () => void this.persist(), export: () => void this.transfer('export'), import: () => void this.transfer('import'), continueSolo: () => this.continueSolo() }, this.solo);
+        show: bug => this.show(bug), retry: () => void this.persist(), export: () => void this.transfer('export'), import: () => void this.transfer('import'), continueSolo: () => this.continueSolo(), map: () => { this.mapOpen = !this.mapOpen; }, compact: () => { this.compact = !this.compact; window.overlayLupin.insectWindow?.(this.compact ? 'compact' : 'expand'); } }, this.solo);
+      window.overlayLupin.insectWindow?.('expand');
+      document.getElementById('field')?.addEventListener('pointerdown', this.mapClick);
       void this.load();
     }
   }
@@ -51,7 +47,7 @@ export class InsectMatch implements GameMatch {
   }
   private async persist(): Promise<void> {
     if (!this.pending || this.saving) return; this.saving = true; const bug = this.pending;
-    const leftSide = (this.me()?.x ?? .5) > .5;
+    const leftSide = (this.me()?.x ?? CAMP.x) > this.cameraX;
     try {
       const previous = this.save.catches.filter(c => c.speciesId === bug.speciesId), max = previous.reduce((n, c) => Math.max(n, c.sizeMm), 0);
       const badges = { first: previous.length === 0, record: bug.sizeMm > max, goldFirst: bug.golden && !previous.some(c => c.golden) };
@@ -74,12 +70,15 @@ export class InsectMatch implements GameMatch {
   }
   private view(): InsectWorld { return this.engine?.world ?? this.world; }
   private me(): Collector | undefined { return this.view().players.find(p => p.id === this.myId); }
-  /** Aim at the insect my hoop covers on my own screen; the host judges the ring as of the tick I saw. */
+  private mapClick = (e: PointerEvent): void => {
+    if (!this.mapOpen || this.closed) return;
+    const rect = (e.currentTarget as HTMLCanvasElement).getBoundingClientRect(), scale = Math.min(rect.width / 640, rect.height / 480);
+    const x = (e.clientX - rect.left - (rect.width - 640 * scale) / 2) / scale, y = (e.clientY - rect.top - (rect.height - 480 * scale) / 2) / scale;
+    if (x >= 48 && x <= 592 && y >= 122 && y <= 401) this.command('ping', { x: (x - 48) / 544 * WIDTH, y: (y - 122) / 279 * HEIGHT });
+  };
   private swing(): void {
-    const me = this.me(); if (!this.ready || this.closed || this.ui?.opened || this.pending || !me || me.phase !== 'free') return;
-    const at = { ...me, x: this.previewX ?? me.x }, w = this.view();
-    const target = w.bugs.filter(b => inReach(at, b)).sort((a, b) => Math.abs(a.x - netX(at)) - Math.abs(b.x - netX(at)))[0];
-    this.command('swing', { bug: target?.id, at: w.tick });
+    const me = this.me(); if (!this.ready || this.closed || this.paused || this.ui?.opened || this.pending || !me || me.phase !== 'free') return;
+    this.command('swing', { at: this.view().tick });
   }
   setMembers(members: { id: string; name: string }[]): void { if (this.engine) for (const m of members) this.engine.ensure(m.id, m.name); }
   removePeer(id: string): void { this.engine?.remove(id); }
@@ -91,61 +90,71 @@ export class InsectMatch implements GameMatch {
   }
   step(raw: unknown): void {
     if (this.disposed) return; const i = raw as InsectInput | undefined;
-    if (i?.cancel) { if (this.ui?.opened && !this.closed) this.ui.close(); else if (this.ui?.emotesOpen) this.ui.toggleEmotes(); }
+    if (i?.cancel) { this.mapOpen = false; if (this.ui?.opened && !this.closed) this.ui.close(); else if (this.ui?.emotesOpen) this.ui.toggleEmotes(); }
     if (i?.emotes) this.ui?.toggleEmotes(); if (i && i.emoji >= 0 && this.ui?.emotesOpen) { this.command('emoji', { value: i.emoji }); this.ui.toggleEmotes(); }
+    if (i?.map && !this.closed && !this.ui?.opened) this.mapOpen = !this.mapOpen;
     if (i?.collection && !this.closed) { if (this.ui?.opened) this.ui.close(); else this.ui?.open(); }
     if (i?.brag) { const bug = this.ui?.resultBrag(); if (bug) this.show(bug); }
-    if (i?.swing) this.swing();
-    const frozen = !!this.ui?.opened || this.closed;
+    const frozen = !!this.ui?.opened || this.closed || this.mapOpen || this.compact || (typeof document !== 'undefined' && (document.hidden || document.getElementById('settings-panel')?.hidden === false));
+    if (typeof document !== 'undefined') document.body.dataset.insectPaused = String(frozen);
+    this.paused = frozen; this.moveY = frozen ? 0 : i?.moveY ?? 0;
+    if (i?.swing && !i.cancel && !frozen) this.swing();
     this.move = frozen ? 0 : i?.move ?? 0; this.sneak = !frozen && !!i?.sneak;
-    if (this.engine) { const me = this.me(); if (me) me.known = this.known; this.engine.input(this.myId, this.move, this.sneak, this.commands); this.engine.step(); }
+    if (this.engine) { const me = this.me(); if (me) me.known = this.known; this.engine.input(this.myId, this.move, this.sneak, this.commands, this.moveY, this.paused); this.engine.step(); }
     const me = this.me();
     if (me) {
       this.commands = this.commands.filter(c => c.seq > me.ack);
       if (me.phase === 'result' && me.bug && me.bug.id !== this.savedId && !this.pending) { this.pending = { ...me.bug }; void this.persist(); }
-      // Guests walk ahead of the host's snapshot and ease back onto it, so arrow keys feel immediate over LAN.
-      if (this.engine) this.previewX = undefined;
+      if (this.engine) { this.previewX = this.previewY = undefined; }
       else {
-        const x = this.previewX ?? me.x, walking = (me.phase === 'free' || me.phase === 'result') && this.move !== 0;
-        const next = walking ? Math.max(MIN_X, Math.min(MAX_X, x + this.move * (this.sneak ? SNEAK : WALK))) : x;
-        this.previewX = next + (me.x - next) * .12;
+        const speed = (this.sneak ? SNEAK : WALK) / Math.max(1, Math.hypot(this.move, this.moveY));
+        const walking = !this.paused && (me.phase === 'free' || me.phase === 'result');
+        const next = movePoint(this.previewX ?? me.x, this.previewY ?? me.y, walking ? this.move * speed : 0, walking ? this.moveY * speed : 0);
+        this.previewX = next.x + (me.x - next.x) * .08; this.previewY = next.y + (me.y - next.y) * .08;
       }
     }
     if (this.pending && !this.saving && this.retryAt && Date.now() > this.retryAt) { this.retryAt = 0; void this.persist(); }
   }
-  render(ctx: CanvasRenderingContext2D, viewport: Viewport): void { drawInsectField(ctx, viewport, this.view(), this.myId, { previewX: this.previewX, hideEmotes: this.ui?.hideEmotes ?? false, solo: this.solo }); }
+  render(ctx: CanvasRenderingContext2D, viewport: Viewport): void {
+    const p = this.me(); this.zoom += (CAMERA_ZOOM - this.zoom) * .15;
+    if (p) { this.cameraX += (clamp(this.previewX ?? p.x, 320 / this.zoom, WIDTH - 320 / this.zoom) - this.cameraX) * .15; this.cameraY += (clamp(this.previewY ?? p.y, 240 / this.zoom, HEIGHT - 240 / this.zoom) - this.cameraY) * .15; }
+    drawInsectField(ctx, viewport, this.view(), this.myId, { cameraX: this.cameraX, cameraY: this.cameraY, zoom: this.zoom, previewX: this.previewX, previewY: this.previewY, angle: !this.engine && p?.phase === 'free' && (this.move || this.moveY) ? Math.atan2(this.moveY, this.move) : undefined, mapOpen: this.mapOpen, compact: this.compact, hideEmotes: this.ui?.hideEmotes ?? false, solo: this.solo, known: this.known.length, gold: new Set(this.save.catches.filter(b => b.golden).map(b => b.speciesId)).size });
+  }
   hud() { const w = this.view(); return { status: this.solo ? '곤충채집' : `곤충채집 · ${w.players.length}/${SEATS}`, banner: '', bannerKind: '' }; }
   isOver(): boolean { return false; }
   buildOutgoingPacket(): unknown {
-    if (this.engine) return { kind: 'insect-world', world: this.engine.snapshot() };
-    return { kind: 'insect-input', name: this.myName, move: this.move, sneak: this.sneak, commands: this.commands, known: this.known };
+    if (this.engine) return this.sender.next(this.engine.world);
+    return { kind: 'insect-input-v3', moveY: this.moveY, paused: this.paused, name: this.myName, move: this.move, sneak: this.sneak, commands: this.commands, known: this.known };
   }
   applyOpponentPacket(raw: unknown): void {
     if (this.closed || !raw || typeof raw !== 'object') return;
-    const p = raw as { kind?: string; from?: string; name?: string; move?: number; sneak?: boolean; commands?: Command[]; known?: string[]; world?: InsectWorld };
+    const p = raw as { kind?: string; from?: string; name?: string; move?: number; moveY?: number; paused?: boolean; sneak?: boolean; commands?: Command[]; known?: string[]; world?: InsectWorld };
     if (this.engine) {
-      if (p.kind !== 'insect-input' || typeof p.from !== 'string' || typeof p.name !== 'string' || !Number.isFinite(p.move) || typeof p.sneak !== 'boolean' || !Array.isArray(p.commands) || p.commands.length > 32) return;
+      if (p.kind !== 'insect-input-v3' || !Number.isFinite(p.moveY) || typeof p.paused !== 'boolean' || typeof p.from !== 'string' || typeof p.name !== 'string' || !Number.isFinite(p.move) || typeof p.sneak !== 'boolean' || !Array.isArray(p.commands) || p.commands.length > 32) return;
       // Only roster-authorized members may mutate the hosted simulation.
       const member = this.engine.world.players.find(m => m.id === p.from); if (!member) return;
       if (Array.isArray(p.known) && p.known.length <= SPECIES.length && p.known.every(id => SPECIES_BY_ID.has(id))) member.known = p.known;
-      this.engine.input(p.from, p.move!, p.sneak, p.commands.filter(c => c && (!c.shown || validCatch(c.shown))));
-    } else if (p.kind === 'insect-world' && validWorld(p.world) && p.world.tick > this.world.tick) this.world = structuredClone(p.world);
+      this.engine.input(p.from, p.move!, p.sneak, p.commands.filter(c => c && (!c.shown || validCatch(c.shown))), p.moveY, p.paused);
+    } else { const world = this.receiver.accept(raw); if (world && world.tick > this.world.tick) this.world = world; }
   }
   roomClosed(): void {
     // Finish persisting any received catch even after the room goes away.
-    const me = this.me(); if (me?.phase === 'result' && me.bug && me.bug.id !== this.savedId && !this.pending) { this.pending = { ...me.bug }; void this.persist(); }
+    const me = this.me(); if (me && ['catch', 'result'].includes(me.phase) && me.bug && me.bug.id !== this.savedId && !this.pending) { this.pending = { ...me.bug }; void this.persist(); }
     this.closed = true; this.move = 0; this.ui?.roomClosed();
   }
   private continueSolo(): void {
     if (this.pending) { void this.persist(); return; }
-    this.ui?.close(); this.closed = false; this.solo = true; this.ui?.setSolo(true); this.isHost = true; this.previewX = undefined;
-    this.engine = new InsectEngine(); this.engine.ensure(this.myId, this.myName); this.commands = []; this.seq = 0;
+    this.ui?.close(); this.closed = false; this.solo = true; this.ui?.setSolo(true); this.isHost = true; this.previewX = this.previewY = undefined;
+    const snapshot = structuredClone(this.view()); snapshot.players = snapshot.players.filter(p => p.id === this.myId);
+    this.engine = new InsectEngine(); this.engine.world = snapshot; const me = this.engine.ensure(this.myId, this.myName);
+    if (me?.bug?.id === this.savedId) { me.phase = 'free'; me.bug = undefined; }
+    this.commands = []; this.seq = me?.ack ?? 0; this.sender = new WorldSender();
   }
-  canLeave(): boolean { if (this.pending || this.saving) { this.ui?.message('잡은 곤충을 저장하는 중입니다. 저장 완료 후 나가 주세요.'); return false; } return true; }
-  dispose(): void { this.disposed = true; this.ui?.dispose(); }
+  canLeave(): boolean { if (this.pending || this.saving || ['catch', 'result'].includes(this.me()?.phase ?? '')) { this.ui?.message('잡은 곤충을 저장하는 중입니다. 저장 완료 후 나가 주세요.'); return false; } return true; }
+  dispose(): void { this.disposed = true; this.ui?.dispose(); if (typeof document !== 'undefined') { document.getElementById('field')?.removeEventListener('pointerdown', this.mapClick); delete document.body.dataset.insectPaused; window.overlayLupin.insectWindow?.('restore'); } }
 }
 export const insectModule: GameModule = {
-  id: 'insect', label: '곤충채집', hint: '←→ 걷기 · Shift 살금살금 · Space 잠자리채로 덮기 · E 감정표현 · C 수집함 · B 자랑 · 최대 4명 · 곤충 30종, 1/50 확률의 금색 곤충 · 잡은 곤충은 이 기기에 영구 저장',
+  id: 'insect', label: '곤충채집', hint: 'WASD로 걷기 · 곤충 가까이에서 Space를 눌러 잠자리채로 잡기 · M 지도 · C 수집함 · 최대 4명',
   matching: 'room', roomCapacity: SEATS,
   createMatch: (isHost, id, name) => new InsectMatch(isHost, id, name), createSoloMatch: (id, name) => new InsectMatch(true, id, name, true), createInputSource
 };

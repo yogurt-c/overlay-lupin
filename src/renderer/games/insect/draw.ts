@@ -1,269 +1,245 @@
-import { RARITIES, SPECIES_BY_ID } from '../../../shared/insect.js';
-import type { InsectCatch, Species } from '../../../shared/insect.js';
-import { beginSketchFrame, jitter, roughLimb, roughStroke } from '../../lib/sketch.js';
+import { SPECIES_BY_ID } from '../../../shared/insect.js';
+import type { Species } from '../../../shared/insect.js';
 import type { Viewport } from '../types.js';
+import { star } from './art.js';
+import { beginSketchFrame, jitter, roughLimb, roughSegment, roughStroke } from '../../lib/sketch.js';
 import { drawEmoteIcon } from '../fishing/draw.js';
-import { drawInsect, star, SIDE_VIEW, INK, PAPER, HALO } from './art.js';
-import type { Pose } from './art.js';
-import { EMOTE_TICKS, ENTER_TICKS, FLEE_TICKS, GROUND_Y, RING_TICKS, SHOW_TICKS, SWING_TICKS, TREES, WINDOW_TICKS, envOf, glinting, inReach, netX, ringPhase } from './engine.js';
+import { bugMotion, bugPoint, personal, netPoint, CATCH_TICKS, MISS_STUN, NET_AHEAD, SWING_TICKS } from './engine.js';
 import type { Bug, Collector, InsectWorld } from './engine.js';
-const BROWN = '#7a5433', RED = '#c4473a', GOLD = '#c08416', MUTED = '#a8ada6', BLUSH = 'rgba(232,120,110,.5)', HAT = '#ecdcbf';
-/** P1 먹 · P2 갈색 · P3 자주 · P4 청회색 — body ink and hat band, so four walkers never blur together over grass. */
-export const SEAT_INK = ['#14181a', '#7a5433', '#7a4a8c', '#5d7186'];
-/** 일반·고급·희귀·전설 stamp inks, borrowed from the fishing tiers of the same names. */
+import { WIDTH, HEIGHT, HABITATS, TREES, CAMP, behaviorOf, location } from './map.js';
+export const SEAT_INK = ['#303637', '#7a6353', '#756278', '#62747e'];
 export const RARITY_INK = ['#7d857b', '#4f8a5b', '#3d74a8', '#c08416'];
-const FX0 = 12, FW = 296, POLE = 24, HOOP = 6.5;
-export const fx = (x: number) => FX0 + x * FW;
-/** Field sprites come in three sizes instead of true scale, so a 0.5cm ladybug and an 11cm longhorn are both visible. */
-export function fieldSize(s: Species, sizeMm: number): number {
-  const t = (sizeMm - s.minMm) / Math.max(1, s.maxMm - s.minMm);
-  return [14, 19, 25][s.size] * (.85 + t * .3);
+const INK = '#343b38', PAPER = '#fffefa', HALO = 'rgba(255,255,255,.88)';
+export function fieldSize(s: Species, mm: number): number { return [18,24,30][s.size] * (.9 + .2 * (mm - s.minMm) / (s.maxMm - s.minMm)); }
+function oval(c: CanvasRenderingContext2D, x: number, y: number, rx: number, ry: number, color: string, outline = '') {
+  c.beginPath(); c.ellipse(x,y,rx,ry,0,0,Math.PI*2); c.fillStyle=color; c.fill(); if(outline) { c.strokeStyle=outline;c.lineWidth=1.4;c.stroke(); }
 }
-function label(c: CanvasRenderingContext2D, text: string, x: number, y: number, size = 9, color = INK, weight = ''): void {
-  c.font = `${weight}${size}px Menlo, sans-serif`; c.textAlign = 'center'; c.lineWidth = 3; c.strokeStyle = HALO; c.strokeText(text, x, y); c.fillStyle = color; c.fillText(text, x, y);
-}
-function line(c: CanvasRenderingContext2D, x: number, y: number, a: number, b: number, color = INK, w = 1.2): void { roughStroke(c, x, y, a, b, w, color, HALO); }
-function shapeFill(c: CanvasRenderingContext2D, p: Path2D, fill: string, ink: string, w: number): void {
-  c.lineWidth = w + 4; c.strokeStyle = HALO; c.stroke(p); c.fillStyle = fill; c.fill(p); c.lineWidth = w; c.strokeStyle = ink; c.stroke(p);
-}
-// ─── Scenery ───────────────────────────────────────────────────────────────────────────────────────────────────
-const TREE_INK = '#6b5a48', LEAF = '#e9eee1';
-function tree(c: CanvasRenderingContext2D, x: number): void {
-  const trunk = new Path2D(); trunk.moveTo(x - 9, GROUND_Y + 1); trunk.quadraticCurveTo(x - 6, GROUND_Y - 30, x - 6, 108); trunk.lineTo(x + 6, 108); trunk.quadraticCurveTo(x + 6, GROUND_Y - 30, x + 9, GROUND_Y + 1); trunk.closePath();
-  shapeFill(c, trunk, '#f3e9da', TREE_INK, 1.6);
-  for (const [dx, y0, y1] of [[-2, 132, 150], [3, 150, 168]]) line(c, x + dx, y0, x + dx, y1, TREE_INK, .8);
-  const lobes: [number, number, number][] = [[-22, 82, 15], [-26, 62, 16], [-10, 44, 18], [12, 46, 18], [27, 62, 16], [22, 84, 15], [0, 90, 16]];
-  const crown = new Path2D(); for (const [dx, y, r] of lobes) { crown.moveTo(x + dx + r, y); crown.arc(x + dx, y, r, 0, Math.PI * 2); }
-  c.save(); c.lineWidth = 5.5; c.strokeStyle = HALO; c.stroke(crown); c.fillStyle = LEAF; c.fill(crown);
-  // Only the outer rim gets ink: stroke every lobe, then repaint each interior so the inner overlaps vanish.
-  c.lineWidth = 1.7; c.strokeStyle = TREE_INK; c.stroke(crown);
-  for (const [dx, y, r] of lobes) { c.beginPath(); c.arc(x + dx, y, r - .9, 0, Math.PI * 2); c.fill(); }
-  c.strokeStyle = '#b9c4a8'; c.lineWidth = 1.2; c.lineCap = 'round';
-  for (const [dx, y, a0, a1] of [[-12, 60, 3.6, 4.6], [14, 54, 4.2, 5.2], [4, 80, 3.4, 4.2]]) { c.beginPath(); c.arc(x + dx, y, 9, a0, a1); c.stroke(); }
-  c.restore();
-}
-function tuft(c: CanvasRenderingContext2D, x: number, h = 7): void {
-  c.strokeStyle = '#8a9a86'; c.lineWidth = .9;
-  for (const [dx, lean, k] of [[-3, -3, .8], [0, 0, 1], [3, 3, .85]]) { c.beginPath(); c.moveTo(x + dx, GROUND_Y); c.quadraticCurveTo(x + dx + lean * .3, GROUND_Y - h * k * .6, x + dx + lean, GROUND_Y - h * k); c.stroke(); }
-}
-function flower(c: CanvasRenderingContext2D, x: number, h: number): void {
-  c.beginPath(); c.moveTo(x, GROUND_Y); c.lineTo(x + .5, GROUND_Y - h); c.strokeStyle = '#8a9a86'; c.lineWidth = .8; c.stroke();
-  c.beginPath(); c.arc(x + .5, GROUND_Y - h - 2.2, 2.4, 0, Math.PI * 2); c.fillStyle = '#f1d9a0'; c.fill(); c.strokeStyle = '#a88a52'; c.lineWidth = .8; c.stroke();
-}
-const TUFTS = [.04, .2, .45, .53, .82, .95], FLOWERS: [number, number][] = [[.1, 13], [.62, 9], [.9, 12]];
-function scenery(c: CanvasRenderingContext2D): void {
-  for (const t of TREES) tree(c, fx(t));
-  for (const x of TUFTS) tuft(c, fx(x));
-  for (const [x, h] of FLOWERS) flower(c, fx(x), h);
-  line(c, 8, GROUND_Y + 1, 312, GROUND_Y + 1); line(c, 8, GROUND_Y + 4, 312, GROUND_Y + 4, INK, .5);
-}
-// ─── Insects ───────────────────────────────────────────────────────────────────────────────────────────────────
-function bugPose(b: Bug, s: Species): Pose {
-  if (b.state === 'flee') return ['up', 'dart', 'zigzag', 'buzz', 'fly'].includes(s.flee) ? 'fly' : 'move';
-  if (b.state === 'enter') return s.env === 'air' ? 'fly' : 'move';
-  if (b.alert >= 50) return 'alert';
-  if (s.env === 'air') return (s.move === 'perch' && b.timer > 50) || (s.move === 'skim' && b.timer <= 40) ? 'idle' : 'fly';
-  if (['crawl', 'walk', 'roll'].includes(s.move) || (s.move === 'hop' && b.timer < 14) || (s.move === 'dash' && b.timer < 10)) return 'move';
-  return 'idle';
-}
-/** Top-down bodies turn toward travel; side views just mirror. */
-function bugOrientation(b: Bug, s: Species): { flip: boolean; rot: number } {
-  if (SIDE_VIEW.has(s.plan)) return { flip: b.dir === 1, rot: 0 };
-  if (s.env === 'ground') return { flip: false, rot: b.dir * Math.PI / 2 };
-  if (s.env === 'tree') return { flip: false, rot: b.state === 'live' && s.move === 'crawl' && b.dir === 1 ? Math.PI : 0 };
-  return { flip: false, rot: b.state === 'flee' ? 0 : b.dir * .25 };
-}
-const bugY = (b: Bug, s: Species, size: number) => b.y - (s.env === 'ground' ? size * .32 : 0);
-function drawBug(c: CanvasRenderingContext2D, b: Bug, tick: number): void {
-  const s = SPECIES_BY_ID.get(b.speciesId); if (!s) return;
-  const size = fieldSize(s, b.sizeMm), { flip, rot } = bugOrientation(b, s);
-  let x = fx(b.x), y = bugY(b, s, size), alpha = 1;
-  if (b.state === 'enter') {
-    const f = Math.min(1, b.t / ENTER_TICKS); alpha = f;
-    if (s.env === 'air') y -= (1 - f) * 30; else if (s.env === 'tree') y -= (1 - f) * 18; else x -= b.dir * (1 - f) * 10;
-  }
-  const digging = b.state === 'flee' && s.flee === 'dig';
-  if (b.state === 'flee') { const f = b.t / FLEE_TICKS; alpha = digging ? 1 - f : f < .5 ? 1 : 1 - (f - .5) * 2; if (digging) y += f * size * .7; }
-  c.save(); c.globalAlpha = alpha;
-  if (digging) { c.beginPath(); c.rect(0, 0, 320, GROUND_Y + 1); c.clip(); }
-  drawInsect(c, s, x, y, size, { pose: bugPose(b, s), frame: tick + b.seed * 7 }, flip, rot);
-  c.restore();
-  if (b.state !== 'live') return;
-  const top = y - size * .6;
-  // Singers show their song as rising notes; it stops the moment they notice someone.
-  if (s.sings && b.alert < 50 && Math.floor((tick + b.seed * 5) / 30) % 3 !== 2) {
-    const age = (tick + b.seed * 5) % 30, big = s.name === '말매미';
-    label(c, big ? '♪♪' : '♪', x + 7 + age * .15, top - age * .3, big ? 9 : 7, BROWN);
-  }
-  if (b.alert >= 80 && Math.floor(tick / 9) % 2) label(c, '!', x, top - 3, 10, RED, 'bold ');
-  if (glinting(b, tick)) {
-    const k = (tick - b.glintAt) / 12, r = 1.3 + Math.sin(k * Math.PI) * 1.4, gx = x + size * .2, gy = y - size * .15;
-    star(c, gx, gy, r + .8, HALO); star(c, gx, gy, r, GOLD);
+function line(c: CanvasRenderingContext2D, points: number[][], color: string, width = 1) {
+  for (let i = 1; i < points.length; i++) {
+    const [ax, ay] = points[i-1], [bx, by] = points[i];
+    roughSegment(c, ax, ay, bx, by, width + 1.4, HALO, 1);
+    roughSegment(c, ax, ay, bx, by, width, color, 1);
   }
 }
-/** The local player's timing ring: dashed, shrinking onto the insect; it turns brown inside the catch window. */
-function ring(c: CanvasRenderingContext2D, b: Bug, tick: number): void {
-  const s = SPECIES_BY_ID.get(b.speciesId)!, size = fieldSize(s, b.sizeMm), phase = ringPhase(b, tick);
-  const t = Math.abs(phase - RING_TICKS / 2) / (RING_TICKS / 2), r = size * .55 + 2 + t * 13;
-  const hit = Math.abs(phase - RING_TICKS / 2) <= WINDOW_TICKS[s.rarity] / 2;
-  c.save(); c.setLineDash([3, 2.5]); c.lineDashOffset = -tick * .3;
-  c.beginPath(); c.arc(fx(b.x), bugY(b, s, size), r, 0, Math.PI * 2); c.strokeStyle = HALO; c.lineWidth = hit ? 4.5 : 3.5; c.stroke();
-  c.strokeStyle = hit ? BROWN : INK; c.lineWidth = hit ? 2 : 1; c.stroke();
+function box(c: CanvasRenderingContext2D,x:number,y:number,w:number,h:number,fill=PAPER) {
+  c.fillStyle=fill;c.beginPath();c.roundRect(x,y,w,h,4);c.fill();
+}
+function label(c:CanvasRenderingContext2D,s:string,x:number,y:number,size=11,color=INK,align:CanvasTextAlign='left') {
+  c.font=`${size}px Menlo, sans-serif`;c.textAlign=align;c.strokeStyle=HALO;c.lineWidth=2;c.lineJoin='round';c.strokeText(s,x,y);c.fillStyle=color;c.fillText(s,x,y);
+}
+function tree(c:CanvasRenderingContext2D,x:number,y:number,ghost:boolean) {
+  c.save();c.globalAlpha=ghost?.22:.65;
+  line(c,[[x-8,y],[x-5,y-47],[x-14,y-66]],'#737d71',1.1);
+  line(c,[[x+8,y],[x+4,y-48],[x+16,y-67]],'#737d71',1.1);
+  line(c,[[x-5,y-42],[x-19,y-55]],'#8f9687',.7);
+  // Sparse foliage contour; leave the desktop visible through the tree.
+  c.beginPath();c.moveTo(x-17,y-38);
+  c.bezierCurveTo(x-53,y-39,x-51,y-68,x-35,y-72);
+  c.bezierCurveTo(x-45,y-101,x-13,y-116,x-2,y-100);
+  c.bezierCurveTo(x+22,y-117,x+46,y-95,x+33,y-78);
+  c.bezierCurveTo(x+62,y-56,x+33,y-33,x+15,y-39);
+  c.strokeStyle=HALO;c.lineWidth=3.5;c.stroke();c.strokeStyle='#8e9b83';c.lineWidth=1;c.stroke();
+  line(c,[[x-21,y-80],[x-14,y-84],[x-7,y-82]],'#adb4a4',.6);
+  line(c,[[x+13,y-60],[x+19,y-65],[x+25,y-63]],'#adb4a4',.6);
   c.restore();
 }
-// ─── Collectors ────────────────────────────────────────────────────────────────────────────────────────────────
-type Face = 'calm' | 'focus' | 'wow' | 'joy' | 'sad';
-/** Hand position and pole angle (0 = straight ahead, negative = up), in facing-right space with feet at the origin. */
-interface NetPose { hand: [number, number]; ang: number; crouch: number; lean: number; face: Face; arc?: boolean }
-const IDLE: NetPose = { hand: [6, -19], ang: -1.05, crouch: 0, lean: 0, face: 'calm' };
-/** Wind-up → snap (with a swing trail) → hold, per habitat: over the shoulder, across the trunk, down onto the ground. */
-const SWINGS: Record<string, NetPose[]> = {
-  air: [{ hand: [0, -25], ang: -2.3, crouch: 0, lean: -2, face: 'focus' }, { hand: [8, -22], ang: -.9, crouch: 0, lean: 2, face: 'wow', arc: true }, { hand: [9, -20], ang: -.6, crouch: 0, lean: 2, face: 'focus' }],
-  tree: [{ hand: [2, -21], ang: -1.7, crouch: 1, lean: -1, face: 'focus' }, { hand: [10, -18], ang: -.3, crouch: 1, lean: 3, face: 'wow', arc: true }, { hand: [10, -18], ang: -.18, crouch: 1, lean: 3, face: 'focus' }],
-  ground: [{ hand: [3, -23], ang: -1.8, crouch: 2, lean: -1, face: 'focus' }, { hand: [9, -12], ang: .55, crouch: 6, lean: 4, face: 'wow', arc: true }, { hand: [9, -11], ang: .72, crouch: 6, lean: 4, face: 'focus' }]
-};
-function poseOf(p: Collector, tick: number): NetPose {
-  const elapsed = tick - p.since, key = SWINGS[p.env][elapsed < 4 ? 0 : elapsed < 8 ? 1 : 2];
-  if (p.phase === 'stun') return elapsed >= SWING_TICKS ? { ...key, face: 'sad' } : key;
-  if (p.phase === 'catch') return elapsed >= 8 ? { ...key, face: p.t < 12 ? 'joy' : 'wow' } : key;
-  if (p.phase === 'result') return { hand: [4, -27], ang: -1.45, crouch: 0, lean: -1, face: 'joy' };
-  if (p.sneak) return { hand: [7, -14], ang: -.42, crouch: 4, lean: 3, face: 'focus' };
-  return p.walking ? { ...IDLE, crouch: Math.floor(tick / 8) % 2 ? .8 : 0 } : IDLE;
+function flower(c:CanvasRenderingContext2D,x:number,y:number,seed:number) {
+  line(c,[[x,y+4],[x,y-6]],'#9aa38e',.7);
+  oval(c,x,y-7,3,2.6,seed%3?'#e4d6a2':'#ddc5b5','#aaa18b');
 }
-function face(c: CanvasRenderingContext2D, hx: number, hy: number, r: number, f: Face, ink: string, blink: boolean): void {
-  const ex = [hx + r * .1, hx + r * .55], ey = hy + r * .05;
-  c.fillStyle = BLUSH; for (const bx of [hx - r * .2, hx + r * .8]) { c.beginPath(); c.ellipse(bx, hy + r * .42, 1.9, 1.1, 0, 0, Math.PI * 2); c.fill(); }
-  c.fillStyle = ink; c.strokeStyle = ink; c.lineWidth = 1.1;
-  for (const x of ex) {
-    c.beginPath();
-    if (f === 'joy') { c.arc(x, ey + .8, 1.5, Math.PI * 1.1, Math.PI * 1.9); c.stroke(); }
-    else if (f === 'sad') { c.moveTo(x - 1.3, ey - .2); c.lineTo(x + 1.3, ey + .6); c.stroke(); }
-    else if (blink && f === 'calm') { c.moveTo(x - 1.2, ey); c.lineTo(x + 1.2, ey); c.stroke(); }
-    else { c.arc(x, ey, f === 'wow' ? 1.5 : f === 'focus' ? .9 : 1.15, 0, Math.PI * 2); c.fill(); }
+function terrain(c:CanvasRenderingContext2D) {
+  c.save();
+  // A continuous, gently winding footpath ties the four clearings together.
+  const path=new Path2D();path.moveTo(CAMP.x,CAMP.y);path.bezierCurveTo(650,1110,760,1200,970,1160);path.bezierCurveTo(1150,1130,1320,1170,1410,1020);path.bezierCurveTo(1530,820,1310,690,1370,530);path.bezierCurveTo(1430,360,1250,260,1070,300);path.bezierCurveTo(850,350,790,500,630,480);path.bezierCurveTo(430,455,350,640,390,800);path.bezierCurveTo(420,950,350,1050,CAMP.x,CAMP.y);
+  c.globalAlpha=.12;c.strokeStyle='#a99b7e';c.lineWidth=58;c.lineCap='round';c.stroke(path);
+  c.globalAlpha=.36;c.strokeStyle=HALO;c.lineWidth=34;c.stroke(path);
+  c.globalAlpha=.28;c.strokeStyle='#b2a68e';c.lineWidth=1.25;c.setLineDash([3,8]);c.stroke(path);c.setLineDash([]);
+
+  // Irregular, open-ended habitat clearings keep the desktop visible underneath.
+  const clearing=(x:number,y:number,rx:number,ry:number,color:string,seed:number)=>{
+    c.beginPath();for(let i=0;i<=24;i++){const a=i/24*Math.PI*2,r=1+.055*Math.sin(i*2.37+seed)+.035*Math.cos(i*4.1+seed);const px=x+Math.cos(a)*rx*r,py=y+Math.sin(a)*ry*r;if(i===0)c.moveTo(px,py);else c.lineTo(px,py);}c.closePath();
+    c.globalAlpha=.075;c.fillStyle=color;c.fill();c.globalAlpha=.2;c.strokeStyle=color;c.lineWidth=1.1;c.setLineDash([2,7]);c.stroke();c.setLineDash([]);
+  };
+  clearing(700,890,300,205,'#b9bf87',2);clearing(470,410,270,225,'#8da98b',4);clearing(1430,430,245,210,'#8db6aa',6);clearing(1360,1080,300,225,'#c3a77d',8);
+
+  // The pond has a recognizable shoreline, a shallow edge, and curved ripples.
+  c.beginPath();c.moveTo(1695,118);c.bezierCurveTo(1780,105,1845,205,1832,310);c.bezierCurveTo(1820,390,1870,450,1820,550);c.bezierCurveTo(1778,630,1675,650,1630,580);c.bezierCurveTo(1580,510,1622,430,1603,354);c.bezierCurveTo(1582,270,1615,155,1695,118);c.closePath();
+  c.globalAlpha=.16;c.fillStyle='#b7ccca';c.fill();c.globalAlpha=.62;c.strokeStyle=HALO;c.lineWidth=12;c.stroke();c.globalAlpha=.44;c.strokeStyle='#83a4a2';c.lineWidth=2;c.stroke();
+  for(let i=0;i<8;i++){const x=1660+(i*53%115),y=235+(i*71%310);c.beginPath();c.ellipse(x,y,18+(i%3)*6,5,Math.sin(i)*.18,0,Math.PI*2);c.strokeStyle='#90adaa';c.globalAlpha=.5;c.lineWidth=.9;c.stroke();}
+  // Reed clusters mark the bank rather than filling the water with decoration.
+  for(let i=0;i<24;i++){const a=.35+i*.113,x=1720+Math.cos(a)*165,y=440+Math.sin(a)*300,h=17+(i*11%18);line(c,[[x,y],[x-2,y-h*.68],[x-8,y-h]],'#778e78',.95);line(c,[[x,y],[x+2,y-h*.82],[x+8,y-h]],'#98a688',.8);}
+
+  // Understory marks are grouped by habitat so the clearings read at a glance.
+  for(let i=0;i<84;i++){const a=i*2.399,r=35+Math.sqrt(i)*23,x=700+Math.cos(a)*r,y=890+Math.sin(a)*r*.62;flower(c,x,y,i);}
+  for(let i=0;i<42;i++){const a=i*2.4,r=35+Math.sqrt(i)*25,x=1360+Math.cos(a)*r,y=1080+Math.sin(a)*r*.65;const rot=(i%2?1:-1);c.save();c.translate(x,y);c.rotate(rot*.55+(i%5)*.1);oval(c,0,0,5,2.5,i%3?'#b5a181':'#998c72','#887d69');c.restore();}
+  for(let i=0;i<40;i++){const x=180+(i*347%760),y=220+(i*191%520);line(c,[[x-4,y+2],[x,y-3],[x+4,y+1]],'#85947f',.75);}
+  for(let i=0;i<18;i++){const x=370+i*19,y=300+(i*47%190);oval(c,x,y,2+(i%3),1.4,'#a5ae97');}
+  // A tiny shelter landmark gives the path a clear point of origin.
+  line(c,[[395,1162],[449,1162]],'#8e8271',1.8);line(c,[[401,1162],[401,1174]],'#8e8271',1);line(c,[[443,1162],[443,1174]],'#8e8271',1);
+  oval(c,CAMP.x,CAMP.y+25,19,6,'rgba(195,157,100,.12)','#b19b7d');
+  c.restore();
+}
+// The net pivots in the hand: φ sweeps from raised behind the head down to the ground ahead.
+const GRIP_H = 18, NET_R = Math.hypot(NET_AHEAD, GRIP_H), NET_UP = 2.05, NET_DOWN = -Math.atan2(GRIP_H, NET_AHEAD), CARRY = .1, SHOULDER = 9;
+const LIFT = 7, HOLD = 3, SLAM = 4, LANDED = LIFT + HOLD + SLAM;
+const easeOut = (t: number) => 1 - (1 - t) ** 3, easeIn = (t: number) => t * t * t, unit = (t: number) => Math.max(0, Math.min(1, t));
+/** Pose for one collector: `u` is the net's sweep (0 raised, 1 on the ground), `side` rests it over a shoulder, plus body squash and lean. */
+function netPose(p: Collector, tick: number) {
+  if (p.phase === 'swing') {
+    const e = SWING_TICKS - p.t;
+    // Animal-Crossing timing: a slow lift onto tiptoe, a held beat, then a fast slam that lands and stays.
+    if (e < LIFT) return { u: CARRY * (1 - easeOut(e / LIFT)), side: SHOULDER * (1 - easeOut(e / LIFT)), crouch: -1.5 * e / LIFT, lean: -1.5, landed: -1 };
+    if (e < LIFT + HOLD) return { u: Math.sin(tick * 1.3) * .01, side: 0, crouch: -1.5, lean: -1.5, landed: -1 };
+    if (e < LANDED) return { u: easeIn((e - LIFT - HOLD) / SLAM), side: 0, crouch: 1, lean: 2.5, landed: -1 };
+    const k = e - LANDED; return { u: 1, side: 0, crouch: 3 * Math.exp(-k * .35), lean: 2.5, landed: k };
   }
-  const mx = hx + r * .35, my = hy + r * .5;
-  c.beginPath();
-  if (f === 'wow') c.arc(mx, my + .5, 1.2, 0, Math.PI * 2);
-  else if (f === 'joy') { c.arc(mx, my - .6, 2, .15 * Math.PI, .85 * Math.PI); c.closePath(); c.fill(); }
-  else if (f === 'sad') c.arc(mx, my + 1.2, 1.5, 1.2 * Math.PI, 1.8 * Math.PI);
-  else if (f === 'focus') { c.moveTo(mx - 1.3, my); c.lineTo(mx + 1.3, my); }
-  else c.arc(mx, my - 1.3, 1.5, .2 * Math.PI, .8 * Math.PI);
-  c.stroke();
+  if (p.phase === 'stun') {
+    const k = MISS_STUN - p.t, rise = unit((k - 8) / (MISS_STUN - 8));
+    return { u: 1 - (1 - CARRY) * easeOut(rise), side: SHOULDER * easeOut(rise), crouch: 1.5 * (1 - rise), lean: 2 * (1 - rise), landed: k + SWING_TICKS - LANDED };
+  }
+  if (p.phase === 'catch') {
+    // Hold the net down a beat, then raise the catch proudly overhead.
+    const k = CATCH_TICKS - p.t, raise = easeOut(unit((k - 10) / 12));
+    return { u: 1 - raise * (1 - (NET_UP - Math.PI / 2) / (NET_UP - NET_DOWN)), side: 0, crouch: raise ? -1.5 - Math.abs(Math.sin(k * .3)) * raise : 2, lean: 0, landed: k + SWING_TICKS - LANDED, held: raise };
+  }
+  return { u: CARRY + (p.move || p.moveY ? Math.sin(tick * .22) * .025 : 0), side: SHOULDER, crouch: 0, lean: 0, landed: -1 };
 }
-function head(c: CanvasRenderingContext2D, hx: number, hy: number, f: Face, ink: string, blink: boolean): void {
-  const r = 8.5;
-  c.beginPath(); c.arc(hx, hy, r + 2, 0, Math.PI * 2); c.fillStyle = HALO; c.fill();
-  c.beginPath(); c.arc(hx, hy, r, 0, Math.PI * 2); c.fillStyle = PAPER; c.fill();
-  for (let i = 0; i < 2; i++) { c.beginPath(); c.arc(hx + jitter(1), hy + jitter(1), r, 0, Math.PI * 2); c.strokeStyle = ink; c.lineWidth = 1.9; c.stroke(); }
-  face(c, hx, hy, r, f, ink, blink);
-  // Explorer's bucket hat with the seat's coloured band.
-  c.save(); c.translate(hx, hy - r * .6); c.rotate(.06);
-  const crown = new Path2D(); crown.moveTo(-r * .78, .5); crown.bezierCurveTo(-r * .8, -r * 1.15, r * .8, -r * 1.15, r * .78, .5); crown.closePath();
-  c.lineWidth = 4.5; c.strokeStyle = HALO; c.stroke(crown); c.fillStyle = HAT; c.fill(crown);
-  c.beginPath(); c.rect(-r * .78, -r * .5, r * 1.56, r * .3); c.fillStyle = ink; c.fill();
-  c.lineWidth = 1.7; c.strokeStyle = ink; c.stroke(crown);
-  roughStroke(c, -r * 1.15, .6, r * 1.3, .1, 1.9, ink, HALO);
+function netAt(x: number, y: number, angle: number, u: number, side = 0) {
+  const phi = NET_UP + (NET_DOWN - NET_UP) * u, ahead = NET_R * Math.cos(phi), h = GRIP_H + NET_R * Math.sin(phi);
+  return { x: x + Math.cos(angle) * ahead - Math.sin(angle) * side, y: y + Math.sin(angle) * ahead + Math.cos(angle) * side * .5 - h, h, phi };
+}
+function hoop(c: CanvasRenderingContext2D, x: number, y: number, phi: number, color: string, squash: number, bug: boolean, tick: number) {
+  const rx = 9.5 * squash, ry = 4.5 + 3.5 * Math.max(0, Math.sin(phi)), bag = phi > -.2 ? 7 * Math.max(0, Math.sin(phi + .4)) : 0;
+  // A soft mesh bag hangs under the hoop once it leaves the ground.
+  if (bag > 1) { c.beginPath(); c.moveTo(x - rx, y); c.quadraticCurveTo(x - 2, y + ry + bag * 1.6, x + rx, y); c.fillStyle = 'rgba(255,255,255,.5)'; c.fill(); c.strokeStyle = 'rgba(132,121,105,.55)'; c.lineWidth = .8; c.stroke(); }
+  if (bug) oval(c, x + Math.sin(tick * .9) * 2, y + (bag > 1 ? ry + bag * .6 : 0), 1.8, 1.8, '#171918');
+  c.beginPath(); c.ellipse(x, y, rx + 1, ry + 1, 0, 0, Math.PI * 2); c.strokeStyle = HALO; c.lineWidth = 2.4; c.stroke();
+  c.beginPath(); c.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2); c.fillStyle = 'rgba(255,255,255,.08)'; c.fill(); c.strokeStyle = color; c.lineWidth = 1.2; c.stroke();
+}
+function face(c: CanvasRenderingContext2D, x: number, y: number, r: number, facing: number, view: number, color: string) {
+  c.beginPath(); c.arc(x, y, r + 1.2, 0, Math.PI * 2); c.fillStyle = HALO; c.fill();
+  c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fillStyle = PAPER; c.fill();
+  for (let i = 0; i < 2; i++) { c.beginPath(); c.arc(x + jitter(.8), y + jitter(.8), r, 0, Math.PI * 2); c.strokeStyle = color; c.lineWidth = 1.6; c.stroke(); }
+  if (view < -.6) return; // walking away: the back of the head has no face
+  // Same face as the sword-fight figures: eyes drift toward where the collector looks.
+  const side = Math.min(1, Math.abs(Math.cos(Math.atan2(view, facing)))), shift = facing * side * r * .2, eyes = [x + shift - r * .32 * (1 - side * .3), x + shift + r * .32 * (1 - side * .3)];
+  c.fillStyle = color; for (const ex of eyes) { c.beginPath(); c.arc(ex, y - r * .05, 1.1, 0, Math.PI * 2); c.fill(); }
+  c.fillStyle = 'rgba(214,128,118,.28)'; for (const ex of eyes) { c.beginPath(); c.ellipse(ex + (ex < x + shift ? -1.6 : 1.6), y + r * .32, 1.6, 1, 0, 0, Math.PI * 2); c.fill(); }
+  roughSegment(c, x + shift - 1.2, y + r * .4, x + shift + 1.2, y + r * .4, 1, color, 1);
+}
+function collector(c:CanvasRenderingContext2D,p:Collector,tick:number,local:boolean) {
+  const {x,y}=p,color=SEAT_INK[p.seat],walking=(p.move||p.moveY)&&!p.paused&&(p.phase==='free'||p.phase==='result');
+  const facing=Math.cos(p.angle)<-.2?-1:1,view=Math.sin(p.angle),stride=walking?Math.sin(tick*.24):0,bob=walking?Math.abs(stride)*1.3:Math.sin(tick*.05)*.4;
+  const pose=netPose(p,tick),striking=p.phase!=='free'&&p.phase!=='result';
+  const base=striking?{x:p.strikeX,y:p.strikeY}:{x,y},net=netAt(base.x,base.y,p.angle,pose.u,pose.side),lean=pose.lean*Math.cos(p.angle),leanY=pose.lean*Math.sin(p.angle)*.5;
+  const hip=y-11+pose.crouch-bob,chest=y-21+pose.crouch*1.2-bob,head=y-30+pose.crouch*1.3-bob;
+  oval(c,x,y+1,9,3,'rgba(20,24,26,.09)');
+  // The net sits behind the body while it is raised behind the head or the collector faces away.
+  const behind=view<-.3?pose.u>.15:pose.u<.15;
+  const grip={x:x+Math.cos(p.angle)*4+lean,y:y-GRIP_H+pose.crouch+Math.sin(p.angle)*4-bob};
+  const drawNet=()=>{
+    const d=Math.hypot(net.x-grip.x,net.y-grip.y)||1,ux=(net.x-grip.x)/d,uy=(net.y-grip.y)/d;
+    // A faint smear trails the slam so the fast arc still reads at 60fps.
+    if(p.phase==='swing'&&pose.u>.05&&pose.u<1&&SWING_TICKS-p.t>=LIFT+HOLD){c.save();c.globalAlpha=.16;c.beginPath();for(let k=0;k<=8;k++){const q=netAt(base.x,base.y,p.angle,pose.u*k/8*.9);k?c.lineTo(q.x,q.y):c.moveTo(q.x,q.y);}c.strokeStyle=color;c.lineWidth=5;c.lineCap='round';c.stroke();c.restore();}
+    line(c,[[grip.x-ux*5,grip.y-uy*5],[net.x-ux*9,net.y-uy*9]],'#847969',1.1);
+    const squash=pose.landed>=0&&pose.landed<8?1+.16*Math.exp(-pose.landed*.5)*Math.cos(pose.landed*1.2):1;
+    hoop(c,net.x,net.y,net.phi,color,squash,p.phase==='catch',tick);
+  };
+  if(behind)drawNet();
+  // Chibi proportions borrowed from the sword-fight figures: a big round head on a short stick body.
+  const step=4*Math.abs(Math.cos(p.angle)),spread=3+1.5*Math.abs(view);
+  for(const s of [-1,1]){const fx=x+s*spread+(walking?s*stride*step*facing:0),fy=y-(walking?Math.max(0,s*stride)*2.2:0);roughLimb(c,x+s*1.2+lean*.4,hip,(x+fx)/2+s,(hip+fy)/2,fx,fy,1.7,color,HALO);}
+  roughStroke(c,x+lean,chest+leanY,x,hip,2.1,color,HALO);
+  const swingArm=walking?-stride*3*facing:0;
+  roughLimb(c,x+lean,chest+leanY+1,(x+lean+grip.x)/2+1,chest+4,grip.x,grip.y,1.5,color,HALO);
+  if(!striking)roughLimb(c,x+lean,chest+leanY+1,x-facing*4+swingArm,chest+5,x-facing*3+swingArm,chest+9,1.5,color,HALO);
+  else roughLimb(c,x+lean,chest+leanY+1,(x+lean+grip.x)/2,chest+6,grip.x+(net.x-grip.x)*.18,grip.y+(net.y-grip.y)*.18,1.5,color,HALO);
+  face(c,x+lean*1.2,head+leanY,8.5,facing,view,color);
+  if(!behind)drawNet();
+  const n=netPoint({...base,angle:p.angle});
+  // Landing feedback: a ring of the reach and a few dust puffs where the hoop hits the grass.
+  if(p.phase==='swing'&&pose.landed>=0){const k=pose.landed/(SWING_TICKS-LANDED);c.save();
+    if(p.t<=3){c.beginPath();c.arc(n.x,n.y,46,0,Math.PI*2);c.setLineDash([2,5]);c.strokeStyle='#606b58';c.globalAlpha=.4;c.lineWidth=.7;c.stroke();c.setLineDash([]);}
+    for(let i=0;i<5;i++){const a=Math.PI*(1.05+i*.22),r=8+k*14;c.globalAlpha=.32*(1-k);oval(c,n.x+Math.cos(a)*r*1.3,n.y+Math.sin(a)*r*.45+3,2.4*(1-k*.6),1.6*(1-k*.6),'#c5baa4');}
+    c.restore();}
+  if(p.phase==='catch'&&pose.held&&pose.held>.9&&tick%24<16)star(c,net.x+11,net.y-8,2,'#82785e');
+  if(local)line(c,[[x-5,y+6],[x+5,y+6]],color,1);
+  else label(c,p.name.slice(0,6),x,y+16,9,color,'center');
+  if(p.emojiUntil>tick){c.save();c.translate(x,y-62);c.scale(.75,.75);drawEmoteIcon(c,p.emoji,tick%120,color);c.restore();}
+  const caught=p.showUntil>tick?p.shown:p.caughtUntil>tick?p.caught:undefined;
+  if(caught){const s=SPECIES_BY_ID.get(caught.speciesId)!;oval(c,x,y-66,3,3,'#171918');label(c,s.name,x,y-78,9,color,'center');}
+}
+/** The escape offset as drawn, eased toward the authoritative one so a startled bug visibly flies off instead of teleporting. */
+const shownBugs=new Map<number,{ox:number;oy:number;heading:number;seen:number}>();
+function insect(c:CanvasRenderingContext2D,b:Bug,p:Collector,tick:number) {
+  const state=personal(b,p.id);if(!state||state.escaped)return;
+  const q=bugPoint(b,p.id),m=bugMotion(b,tick),prev=bugMotion(b,tick-3),behavior=behaviorOf(SPECIES_BY_ID.get(b.speciesId)!);
+  // Replaying the shared path keeps the mark on its hit point; only the offset from it is smoothed.
+  const ox=q.x-m.x,oy=q.y-m.y;let s=shownBugs.get(b.id);if(!s||Math.hypot(ox-s.ox,oy-s.oy)>260)s={ox,oy,heading:0,seen:tick};
+  const fleeX=ox-s.ox,fleeY=oy-s.oy,flee=Math.hypot(fleeX,fleeY);
+  s.ox+=fleeX*.18;s.oy+=fleeY*.18;s.seen=tick;
+  const vx=m.x-prev.x+fleeX*.3,vy=m.y-prev.y+fleeY*.3;if(Math.hypot(vx,vy)>.4)s.heading=Math.atan2(vy,vx);
+  shownBugs.set(b.id,s);
+  // A wary bug trembles before it bolts; a fleeing one rises over its shadow.
+  const twitch=state.alert>35?Math.sin(tick*1.9+b.seed)*state.alert/100*1.1:0;
+  const lift=state.caught?0:m.lift+Math.min(24,flee*.45),x=m.x+s.ox+twitch,y=m.y+s.oy;
+  c.save();if(state.caught)c.globalAlpha=.16;
+  oval(c,x,y+1,3.2*(1-Math.min(.5,lift/50)),1.2,'rgba(23,25,24,.14)');
+  const by=y-lift,flier=behavior==='flower'||behavior==='patrol';
+  c.save();c.translate(x,by);c.rotate(s.heading);
+  if(flier&&lift>2){
+    // Butterflies beat slowly; a dragonfly's wings stay a faint blur.
+    const flap=behavior==='patrol'?.7+.3*Math.abs(Math.sin(tick*2.1)):.25+.75*Math.abs(Math.sin(tick*.5+b.seed));
+    c.fillStyle='rgba(126,134,124,.42)';for(const side of [-1,1]){c.beginPath();c.ellipse(-.5,side*(1.6+1.6*flap),1.4,1.2+1.8*flap,0,0,Math.PI*2);c.fill();}
+  }
+  // The fine white rim keeps the same black bug mark readable over dark windows.
+  c.beginPath();c.ellipse(0,0,3.6,2.9,0,0,Math.PI*2);c.fillStyle=PAPER;c.fill();
+  c.beginPath();c.ellipse(0,0,2.7,2,0,0,Math.PI*2);c.fillStyle='#171918';c.fill();
+  c.restore();
+  // Every species shares one unreadable field mark; only a golden variant has a tiny glint.
+  if(b.golden&&!state.caught&&(tick+b.seed)%90<7)star(c,x+4,by-4,1.5,'#9c854f');
   c.restore();
 }
-/** The sparse-mesh net: a hoop on a pole, cross-hatched inside. Returns the hoop centre in local space. */
-function net(c: CanvasRenderingContext2D, pose: NetPose, ink: string): [number, number] {
-  const [gx, gy] = pose.hand, dx = Math.cos(pose.ang), dy = Math.sin(pose.ang);
-  const hx = gx + dx * (POLE + HOOP), hy = gy + dy * (POLE + HOOP);
-  if (pose.arc) { c.save(); c.globalAlpha = .2; c.strokeStyle = ink; c.lineWidth = 3; c.beginPath(); c.arc(gx, gy, POLE + HOOP, pose.ang - 1.3, pose.ang - .1); c.stroke(); c.restore(); }
-  roughStroke(c, gx - dx * 5, gy - dy * 5, gx + dx * POLE, gy + dy * POLE, 1.8, BROWN, HALO);
-  const hoop = new Path2D(); hoop.ellipse(hx, hy, HOOP, HOOP * .9, pose.ang, 0, Math.PI * 2);
-  c.lineWidth = 4.5; c.strokeStyle = HALO; c.stroke(hoop);
-  c.save(); c.clip(hoop); c.fillStyle = 'rgba(255,254,250,.35)'; c.fillRect(hx - 8, hy - 8, 16, 16);
-  c.strokeStyle = MUTED; c.lineWidth = .55; c.beginPath();
-  for (let k = -8; k <= 8; k += 3) { c.moveTo(hx + k - 8, hy - 8); c.lineTo(hx + k + 8, hy + 8); c.moveTo(hx + k + 8, hy - 8); c.lineTo(hx + k - 8, hy + 8); }
-  c.stroke(); c.restore();
-  c.lineWidth = 1.5; c.strokeStyle = ink; c.stroke(hoop);
-  return [hx, hy];
+export interface FieldView { cameraX:number;cameraY:number;zoom:number;previewX?:number;previewY?:number;angle?:number;mapOpen:boolean;compact:boolean;hideEmotes:boolean;solo:boolean;known:number;gold:number }
+export function drawMap(c:CanvasRenderingContext2D,w:InsectWorld,id:string,x:number,y:number,width:number,height:number,full=false) {
+  box(c,x,y,width,height,'#fffaf0ef');c.save();c.beginPath();c.rect(x+8,y+8,width-16,height-16);c.clip();
+  const sx=(width-16)/WIDTH,sy=(height-16)/HEIGHT;c.translate(x+8,y+8);c.scale(sx,sy);
+  c.fillStyle='#fffefa';c.fillRect(0,0,WIDTH,HEIGHT);terrain(c);
+  for(const t of TREES){oval(c,t.x,t.y-75,39,25,'rgba(119,146,115,.14)','#8c9c84');line(c,[[t.x,t.y-40],[t.x,t.y]],'#887f6c',1.2);}
+  c.restore();
+  if(full)for(const h of HABITATS)label(c,h.name,x+8+h.x*sx,y+8+h.y*sy-18,13,INK,'center');
+  for(const p of w.players){const px=x+8+p.x*sx,py=y+8+p.y*sy;oval(c,px,py,p.id===id?5:4,p.id===id?5:4,SEAT_INK[p.seat],PAPER);if(full)label(c,p.id===id?'나':p.name.slice(0,6),px,py+18,12,INK,'center');if(p.pingUntil>w.tick){const a=x+8+p.pingX*sx,b=y+8+p.pingY*sy;star(c,a,b,7,SEAT_INK[p.seat]);}}
 }
-const EMOTE_FACES: Face[] = ['joy', 'joy', 'joy', 'wow', 'joy', 'sad', 'sad', 'joy'];
-function person(c: CanvasRenderingContext2D, p: Collector, x: number, tick: number, local: boolean, hideEmotes: boolean): void {
-  const ink = SEAT_INK[p.seat] ?? INK, pose = poseOf(p, tick), y = GROUND_Y;
-  const emoting = !hideEmotes && p.emojiUntil > tick, showing = !!p.shown && p.showUntil > tick, calm = p.phase === 'free';
-  const look: Face = emoting && calm ? EMOTE_FACES[p.emoji] ?? pose.face : showing && calm ? 'joy' : pose.face;
-  c.save(); c.translate(x, y); c.scale(p.facing, 1); c.lineCap = c.lineJoin = 'round';
-  const hip = -12 + pose.crouch, step = p.walking ? (Math.floor((tick + p.seat * 5) / (p.sneak ? 12 : 7)) % 2 ? 1 : -1) : 0;
-  roughLimb(c, -1.5, hip, -2 - step * 2.5 + pose.crouch * .3, hip / 2 + 1, -3 - step * 4, 0, 2.3, ink, HALO);
-  roughLimb(c, 1.5, hip, 2 + step * 2.5 + pose.crouch * .6, hip / 2 + 1, 3 + step * 4, 0, 2.3, ink, HALO);
-  const body = new Path2D(); body.ellipse(pose.lean * .4, hip - 5.5, 5.4, 7, pose.lean * .06, 0, Math.PI * 2);
-  c.lineWidth = 5; c.strokeStyle = HALO; c.stroke(body); c.fillStyle = PAPER; c.fill(body); c.lineWidth = 2.1; c.strokeStyle = ink; c.stroke(body);
-  const sx = pose.lean * .5 + 2, sy = hip - 9;
-  const [hx, hy] = net(c, pose, ink);
-  roughLimb(c, sx, sy, (sx + pose.hand[0]) / 2 + 1, (sy + pose.hand[1]) / 2 + 3, pose.hand[0], pose.hand[1], 2.1, ink, HALO);
-  head(c, pose.lean * 1.1 + 1, hip - 20, look, ink, tick % 190 < 6);
-  // The catch wriggles inside the hoop; a 금색 one leaks light through the mesh just before the reveal.
-  const bug = (p.phase === 'catch' || p.phase === 'result') && p.bug ? SPECIES_BY_ID.get(p.bug.speciesId) : undefined;
-  if (bug && p.bug) {
-    if (p.bug.golden && p.phase === 'catch' && p.t < 18) {
-      c.save(); c.strokeStyle = GOLD; c.lineWidth = 1.2; c.globalAlpha = .9;
-      for (let i = 0; i < 6; i++) { const a = i * Math.PI / 3 + tick * .05; c.beginPath(); c.moveTo(hx + Math.cos(a) * 7, hy + Math.sin(a) * 7); c.lineTo(hx + Math.cos(a) * 12, hy + Math.sin(a) * 12); c.stroke(); }
-      c.restore();
+export function drawInsectField(c:CanvasRenderingContext2D,v:Viewport,w:InsectWorld,id:string,o:FieldView):void {
+  c.setTransform(v.pixelRatio,0,0,v.pixelRatio,0,0);c.clearRect(0,0,v.width,v.height);beginSketchFrame();
+  const scale=Math.min(v.width/640,v.height/480);c.save();c.translate((v.width-640*scale)/2,(v.height-480*scale)/2);c.scale(scale,scale);
+  if(o.compact){label(c,`곤충채집 · ${o.known}/30`,320,245,16,INK,'center');label(c,'펼치기로 이어하기',320,275,12,INK,'center');c.restore();return;}
+  const me=w.players.find(p=>p.id===id),p=me?{...me,x:o.previewX??me.x,y:o.previewY??me.y,angle:o.angle??me.angle}:undefined;
+  c.save();c.beginPath();c.roundRect(0,34,640,410,16);c.clip();c.translate(320,240);c.scale(o.zoom,o.zoom);c.translate(-o.cameraX,-o.cameraY);
+  terrain(c);
+  if(p){
+    const sprites:{y:number;draw:()=>void}[]=[];
+    for(const t of TREES)sprites.push({y:t.y,draw:()=>tree(c,t.x,t.y,Math.abs(p.x-t.x)<70&&p.y<t.y&&p.y>t.y-130 || w.bugs.some(b=>{const q=bugPoint(b,id);return Math.abs(q.x-t.x)<55&&q.y<t.y&&q.y>t.y-110&&Math.hypot(q.x-p.x,q.y-p.y)<180;}))});
+    for(const b of w.bugs){const q=bugPoint(b,id);if(Math.abs(q.x-o.cameraX)<400&&Math.abs(q.y-o.cameraY)<300)sprites.push({y:q.y,draw:()=>insect(c,b,p,w.tick)});}
+    for(const other of w.players){const q=other.id===id?p:other;sprites.push({y:q.y,draw:()=>collector(c,o.hideEmotes&&q.id!==id?{...q,emojiUntil:0}:q,w.tick,q.id===id)});}
+    sprites.sort((a,b)=>a.y-b.y).forEach(s=>s.draw());
+    for(const [id,s] of shownBugs)if(w.tick-s.seen>120||s.seen>w.tick)shownBugs.delete(id);
+
+    for(const q of w.players)if(q.pingUntil>w.tick){star(c,q.pingX,q.pingY-25,10,SEAT_INK[q.seat]);label(c,`${q.name.slice(0,6)}의 발견`,q.pingX,q.pingY-43,12,INK,'center');}
+  }
+  c.restore();
+  if(p){
+    const h=HABITATS[location(p.x,p.y)];
+    label(c,`${h.name} · ${o.known}/30`,18,54,10,'#727c70');
+    const notice=p.noticeUntil>w.tick?p.notice:p.phase==='result'?'저장 중…':'';
+    if(notice)label(c,notice,320,423,11,INK,'center');
+    for(const q of w.players)if(q.id!==id&&(Math.abs(q.x-o.cameraX)>280/o.zoom||Math.abs(q.y-o.cameraY)>165/o.zoom)){
+      const a=Math.atan2(q.y-o.cameraY,q.x-o.cameraX),x=320+Math.cos(a)*275,y=235+Math.sin(a)*150;
+      label(c,`${['→','↘','↓','↙','←','↖','↑','↗'][(Math.round(a/(Math.PI/4))+8)%8]} ${q.name.slice(0,3)}`,x,y,9,SEAT_INK[q.seat],'center');
     }
-    drawInsect(c, bug, hx, hy, 9, { pose: 'move', frame: tick, golden: p.phase === 'result' && p.bug.golden }, false, p.phase === 'catch' ? (Math.floor(tick / 4) % 2 ? .3 : -.3) : 0);
   }
-  c.restore();
-  if (p.phase === 'result') for (const [dx, dy, r] of [[-13, -46, 2.6], [-19, -32, 1.6], [16, -40, 2]] as const) star(c, x + dx, y + dy, r, p.bug?.golden ? GOLD : BROWN);
-  if (local) line(c, x - 7, y + 7, x + 7, y + 7, ink, 1.6);
-  label(c, local ? `나 · P${p.seat + 1}` : `${p.name.slice(0, 5)} · P${p.seat + 1}`, x, y + 16, 7, ink, local ? 'bold ' : '');
-  const caught = p.caught && p.caughtUntil > tick && p.phase !== 'result' ? p.caught : undefined;
-  if (showing) bragCard(c, p.shown!, x, y - 50, SHOW_TICKS - (p.showUntil - tick), ink);
-  else if (caught) caughtBubble(c, caught, x, y - 52, p.caughtUntil - tick, ink);
-  if (emoting) emoteBubble(c, p.emoji, showing ? x + 28 : x + 11, showing ? y - 103 : y - 58, EMOTE_TICKS - (p.emojiUntil - tick), ink);
-}
-function bubbleBox(c: CanvasRenderingContext2D, w: number, h: number, ink: string, border = ink): void {
-  const r = 6, box = new Path2D();
-  box.moveTo(0, -h); box.arcTo(w / 2, -h, w / 2, 0, r); box.arcTo(w / 2, 0, -w / 2, 0, r); box.lineTo(3, 0); box.lineTo(0, 5); box.lineTo(-3, 0); box.arcTo(-w / 2, 0, -w / 2, -h, r); box.arcTo(-w / 2, -h, w / 2, -h, r); box.closePath();
-  c.lineWidth = 4.5; c.strokeStyle = HALO; c.stroke(box); c.fillStyle = PAPER; c.fill(box); c.lineWidth = border === ink ? 1.3 : 2; c.strokeStyle = border; c.stroke(box);
-}
-/** Small bubble with the insect someone just caught, so the whole field sees it. */
-function caughtBubble(c: CanvasRenderingContext2D, bug: InsectCatch, x: number, y: number, left: number, ink: string): void {
-  const s = SPECIES_BY_ID.get(bug.speciesId); if (!s) return;
-  c.save(); c.translate(x, y); c.globalAlpha = Math.min(1, left / 20);
-  bubbleBox(c, 26, 22, ink, bug.golden ? GOLD : ink);
-  drawInsect(c, s, 0, -11, 17, { golden: bug.golden }, SIDE_VIEW.has(s.plan));
-  c.restore();
-}
-function emoteBubble(c: CanvasRenderingContext2D, kind: number, x: number, y: number, age: number, ink: string): void {
-  const left = EMOTE_TICKS - age, s = age < 9 ? [.3, .7, 1.05, 1.2, 1.15, 1.08, 1.02, .99, 1][age] : 1, fade = left < 18 ? left / 18 : 1;
-  c.save(); c.translate(x, y - (1 - fade) * 6); c.scale(s, s); c.globalAlpha = fade;
-  bubbleBox(c, 22, 20, ink); c.translate(0, -10); c.scale(.92, .92); drawEmoteIcon(c, kind, age, ink);
-  c.restore();
-}
-/** Trophy card held over the head when someone brags: rarity ribbon, the insect, its name; gold-trimmed for 금색. */
-function bragCard(c: CanvasRenderingContext2D, bug: InsectCatch, x: number, y: number, age: number, ink: string): void {
-  const s = SPECIES_BY_ID.get(bug.speciesId); if (!s) return;
-  const rc = RARITY_INK[s.rarity], left = SHOW_TICKS - age, fade = left < 24 ? left / 24 : 1, pop = [.2, .5, .85, 1.12, 1.2, 1.14, 1.06, 1, .97, 1][age] ?? 1;
-  c.save(); c.translate(x, y - (1 - fade) * 10); c.scale(pop, pop); c.globalAlpha = fade;
-  const card = new Path2D(); card.roundRect(-22, -52, 44, 46, 6);
-  c.lineWidth = 4.5; c.strokeStyle = HALO; c.stroke(card); c.fillStyle = PAPER; c.fill(card);
-  c.save(); c.clip(card); c.fillStyle = rc; c.fillRect(-22, -52, 44, 9); c.restore();
-  c.lineWidth = bug.golden ? 2.2 : 1.4; c.strokeStyle = bug.golden ? GOLD : ink; c.stroke(card);
-  drawInsect(c, s, 0, -27, 22, { golden: bug.golden, frame: age }, SIDE_VIEW.has(s.plan));
-  c.font = 'bold 6px Menlo, sans-serif'; c.textAlign = 'center'; c.fillStyle = PAPER; c.fillText(bug.golden ? `금색 · ${RARITIES[s.rarity]}` : RARITIES[s.rarity], 0, -45.5);
-  c.fillStyle = ink; c.fillText(`${s.name} ${(bug.sizeMm / 10).toFixed(1)}cm`, 0, -10);
-  if (bug.golden) for (const [sx, sy] of [[-17, -38], [17, -20], [-15, -16]]) star(c, sx, sy, 1.6, GOLD);
-  c.restore();
-}
-export interface FieldView { previewX?: number; hideEmotes: boolean; solo: boolean }
-export function drawInsectField(c: CanvasRenderingContext2D, view: Viewport, w: InsectWorld, myId: string, opts: FieldView): void {
-  c.setTransform(view.pixelRatio, 0, 0, view.pixelRatio, 0, 0); c.clearRect(0, 0, view.width, view.height);
-  const scale = Math.min(view.width / 320, view.height / 280); c.save(); c.translate((view.width - 320 * scale) / 2, (view.height - 280 * scale) / 2); c.scale(scale, scale); beginSketchFrame();
-  scenery(c);
-  const me = w.players.find(p => p.id === myId), mine = me && opts.previewX !== undefined ? { ...me, x: opts.previewX } : me;
-  // Back to front: other walkers, then insects (ground ones last so tufts can overlap them), then me, my net and my ring.
-  for (const p of w.players) if (p.id !== myId) person(c, p, fx(p.x), w.tick, false, opts.hideEmotes);
-  for (const b of [...w.bugs].sort((a, b) => Number(envOf(a) === 'ground') - Number(envOf(b) === 'ground'))) drawBug(c, b, w.tick);
-  if (mine) person(c, mine, fx(mine.x), w.tick, true, false);
-  const target = mine && mine.phase === 'free' ? w.bugs.filter(b => inReach(mine, b)).sort((a, b) => Math.abs(a.x - netX(mine)) - Math.abs(b.x - netX(mine)))[0] : undefined;
-  if (target) ring(c, target, w.tick);
-  const noticing = !!me && me.noticeUntil > w.tick && !!me.notice;
-  const status = !me ? '자리를 기다리는 중…' : noticing ? me.notice : me.phase === 'catch' ? '잡았다!' : me.phase === 'result' ? '수집함에 저장 중…' : target ? '고리가 작아질 때 Space!' : w.bugs.length ? '곤충에게 살금살금 다가가 보세요' : '곤충을 기다리는 중…';
-  label(c, status, 160, 214, 9, noticing ? RED : INK);
-  label(c, '←→ 걷기 · Shift 살금살금 · Space 덮기', 160, 250, 8);
-  label(c, opts.solo ? 'C 수집함' : 'E 감정표현 · C 수집함 · B 자랑', 160, 265, 8);
+  // Navigation stays available on M; no permanent map or opaque HUD plates.
+  if(w.tick<480)label(c,'WASD 걷기 · Space 내려찍기 · M 지도 · C 수집함',320,456,10,'#7b8377','center');
+  if(o.mapOpen){box(c,26,48,588,386,'#fffaf0');label(c,'숲 지도',48,78,22);label(c,'클릭해서 친구에게 발견 위치 알리기 · M / Esc 닫기',48,101,12);drawMap(c,w,id,40,114,560,295,true);}
   c.restore();
 }

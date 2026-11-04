@@ -6,25 +6,33 @@ import { drawInsect, SIDE_VIEW } from './art.js';
 import { RARITY_INK } from './draw.js';
 export interface InsectUiActions {
   open(): void; emoji(value: number): void; release(id: string): void; favorite(id: string): void; show(bug: InsectCatch): void;
-  retry(): void; export(): void; import(): void; continueSolo(): void;
+  retry(): void; export(): void; import(): void; continueSolo(): void; map(): void; compact(): void;
 }
 /** What the fresh catch earned, shown as stamps on the result card. */
 export interface Badges { first: boolean; record: boolean; goldFirst: boolean }
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string, className?: string): HTMLElementTagNameMap[K] { const n = document.createElement(tag); if (text) n.textContent = text; if (className) n.className = className; return n; }
 function button(text: string, click: () => void, className?: string): HTMLButtonElement { const n = el('button', text, className); n.type = 'button'; n.onclick = click; return n; }
-const PAGE_SIZE = 6, TOAST_MS = 3500, CARD_MS = 3000, GOLD_CARD_MS = 5000, GOLD = '#c08416';
+const PAGE_SIZE = 6, TOAST_MS = 3500, CARD_MS = 1100, GOLD_CARD_MS = 1500, GOLD = '#c08416';
 const cm = (mm: number) => `${(mm / 10).toFixed(1)}cm`;
 const specimenNo = (s: Species) => `No.${String(SPECIES.indexOf(s) + 1).padStart(3, '0')}`;
 const CSS = FISHING_CSS.replaceAll('#fishing-ui', '#insect-ui') + `
+body[data-game="insect"] #field{-webkit-app-region:no-drag}
+#insect-ui .fish-top{top:-27px;left:auto;right:24px;display:flex;flex-wrap:nowrap;gap:7px;justify-content:flex-end}
+#insect-ui .fish-top button{font-size:9px;padding:1px 3px;min-height:18px;border:0;border-radius:0;box-shadow:none;background:transparent;color:#656e65;text-shadow:0 0 1px rgba(255,255,255,.8)}
+#insect-ui .fish-top button:hover{transform:none;box-shadow:none;background:rgba(255,255,255,.65)}
+#insect-ui .fish-panel{font-size:14px;background:#fffaf0;inset:40px 12px 14px}
+#insect-ui .fish-card .fish-name{font-size:12px}
+#insect-ui .bug-card{top:100px!important}
+@media(max-width:400px){#insect-ui .fish-top{right:22px;top:-27px}}
 #insect-ui .bug-gold{--rc:${GOLD}!important;border-color:${GOLD}!important;box-shadow:0 0 0 1px ${GOLD} inset}
 #insect-ui .bug-gold-chip{color:${GOLD};background:#fbf1d8}
 #insect-ui .fish-card .bug-goldstar{position:absolute;top:1px;left:3px;color:${GOLD};font-size:10px}
-#insect-ui .bug-card{position:absolute;top:2px;width:150px;max-width:calc(50% - 8px);display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 7px 7px;box-sizing:border-box;text-align:center;
-  background:var(--paper);border:1.5px solid var(--ink);border-radius:9px;box-shadow:2px 3px 0 var(--ink);pointer-events:auto;cursor:pointer;-webkit-app-region:no-drag;animation:fish-pop 180ms cubic-bezier(.16,1,.3,1)}
+#insect-ui .bug-card{position:absolute;top:2px;width:112px;max-width:calc(50% - 8px);display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 5px;box-sizing:border-box;text-align:center;
+  background:var(--paper);border:1px solid #a6a79b;border-radius:4px;box-shadow:none;pointer-events:auto;cursor:pointer;-webkit-app-region:no-drag;animation:fish-pop 180ms cubic-bezier(.16,1,.3,1)}
 #insect-ui .bug-card.bug-left{left:2px}#insect-ui .bug-card.bug-right{right:2px}
-#insect-ui .bug-card.bug-gold-card{border-color:${GOLD};box-shadow:2px 3px 0 ${GOLD};background:linear-gradient(160deg,#fffaf0,#fbefcf)}
+#insect-ui .bug-card.bug-gold-card{border-color:${GOLD};box-shadow:none;background:var(--paper)}
 #insect-ui .bug-card h3{font-size:11px;margin:0}
-#insect-ui .bug-card canvas{width:110px;height:auto;aspect-ratio:16/10}
+#insect-ui .bug-card canvas{width:64px;height:auto;aspect-ratio:16/10}
 #insect-ui .bug-card p{margin:0;font-size:9px;line-height:1.35}
 #insect-ui .bug-badges{display:flex;flex-wrap:wrap;justify-content:center;gap:3px}
 #insect-ui .bug-badge{font-size:8px;font-weight:700;padding:0 5px;border:1px solid currentColor;border-radius:999px;transform:rotate(-2deg)}
@@ -41,6 +49,9 @@ export class InsectUi {
     this.root = el('div'); this.root.id = 'insect-ui';
     const top = el('div', undefined, 'fish-tools fish-top');
     const collection = button('수집함', () => actions.open()); collection.title = '수집함 (C)'; top.append(collection);
+    top.append(button('지도', () => actions.map()));
+    const fold = button('접기', () => { actions.compact(); fold.textContent = fold.textContent === '접기' ? '펼치기' : '접기'; }); top.append(fold);
+
     this.panel = el('div', undefined, 'fish-panel'); this.panel.hidden = true;
     this.card = el('div', undefined, 'bug-card'); this.card.hidden = true; this.card.setAttribute('role', 'status');
     this.card.onclick = () => { if (this.resultError) this.actions.retry(); else this.hideCard(); };

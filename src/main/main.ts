@@ -49,6 +49,13 @@ app.whenReady().then(() => {
       ? jumpmapRecords.update(mode, ticks) : { ok: false };
   });
   win = createGameWindow();
+  let insectBounds: Electron.Rectangle | undefined;
+  ipcMain.on('insect:window', (event, mode: unknown) => {
+    if (!win || event.sender !== win.webContents) return;
+    if (mode === 'expand') { insectBounds ??= win.getBounds(); win.setMinimumSize(480, 360); win.setSize(480, 360); }
+    if (mode === 'compact' && insectBounds) { win.setMinimumSize(160, 120); win.setSize(320, 280); }
+    if (mode === 'restore' && insectBounds) { win.setMinimumSize(160, 120); win.setBounds(insectBounds); insectBounds = undefined; }
+  });
   net.start();
   const fishing = new FishingStore(app.getPath('userData'));
   const fishingReply = (fn: () => FishingReply): FishingReply => {
