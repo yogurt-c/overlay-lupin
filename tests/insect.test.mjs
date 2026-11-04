@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { SPECIES, ENVS, GOLDEN_CHANCE, SAVE_VERSION, isInsectSave } from '../dist/shared/insect.js';
-import { InsectEngine, pickSpecies, inReach, personal, bugPoint, netPoint, NET_AHEAD, CATCH_TICKS, SWING_TICKS } from '../dist/renderer/games/insect/engine.js';
+import { InsectEngine, pickSpecies, inReach, personal, bugPoint, netPoint, NET_AHEAD, CATCH_TICKS, SWING_TICKS, HIT_STUN } from '../dist/renderer/games/insect/engine.js';
 import { WorldSender, WorldReceiver } from '../dist/renderer/games/insect/wire.js';
 import { movePoint, blocked, TREES, WIDTH, HEIGHT } from '../dist/renderer/games/insect/map.js';
 import { validWorld } from '../dist/renderer/games/insect/module.js';
@@ -68,6 +68,16 @@ test('all four collectors can catch the same golden specimen without consuming a
   for(const p of e.world.players){p.x=b.x;p.y=b.y+NET_AHEAD;p.angle=-Math.PI/2;}
   for(const p of e.world.players){swing(e,p);assert.equal(p.phase,'catch');assert.equal(p.bug.golden,true);ids.push(p.bug.id);}
   assert.equal(new Set(ids).size,4);assert.equal(e.world.bugs.some(q=>q.id===b.id),false);
+});
+test('a slam landing on another collector bonks them into a short daze without stealing their swing', () => {
+  const e=new InsectEngine(rng(5)),p=e.ensure('a','a'),q=e.ensure('b','b');e.world.bugs=[];
+  p.x=q.x=900;p.y=900;q.y=900-NET_AHEAD;p.angle=-Math.PI/2;e.step();
+  swing(e,p);assert.equal(q.phase,'hit');assert.match(q.notice,/a의 잠자리채에 맞았어요/);assert.match(p.notice,/b을\(를\) 쳤어요/);
+  e.input('b',1,false,[{seq:1,kind:'swing',at:e.world.tick}]);const y=q.y,x=q.x;e.step();
+  assert.equal(q.phase,'hit');assert.deepEqual({x:q.x,y:q.y},{x,y},'dazed collectors cannot walk');
+  for(let t=0;t<HIT_STUN;t++)e.step();assert.equal(q.phase,'free');
+  const far=new InsectEngine(rng(5)),a=far.ensure('a','a'),c=far.ensure('b','b');far.world.bugs=[];
+  a.x=c.x=900;a.y=c.y=900;a.angle=-Math.PI/2;far.step();swing(far,a);assert.equal(c.phase,'free','standing beside the swinger is safe');
 });
 test('miss and alert are personal; first miss creates a retry and second escape does not affect peers', () => {
   const {e,p}=field();e.ensure('b','b');const b=e.world.bugs.at(-1);e.world.bugs=[b];b.tutorial=false;b.speciesId='bug-1-0';b.hx=b.x;b.hy=b.y;

@@ -4,7 +4,7 @@ import type { Viewport } from '../types.js';
 import { star } from './art.js';
 import { beginSketchFrame, jitter, roughLimb, roughSegment, roughStroke } from '../../lib/sketch.js';
 import { drawEmoteIcon } from '../fishing/draw.js';
-import { bugMotion, bugPoint, personal, netPoint, CATCH_TICKS, MISS_STUN, NET_AHEAD, SWING_TICKS } from './engine.js';
+import { bugMotion, bugPoint, personal, netPoint, CATCH_TICKS, HIT_STUN, MISS_STUN, NET_AHEAD, SWING_TICKS } from './engine.js';
 import type { Bug, Collector, InsectWorld } from './engine.js';
 import { WIDTH, HEIGHT, HABITATS, TREES, CAMP, behaviorOf, location } from './map.js';
 export const SEAT_INK = ['#303637', '#7a6353', '#756278', '#62747e'];
@@ -97,6 +97,11 @@ function netPose(p: Collector, tick: number) {
     const k = MISS_STUN - p.t, rise = unit((k - 8) / (MISS_STUN - 8));
     return { u: 1 - (1 - CARRY) * easeOut(rise), side: SHOULDER * easeOut(rise), crouch: 1.5 * (1 - rise), lean: 2 * (1 - rise), landed: k + SWING_TICKS - LANDED };
   }
+  if (p.phase === 'hit') {
+    // Bonked: the body squashes, wobbles side to side and the net droops until the daze wears off.
+    const k = HIT_STUN - p.t, decay = Math.exp(-k * .07);
+    return { u: .6 + Math.sin(k * .5) * .08 * decay, side: SHOULDER * .5, crouch: 4 * decay + .8, lean: Math.sin(k * .9) * 3 * decay, landed: -1 };
+  }
   if (p.phase === 'catch') {
     // Hold the net down a beat, then raise the catch proudly overhead.
     const k = CATCH_TICKS - p.t, raise = easeOut(unit((k - 10) / 12));
@@ -130,7 +135,7 @@ function face(c: CanvasRenderingContext2D, x: number, y: number, r: number, faci
 function collector(c:CanvasRenderingContext2D,p:Collector,tick:number,local:boolean) {
   const {x,y}=p,color=SEAT_INK[p.seat],walking=(p.move||p.moveY)&&!p.paused&&(p.phase==='free'||p.phase==='result');
   const facing=Math.cos(p.angle)<-.2?-1:1,view=Math.sin(p.angle),stride=walking?Math.sin(tick*.24):0,bob=walking?Math.abs(stride)*1.3:Math.sin(tick*.05)*.4;
-  const pose=netPose(p,tick),striking=p.phase!=='free'&&p.phase!=='result';
+  const pose=netPose(p,tick),striking=p.phase!=='free'&&p.phase!=='result'&&p.phase!=='hit';
   const base=striking?{x:p.strikeX,y:p.strikeY}:{x,y},net=netAt(base.x,base.y,p.angle,pose.u,pose.side),lean=pose.lean*Math.cos(p.angle),leanY=pose.lean*Math.sin(p.angle)*.5;
   const hip=y-11+pose.crouch-bob,chest=y-21+pose.crouch*1.2-bob,head=y-30+pose.crouch*1.3-bob;
   oval(c,x,y+1,9,3,'rgba(20,24,26,.09)');
@@ -161,6 +166,11 @@ function collector(c:CanvasRenderingContext2D,p:Collector,tick:number,local:bool
   if(p.phase==='swing'&&pose.landed>=0){const k=pose.landed/(SWING_TICKS-LANDED);c.save();
     if(p.t<=3){c.beginPath();c.arc(n.x,n.y,46,0,Math.PI*2);c.setLineDash([2,5]);c.strokeStyle='#606b58';c.globalAlpha=.4;c.lineWidth=.7;c.stroke();c.setLineDash([]);}
     for(let i=0;i<5;i++){const a=Math.PI*(1.05+i*.22),r=8+k*14;c.globalAlpha=.32*(1-k);oval(c,n.x+Math.cos(a)*r*1.3,n.y+Math.sin(a)*r*.45+3,2.4*(1-k*.6),1.6*(1-k*.6),'#c5baa4');}
+    c.restore();}
+  if(p.phase==='hit'){const k=HIT_STUN-p.t,hx=x+lean*1.2,hy=head+leanY;c.save();
+    // A short impact burst, then little stars circling the dazed head.
+    if(k<8){c.globalAlpha=1-k/8;for(let i=0;i<6;i++){const a=i*Math.PI/3+.3,r0=11+k*.8;line(c,[[hx+Math.cos(a)*r0,hy+Math.sin(a)*r0],[hx+Math.cos(a)*(r0+5),hy+Math.sin(a)*(r0+5)]],color,1.2);}}
+    c.globalAlpha=Math.min(1,p.t/10);for(let i=0;i<3;i++){const a=k*.18+i*Math.PI*2/3;star(c,hx+Math.cos(a)*11,hy-12+Math.sin(a)*3.5,1.8,'#c9a64a');}
     c.restore();}
   if(p.phase==='catch'&&pose.held&&pose.held>.9&&tick%24<16)star(c,net.x+11,net.y-8,2,'#82785e');
   if(local)line(c,[[x-5,y+6],[x+5,y+6]],color,1);

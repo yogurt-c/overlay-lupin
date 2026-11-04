@@ -1,9 +1,9 @@
 import { GOLDEN_CHANCE, RARITY_WEIGHTS, SPECIES, SPECIES_BY_ID, validCatch } from '../../../shared/insect.js';
 import type { Env, InsectCatch, Species } from '../../../shared/insect.js';
 import { WIDTH, HEIGHT, CAMP, TREES, HABITATS, behaviorOf, habitatOf, clamp, movePoint } from './map.js';
-export const SEATS = 4, WALK = 2, SNEAK = .75, REACH = 46, NET_AHEAD = 32, CATCH_TICKS = 42, SWING_TICKS = 24, MISS_STUN = 18;
+export const SEATS = 4, WALK = 2, SNEAK = .75, REACH = 46, NET_AHEAD = 32, CATCH_TICKS = 42, SWING_TICKS = 24, MISS_STUN = 18, HIT_REACH = 24, HIT_STUN = 40;
 export const EMOTE_TICKS = 120, SHOW_TICKS = 240;
-export type Phase = 'free' | 'swing' | 'stun' | 'catch' | 'result';
+export type Phase = 'free' | 'swing' | 'stun' | 'hit' | 'catch' | 'result';
 export interface Collector {
   id: string; name: string; seat: number; x: number; y: number; angle: number; move: number; moveY: number; sneak: boolean; paused: boolean; strikeX: number; strikeY: number;
   phase: Phase; t: number; bug?: InsectCatch; emoji: number; emojiUntil: number; showUntil: number; shown?: InsectCatch;
@@ -109,6 +109,7 @@ export class InsectEngine {
     const n = netPoint(actor);
     const candidates = this.world.bugs.filter(b => inReach(actor, b))
       .sort((a, b) => { const qa=bugPoint(a,p.id),qb=bugPoint(b,p.id);return Math.hypot(qa.x-n.x,qa.y-n.y)-Math.hypot(qb.x-n.x,qb.y-n.y); });
+    const bonked = this.bonk(p, n);
     const b = candidates[0];
     if (b) {
       personal(b, p.id)!.caught = true;
@@ -125,13 +126,27 @@ export class InsectEngine {
       if (s.misses >= 2) { s.escaped = true; this.say(p, '숲으로 숨었어요 · 다른 흔적을 찾아볼까요?'); }
       else this.say(p, '근처로 옮겨 갔어요 · 다시 다가가 보세요');
     }
+    if (bonked) this.say(p, `앗, ${bonked.name.slice(0, 6)}을(를) 쳤어요!`);
+  }
+  /** A net that lands on another free collector bonks them: they freeze briefly, but nothing else is taken from them. */
+  private bonk(p: Collector, n: { x: number; y: number }): Collector | undefined {
+    let bonked: Collector | undefined;
+    const seen = this.history.find(h => h.tick === p.swingAt)?.players;
+    for (const q of this.world.players) {
+      if (q === p || q.phase !== 'free') continue;
+      const at = seen?.find(s => s.id === q.id) ?? q;
+      if (Math.hypot(at.x - n.x, at.y - n.y) > HIT_REACH) continue;
+      q.phase = 'hit'; q.t = HIT_STUN; q.move = q.moveY = 0;
+      this.say(q, `${p.name.slice(0, 6)}의 잠자리채에 맞았어요!`); bonked ??= q;
+    }
+    return bonked;
   }
   step(): void {
     const w = this.world; w.tick++;
     for (const p of w.players) {
       if (w.tick - p.lastInput > 90) { p.move = p.moveY = 0; p.paused = true; }
       if (p.phase === 'swing' && --p.t <= 0) this.swing(p);
-      else if (p.phase === 'stun' && --p.t <= 0) p.phase = 'free';
+      else if ((p.phase === 'stun' || p.phase === 'hit') && --p.t <= 0) p.phase = 'free';
       else if (p.phase === 'catch' && --p.t <= 0) { p.phase = 'result'; p.caught = p.bug; p.caughtUntil = w.tick + 150; }
       if (!p.paused && (p.phase === 'free' || p.phase === 'result')) {
         const scale = (p.sneak ? SNEAK : WALK) / Math.max(1, Math.hypot(p.move, p.moveY));

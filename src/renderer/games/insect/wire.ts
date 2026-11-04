@@ -11,7 +11,7 @@ export function validWorld(raw: unknown): raw is InsectWorld {
   return w.players.every(p => p && typeof p.id === 'string' && p.id.length > 0 && p.id.length <= 120 && typeof p.name === 'string' && p.name.length <= 24 && Number.isInteger(p.seat) && p.seat >= 0 && p.seat < 4
     && finite(p.x,p.y,p.angle,p.move,p.moveY,p.strikeX,p.strikeY,p.t,p.emoji,p.emojiUntil,p.showUntil,p.noticeUntil,p.ack,p.lastInput,p.caughtUntil,p.pingX,p.pingY,p.pingUntil,p.swingAt)
     && p.x>=0&&p.x<=WIDTH&&p.y>=0&&p.y<=HEIGHT&&Math.abs(p.move)<=1&&Math.abs(p.moveY)<=1&&Math.abs(p.angle)<=Math.PI+0.01
-    && ['free','swing','stun','catch','result'].includes(p.phase) && [p.sneak,p.paused].every(b=>typeof b==='boolean')
+    && ['free','swing','stun','hit','catch','result'].includes(p.phase) && [p.sneak,p.paused].every(b=>typeof b==='boolean')
     && typeof p.notice==='string'&&p.notice.length<200&&[p.bug,p.caught,p.shown].every(b=>b===undefined||validCatch(b))
     && (!['catch','result'].includes(p.phase)||!!p.bug)&&Array.isArray(p.known)&&p.known.length<=30&&p.known.every(id=>SPECIES_BY_ID.has(id)))
     && w.bugs.every(b=>b&&Number.isSafeInteger(b.id)&&b.id>0&&b.id<w.nextId&&SPECIES_BY_ID.has(b.speciesId)&&finite(b.x,b.y,b.hx,b.hy,b.sizeMm,b.born,b.expires,b.seed)
