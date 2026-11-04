@@ -335,6 +335,7 @@ class MerandiMatch implements GameMatch {
 export const merandiModule: GameModule = {
   id: 'merandi',
   label: '메랜디',
+  retired: true,
   hint: 'Z 뽑기 · X 업그레이드(1~4 스탯: STR/INT/DEX/LUK) · C 판매(1~5 계열 → 1~8 등급 이하) · R 잠재능력 재설정 · F 스타포스 강화(호버 중인 유닛) · V 등급표 · Esc 취소',
   matching: 'room',
   roomCapacity: 4,

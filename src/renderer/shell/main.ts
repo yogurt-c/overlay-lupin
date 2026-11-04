@@ -1,7 +1,7 @@
 import { advanceSendClock } from '../lib/send-clock.js';
 import { advanceSketchSeed } from '../lib/sketch.js';
 import { acceleratorFromKeyboardEvent } from '../lib/accelerator.js';
-import { GAME_MODULES } from '../games/registry.js';
+import { ACTIVE_GAMES, GAME_MODULES, RETIRED_GAMES } from '../games/registry.js';
 import { installUpdateNotice, setUpdateNoticeSuppressed } from './update.js';
 import type { GameMatch, GameModule } from '../games/types.js';
 import type { PeerInfo, RoomInfo, RoomRoster, VisibilityShortcuts } from '../types.js';
@@ -70,7 +70,9 @@ const inputSources = new Map(GAME_MODULES.map((m) => [m.id, m.createInputSource(
 let myId = '';
 let myName = '';
 let uiState: UiState = 'idle';
-let selectedGameId = GAME_MODULES[0].id;
+let selectedGameId = ACTIVE_GAMES[0].id;
+/** The tab row lists the 무덤 (retired games) instead of the main games. Follows the selected game whenever the panel opens. */
+let showGraveyard = false;
 /** Which half of the panel is showing: the 혼자하기/같이하기 choice, or the peer/room search. Reset whenever the panel (re)opens or the game tab changes. */
 let panelStep: 'mode' | 'match' = 'mode';
 /** Rule variant picked per game, remembered while the app is open. Absent means the game's default. */
@@ -218,18 +220,30 @@ function endMatch(): void {
 
 function renderGameTabs(): void {
   gameTabsEl.innerHTML = '';
-  for (const module of GAME_MODULES) {
+  gameTabsEl.classList.toggle('graveyard', showGraveyard);
+  const addTab = (label: string, active: boolean, onClick: () => void, className = ''): void => {
     const btn = document.createElement('button');
-    btn.textContent = module.label;
-    btn.classList.toggle('active', module.id === selectedGameId);
-    btn.disabled = GAME_MODULES.length === 1;
-    btn.addEventListener('click', () => {
+    btn.textContent = label;
+    if (className) btn.className = className;
+    btn.classList.toggle('active', active);
+    btn.addEventListener('click', onClick);
+    gameTabsEl.appendChild(btn);
+  };
+  const switchView = (graveyard: boolean): void => {
+    showGraveyard = graveyard;
+    renderGameTabs();
+  };
+  if (showGraveyard) addTab('← 돌아가기', false, () => switchView(false), 'graveyard-toggle');
+  for (const module of showGraveyard ? RETIRED_GAMES : ACTIVE_GAMES) {
+    addTab(module.label, module.id === selectedGameId, () => {
       selectedGameId = module.id;
       panelStep = 'mode';
       renderGameTabs();
       renderPanelBody();
     });
-    gameTabsEl.appendChild(btn);
+  }
+  if (!showGraveyard && RETIRED_GAMES.length > 0) {
+    addTab(`🪦 무덤 ${RETIRED_GAMES.length}`, false, () => switchView(true), 'graveyard-toggle');
   }
   renderVariants();
 }
@@ -571,6 +585,7 @@ idleIcon.addEventListener('click', () => {
     return;
   }
   panelStep = 'mode';
+  showGraveyard = currentModule().retired === true;
   renderGameTabs();
   renderPanelBody();
   setUiState('panel');

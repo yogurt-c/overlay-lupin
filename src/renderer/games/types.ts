@@ -66,6 +66,8 @@ export interface GameModule {
   label: string;
   /** Control hint shown in the matching panel while this game is selected. */
   hint: string;
+  /** Rarely played: listed under the 무덤 tab instead of the main row. Still fully playable and invitable. */
+  retired?: boolean;
   /**
    * 'duel' (default) is the existing 1:1 invite/accept flow. 'room' is a
    * host-created lobby that others free-join (including mid-session), with no

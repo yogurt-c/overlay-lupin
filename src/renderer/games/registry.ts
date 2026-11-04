@@ -27,3 +27,8 @@ export const GAME_MODULES: GameModule[] = [
   mergeModule,
   fishingModule
 ];
+
+/** Games shown in the main tab row. */
+export const ACTIVE_GAMES = GAME_MODULES.filter((m) => !m.retired);
+/** Games moved to the 무덤 tab — out of the way, but not removed. */
+export const RETIRED_GAMES = GAME_MODULES.filter((m) => m.retired);
