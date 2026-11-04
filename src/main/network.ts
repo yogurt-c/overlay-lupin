@@ -317,7 +317,7 @@ export class GameNetwork extends EventEmitter {
     if (!room) return;
     this.pendingJoinId = roomId;
     this.sendDirect(
-      { t: 'ROOM_JOIN', insectRevision: 3, id: this.myId, name: this.myName, roomId, replyPort: this.replyPort },
+      { t: 'ROOM_JOIN', insectRevision: 4, id: this.myId, name: this.myName, roomId, replyPort: this.replyPort },
       { address: room.hostAddress, replyPort: room.hostReplyPort }
     );
   }
@@ -418,7 +418,7 @@ export class GameNetwork extends EventEmitter {
     const buf = Buffer.from(
       JSON.stringify({
         t: 'ROOM_OPEN',
-        insectRevision: room.gameId === 'insect' ? 3 : undefined,
+        insectRevision: room.gameId === 'insect' ? 4 : undefined,
         id: this.myId,
         name: room.name,
         roomId: room.id,
@@ -532,7 +532,7 @@ export class GameNetwork extends EventEmitter {
         break;
 
       case 'ROOM_OPEN': {
-        if (msg.gameId === 'insect' && msg.insectRevision !== 3) return;
+        if (msg.gameId === 'insect' && msg.insectRevision !== 4) return;
         const previous = this.openRooms.get(msg.roomId);
         const room: OpenRoom = {
           id: msg.roomId,
@@ -554,7 +554,7 @@ export class GameNetwork extends EventEmitter {
       case 'ROOM_JOIN': {
         const room = this.hostedRoom;
         if (!room || room.id !== msg.roomId || room.members.size >= room.capacity) return;
-        if (room.gameId === 'insect' && msg.insectRevision !== 3) return;
+        if (room.gameId === 'insect' && msg.insectRevision !== 4) return;
         room.members.set(msg.id, {
           id: msg.id,
           name: msg.name,

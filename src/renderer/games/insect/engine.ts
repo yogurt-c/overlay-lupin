@@ -35,7 +35,7 @@ export function inReach(p: Collector, b: Bug): boolean {
 }
 export function pickSpecies(env: Env, known: string[], rng: () => number): Species {
   let roll = rng() * 100, rarity = 0;
-  for (; rarity < 3; rarity++) { roll -= RARITY_WEIGHTS[rarity]; if (roll < 0) break; }
+  for (; rarity < RARITY_WEIGHTS.length - 1; rarity++) { roll -= RARITY_WEIGHTS[rarity]; if (roll < 0) break; }
   const pool = SPECIES.filter(s => s.env === env && s.rarity === rarity), weight = (s: Species) => known.includes(s.id) ? 1 : 2;
   let n = rng() * pool.reduce((a, s) => a + weight(s), 0);
   return pool.find(s => (n -= weight(s)) < 0) ?? pool[pool.length - 1];

@@ -20,26 +20,30 @@ function field() {
   return {e,p,b};
 }
 function swing(e,p,seq=1) { e.input(p.id,0,false,[{seq,kind:'swing',at:e.world.tick,x:p.x,y:p.y,angle:p.angle}],0,false); for(let t=0;t<SWING_TICKS;t++)e.step(); }
-test('30 insects: 10 per habitat, each 4 일반 · 3 고급 · 2 희귀 · 1 전설, all real and drawable', () => {
-  assert.equal(SPECIES.length, 30); assert.equal(new Set(SPECIES.map(s => s.id)).size, 30); assert.equal(new Set(SPECIES.map(s => s.name)).size, 30);
-  for (const env of ENVS) assert.deepEqual([0, 1, 2, 3].map(r => SPECIES.filter(s => s.env === env && s.rarity === r).length), [4, 3, 2, 1]);
+test('55 insects: first-release ids keep their 4 · 3 · 2 · 1 tiers, then 25 more up to 신화, all real and drawable', () => {
+  assert.equal(SPECIES.length, 55); assert.equal(new Set(SPECIES.map(s => s.id)).size, 55); assert.equal(new Set(SPECIES.map(s => s.name)).size, 55);
+  // Saved catches reference these ids, so the first thirty must never move.
+  assert.deepEqual(SPECIES.slice(0, 30).map(s => s.id), ENVS.flatMap((_, e) => Array.from({ length: 10 }, (_, i) => `bug-${e}-${i}`)));
+  assert.deepEqual(SPECIES.slice(0, 30).map(s => s.rarity), Array(3).fill([0, 0, 0, 0, 1, 1, 1, 2, 2, 3]).flat());
+  const tiers = Object.fromEntries(ENVS.map(env => [env, [0, 1, 2, 3, 4].map(r => SPECIES.filter(s => s.env === env && s.rarity === r).length)]));
+  assert.deepEqual(tiers, { air: [6, 5, 4, 2, 1], tree: [6, 5, 4, 2, 1], ground: [7, 5, 4, 2, 1] });
   assert.ok(!SPECIES.some(s => s.name === '지렁이'), 'earthworms are not insects');
-  assert.deepEqual(SPECIES.filter(s => s.rarity === 3).map(s => s.name).sort(), ['붉은점모시나비', '소똥구리', '장수하늘소'].sort());
+  assert.deepEqual(SPECIES.filter(s => s.rarity === 4).map(s => s.name).sort(), ['닻무늬길앞잡이', '수염풍뎅이', '애반딧불이'].sort());
   assert.ok(SPECIES.every(s => Number.isInteger(s.minMm) && s.minMm > 0 && s.minMm < s.maxMm));
   assert.ok(SPECIES.every(s => DRAWN_PLANS.has(s.plan)));
 });
-test('each habitat rolls rarity 55/28/13/4 and favours species nobody has caught yet', () => {
+test('each habitat rolls rarity 55/27/13/4/1 and favours species nobody has caught yet', () => {
   const random = rng(3), n = 200000;
   for (const env of ENVS) {
-    const counts = [0, 0, 0, 0], ids = new Set();
+    const counts = [0, 0, 0, 0, 0], ids = new Set();
     for (let i = 0; i < n; i++) { const s = pickSpecies(env, [], random); assert.equal(s.env, env); counts[s.rarity]++; ids.add(s.id); }
-    assert.equal(ids.size, 10);
-    [55, 28, 13, 4].forEach((w, r) => assert.ok(Math.abs(counts[r] / n * 100 - w) < 1, `${env} tier ${r}`));
+    assert.equal(ids.size, SPECIES.filter(s => s.env === env).length);
+    [55, 27, 13, 4, 1].forEach((w, r) => assert.ok(Math.abs(counts[r] / n * 100 - w) < 1, `${env} tier ${r}`));
   }
-  // One unknown 일반 among three known ones carries weight 2 of 5 within the tier.
+  // One unknown 일반 among five known ones carries weight 2 of 7 within the tier.
   const common = SPECIES.filter(s => s.env === 'air' && s.rarity === 0), known = common.slice(1).map(s => s.id);
   let fresh = 0; for (let i = 0; i < n; i++) if (pickSpecies('air', known, random).id === common[0].id) fresh++;
-  assert.ok(Math.abs(fresh / n - .55 * 2 / 5) < .01);
+  assert.ok(Math.abs(fresh / n - .55 * 2 / (common.length + 1)) < .01);
 });
 test('2D movement, obstacle collision and pause', () => {
   const {e,p}=field(); p.x=900;p.y=900;const start={x:p.x,y:p.y};
@@ -201,7 +205,7 @@ test('incompatible insect room revisions are filtered, while other games remain 
   const {GameNetwork}=await import('../dist/main/network.js');const n=new GameNetwork();const r={address:'127.0.0.1',port:47474};
   const send=msg=>n.handleMessage(Buffer.from(JSON.stringify(msg)),r);
   const advert={t:'ROOM_OPEN',id:'a',name:'room',roomId:'room',gameId:'insect',capacity:4,memberCount:1,replyPort:5000};
-  send(advert);assert.equal(n.openRooms.size,0);send({...advert,insectRevision:3});assert.equal(n.openRooms.size,1);
+  send(advert);assert.equal(n.openRooms.size,0);send({...advert,insectRevision:4});assert.equal(n.openRooms.size,1);
   n.hostedRoom={id:'ours',name:'ours',gameId:'insect',capacity:4,status:'lobby',members:new Map()};n.broadcastRosterToAll=()=>{};
-  const join={t:'ROOM_JOIN',id:'b',name:'b',roomId:'ours',replyPort:5001};send(join);assert.equal(n.hostedRoom.members.size,0);send({...join,insectRevision:3});assert.equal(n.hostedRoom.members.size,1);
+  const join={t:'ROOM_JOIN',id:'b',name:'b',roomId:'ours',replyPort:5001};send(join);assert.equal(n.hostedRoom.members.size,0);send({...join,insectRevision:4});assert.equal(n.hostedRoom.members.size,1);
 });

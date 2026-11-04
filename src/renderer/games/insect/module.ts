@@ -130,7 +130,8 @@ export class InsectMatch implements GameMatch {
   render(ctx: CanvasRenderingContext2D, viewport: Viewport): void {
     const p = this.me(); this.zoom += (CAMERA_ZOOM - this.zoom) * .15;
     if (p) { this.cameraX += (clamp(this.previewX ?? p.x, 320 / this.zoom, WIDTH - 320 / this.zoom) - this.cameraX) * .15; this.cameraY += (clamp(this.previewY ?? p.y, 240 / this.zoom, HEIGHT - 240 / this.zoom) - this.cameraY) * .15; }
-    drawInsectField(ctx, viewport, this.view(), this.myId, { cameraX: this.cameraX, cameraY: this.cameraY, zoom: this.zoom, previewX: this.previewX, previewY: this.previewY, angle: !this.engine && p?.phase === 'free' && (this.move || this.moveY) ? Math.atan2(this.moveY, this.move) : undefined, mapOpen: this.mapOpen, hideEmotes: this.ui?.hideEmotes ?? false, solo: this.solo, known: this.known.length, gold: new Set(this.save.catches.filter(b => b.golden).map(b => b.speciesId)).size });
+    const scale = Math.min(viewport.width / 640, viewport.height / 480); this.ui?.place((viewport.width - 640 * scale) / 2, (viewport.height - 480 * scale) / 2);
+    drawInsectField(ctx, viewport, this.view(), this.myId, { cameraX: this.cameraX, cameraY: this.cameraY, zoom: this.zoom, previewX: this.previewX, previewY: this.previewY, angle: !this.engine && p?.phase === 'free' && (this.move || this.moveY) ? Math.atan2(this.moveY, this.move) : undefined, mapOpen: this.mapOpen, hideEmotes: this.ui?.hideEmotes ?? false, solo: this.solo });
   }
   hud() { const w = this.view(); return { status: this.solo ? '곤충채집' : `곤충채집 · ${w.players.length}/${SEATS}`, banner: '', bannerKind: '' }; }
   isOver(): boolean { return false; }

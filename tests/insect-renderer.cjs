@@ -28,7 +28,7 @@ app.whenReady().then(async()=>{
   await js(`document.querySelector('#leave-btn').click();document.querySelector('#leave-btn').click()`);assert.equal(await js(`document.querySelectorAll('#insect-ui').length`),0);
   // Art sheet: every species in the catalog plate style, normal and 금색 side by side, plus field sprites (idle, alert, flying).
   const sheet=await js(`(async()=>{const {SPECIES}=await import('../shared/insect.js');const {drawInsect,SIDE_VIEW}=await import('./games/insect/art.js');const {fieldSize}=await import('./games/insect/draw.js');
-    const c=document.createElement('canvas'),cw=150,ch=104;c.width=cw*6;c.height=ch*10;const x=c.getContext('2d');x.fillStyle='#f4f0e6';x.fillRect(0,0,c.width,c.height);
+    const c=document.createElement('canvas'),cw=150,ch=104;c.width=cw*6;c.height=ch*Math.ceil(SPECIES.length/3);const x=c.getContext('2d');x.fillStyle='#f4f0e6';x.fillRect(0,0,c.width,c.height);
     SPECIES.forEach((s,i)=>{const col=(i%3)*2,row=Math.floor(i/3),ox=col*cw,oy=row*ch;
       for(const g of [0,1])drawInsect(x,s,ox+g*cw+cw/2,oy+ch/2-6,78,{detail:true,golden:!!g},SIDE_VIEW.has(s.plan));
       ['idle','alert','fly'].forEach((pose,k)=>drawInsect(x,s,ox+14+k*24,oy+ch-14,fieldSize(s,s.maxMm),{pose,frame:k*4},SIDE_VIEW.has(s.plan)));
@@ -67,7 +67,7 @@ app.whenReady().then(async()=>{
   }
   // C opens the notebook; the catalog lists all 30 with the gold counter.
   await js(`testMatch.step({collection:true});`);assert.equal(await js(`testMatch.ui.opened`),true);
-  assert.ok(await js(`document.querySelector('#insect-ui .fish-stats').textContent.includes('도감 1/30 · 금색 1/30')`));
+  assert.ok(await js(`document.querySelector('#insect-ui .fish-stats').textContent.includes('도감 1/55 · 금색 1/55')`));
   await shot('collection.png');
   await js(`[...document.querySelectorAll('#insect-ui .fish-tab')].find(b=>b.textContent.startsWith('도감')).click()`);await shot('catalog.png');
   await js(`document.querySelector('#insect-ui .fish-card').click()`);await shot('detail.png');

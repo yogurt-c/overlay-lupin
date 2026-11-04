@@ -17,7 +17,9 @@ const cm = (mm: number) => `${(mm / 10).toFixed(1)}cm`;
 const specimenNo = (s: Species) => `No.${String(SPECIES.indexOf(s) + 1).padStart(3, '0')}`;
 const CSS = FISHING_CSS.replaceAll('#fishing-ui', '#insect-ui') + `
 body[data-game="insect"] #field{-webkit-app-region:no-drag}
-#insect-ui .fish-top{top:-27px;left:auto;right:24px;display:flex;flex-wrap:nowrap;gap:7px;justify-content:flex-end}
+/* The field fills the window edge to edge; title and pills float inside its top edge, wherever the letterbox puts it. */
+#insect-ui .fish-top{position:fixed;top:calc(var(--insect-map-y,0px) + 8px);left:auto;right:calc(var(--insect-map-x,0px) + 26px);display:flex;flex-wrap:nowrap;gap:7px;justify-content:flex-end}
+body[data-game="insect"] #hud{top:calc(var(--insect-map-y,0px) + 12px)}
 #insect-ui .fish-top button{font-size:9px;padding:1px 3px;min-height:18px;border:0;border-radius:0;box-shadow:none;background:transparent;color:#656e65;text-shadow:0 0 1px rgba(255,255,255,.8)}
 #insect-ui .fish-top button:hover{transform:none;box-shadow:none;background:rgba(255,255,255,.65)}
 #insect-ui .fish-panel{font-size:14px;background:#fffaf0;inset:40px 12px 14px}
@@ -28,7 +30,6 @@ body[data-game="insect"] #field{-webkit-app-region:no-drag}
 #insect-ui .fish-top button.bug-pill{font-size:11px;padding:2px 9px;min-height:22px;border:1.3px solid var(--ink);border-radius:999px;background:var(--paper);color:var(--ink);box-shadow:0 2px 0 var(--ink);text-shadow:none}
 #insect-ui .fish-top button.bug-pill:hover{transform:translateY(-1px);box-shadow:0 3px 0 var(--ink);background:var(--paper)}
 #insect-ui .fish-top button.bug-pill:active{transform:translateY(1px);box-shadow:0 1px 0 var(--ink)}
-@media(max-width:400px){#insect-ui .fish-top{right:22px;top:-27px}}
 #insect-ui .bug-gold{--rc:${GOLD}!important;border-color:${GOLD}!important;box-shadow:0 0 0 1px ${GOLD} inset}
 #insect-ui .bug-gold-chip{color:${GOLD};background:#fbf1d8}
 #insect-ui .fish-card .bug-goldstar{position:absolute;top:1px;left:3px;color:${GOLD};font-size:10px}
@@ -261,5 +262,14 @@ export class InsectUi {
     }
     this.panel.append(actions);
   }
-  dispose(): void { clearTimeout(this.toastTimer); clearTimeout(this.cardTimer); this.root.remove(); }
+  /** Tracks the field's letterboxed edge (CSS px) so the top controls stay inside the map. */
+  private edge = '';
+  place(x: number, y: number): void {
+    const edge = `${Math.round(x)},${Math.round(y)}`; if (edge === this.edge) return; this.edge = edge;
+    const s = document.documentElement.style; s.setProperty('--insect-map-x', `${Math.round(x)}px`); s.setProperty('--insect-map-y', `${Math.round(y)}px`);
+  }
+  dispose(): void {
+    clearTimeout(this.toastTimer); clearTimeout(this.cardTimer); this.root.remove();
+    const s = document.documentElement.style; s.removeProperty('--insect-map-x'); s.removeProperty('--insect-map-y');
+  }
 }

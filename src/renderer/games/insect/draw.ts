@@ -6,9 +6,9 @@ import { beginSketchFrame, jitter, roughLimb, roughSegment, roughStroke } from '
 import { drawEmoteIcon } from '../fishing/draw.js';
 import { bugMotion, bugPoint, personal, netPoint, CATCH_TICKS, EMOTE_TICKS, HIT_STUN, MISS_STUN, NET_AHEAD, SWING_TICKS } from './engine.js';
 import type { Bug, Collector, InsectWorld } from './engine.js';
-import { WIDTH, HEIGHT, HABITATS, TREES, CAMP, behaviorOf, location } from './map.js';
+import { WIDTH, HEIGHT, HABITATS, TREES, CAMP, behaviorOf } from './map.js';
 export const SEAT_INK = ['#303637', '#7a6353', '#756278', '#62747e'];
-export const RARITY_INK = ['#7d857b', '#4f8a5b', '#3d74a8', '#c08416'];
+export const RARITY_INK = ['#7d857b', '#4f8a5b', '#3d74a8', '#c08416', '#c4473a'];
 const INK = '#343b38', PAPER = '#fffefa', HALO = 'rgba(255,255,255,.88)', GOLD_MARK = '#d29a1a', GOLD_GLINT = '#f0c24a';
 export function fieldSize(s: Species, mm: number): number { return [18,24,30][s.size] * (.9 + .2 * (mm - s.minMm) / (s.maxMm - s.minMm)); }
 function oval(c: CanvasRenderingContext2D, x: number, y: number, rx: number, ry: number, color: string, outline = '') {
@@ -209,10 +209,11 @@ function insect(c:CanvasRenderingContext2D,b:Bug,p:Collector,tick:number) {
   c.save();if(state.caught)c.globalAlpha=.16;
   oval(c,x,y+1,3.2*(1-Math.min(.5,lift/50)),1.2,'rgba(23,25,24,.14)');
   const by=y-lift,flier=behavior==='flower'||behavior==='patrol';
-  // 전설 and golden insects give themselves away a little: a slow breathing ring under the mark.
-  const legend=species.rarity===3,special=(legend||b.golden)&&!state.caught;
+  // 전설·신화 and golden insects give themselves away a little: a slow breathing ring under the mark (신화 wears two).
+  const legend=species.rarity>=3,myth=species.rarity===4,tierInk=RARITY_INK[species.rarity],special=(legend||b.golden)&&!state.caught;
   if(special){const pulse=.5+.5*Math.sin(tick*.07+b.seed);c.save();c.globalAlpha=.22+.38*pulse;
-    c.beginPath();c.ellipse(x,by,7+pulse*2.5,5.5+pulse*2,0,0,Math.PI*2);c.strokeStyle=HALO;c.lineWidth=2.6;c.stroke();c.strokeStyle=legend?RARITY_INK[3]:GOLD_MARK;c.lineWidth=1.1;c.stroke();c.restore();}
+    for(const k of myth?[0,1]:[0]){const grow=k*(3+pulse*2);c.beginPath();c.ellipse(x,by,7+pulse*2.5+grow,5.5+pulse*2+grow*.8,0,0,Math.PI*2);c.strokeStyle=HALO;c.lineWidth=2.6;c.stroke();c.strokeStyle=legend?tierInk:GOLD_MARK;c.lineWidth=1.1;c.stroke();}
+    c.restore();}
   c.save();c.translate(x,by);c.rotate(s.heading);
   if(flier&&lift>2){
     // Butterflies beat slowly; a dragonfly's wings stay a faint blur.
@@ -225,10 +226,11 @@ function insect(c:CanvasRenderingContext2D,b:Bug,p:Collector,tick:number) {
   c.restore();
   // Species stay unreadable in the field; a golden body glints and a 전설 sheds an occasional sparkle.
   if(special&&b.golden&&(tick+b.seed)%40<12)star(c,x+4,by-5,1.4+Math.sin((tick+b.seed)%40/12*Math.PI)*1.2,GOLD_GLINT);
-  if(special&&legend&&(tick+b.seed*3)%70<10)star(c,x-5,by-6,1.6,RARITY_INK[3]);
+  if(special&&legend&&(tick+b.seed*3)%70<10)star(c,x-5,by-6,1.6,tierInk);
+  if(special&&myth&&(tick+b.seed*5+35)%70<10)star(c,x+6,by+3,1.3,tierInk);
   c.restore();
 }
-export interface FieldView { cameraX:number;cameraY:number;zoom:number;previewX?:number;previewY?:number;angle?:number;mapOpen:boolean;hideEmotes:boolean;solo:boolean;known:number;gold:number }
+export interface FieldView { cameraX:number;cameraY:number;zoom:number;previewX?:number;previewY?:number;angle?:number;mapOpen:boolean;hideEmotes:boolean;solo:boolean }
 export function drawMap(c:CanvasRenderingContext2D,w:InsectWorld,id:string,x:number,y:number,width:number,height:number,full=false) {
   box(c,x,y,width,height,'#fffaf0ef');c.save();c.beginPath();c.rect(x+8,y+8,width-16,height-16);c.clip();
   const sx=(width-16)/WIDTH,sy=(height-16)/HEIGHT;c.translate(x+8,y+8);c.scale(sx,sy);
@@ -242,7 +244,7 @@ export function drawInsectField(c:CanvasRenderingContext2D,v:Viewport,w:InsectWo
   c.setTransform(v.pixelRatio,0,0,v.pixelRatio,0,0);c.clearRect(0,0,v.width,v.height);beginSketchFrame();
   const scale=Math.min(v.width/640,v.height/480);c.save();c.translate((v.width-640*scale)/2,(v.height-480*scale)/2);c.scale(scale,scale);
   const me=w.players.find(p=>p.id===id),p=me?{...me,x:o.previewX??me.x,y:o.previewY??me.y,angle:o.angle??me.angle}:undefined;
-  c.save();c.beginPath();c.roundRect(0,34,640,410,16);c.clip();c.translate(320,240);c.scale(o.zoom,o.zoom);c.translate(-o.cameraX,-o.cameraY);
+  c.save();c.beginPath();c.roundRect(0,0,640,444,16);c.clip();c.translate(320,240);c.scale(o.zoom,o.zoom);c.translate(-o.cameraX,-o.cameraY);
   terrain(c);
   if(p){
     const sprites:{y:number;draw:()=>void}[]=[];
@@ -256,8 +258,6 @@ export function drawInsectField(c:CanvasRenderingContext2D,v:Viewport,w:InsectWo
   }
   c.restore();
   if(p){
-    const h=HABITATS[location(p.x,p.y)];
-    label(c,`${h.name} · ${o.known}/30`,18,54,10,'#727c70');
     const notice=p.noticeUntil>w.tick?p.notice:p.phase==='result'?'저장 중…':'';
     if(notice)label(c,notice,320,423,11,INK,'center');
     for(const q of w.players)if(q.id!==id&&(Math.abs(q.x-o.cameraX)>280/o.zoom||Math.abs(q.y-o.cameraY)>165/o.zoom)){

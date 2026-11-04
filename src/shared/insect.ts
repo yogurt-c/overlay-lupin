@@ -1,11 +1,11 @@
 /** Shared insect catalog and save contract. Species IDs are permanent across releases. */
-export const RARITIES = ['일반', '고급', '희귀', '전설'] as const;
+export const RARITIES = ['일반', '고급', '희귀', '전설', '신화'] as const;
 export const ENVS = ['air', 'tree', 'ground'] as const;
 export type Env = typeof ENVS[number];
 export const ENV_NAMES: Record<Env, string> = { air: '공중', tree: '나무', ground: '지상' };
 /** Body plans the art kit knows how to draw. */
 export type Plan = 'butterfly' | 'dragonfly' | 'damselfly' | 'cicada' | 'beetle' | 'ladybug' | 'stag' | 'rhino' | 'longhorn' | 'jewel' | 'tiger' | 'dung'
-  | 'grasshopper' | 'conehead' | 'longhead' | 'katydid' | 'cricket' | 'molecricket' | 'mantis';
+  | 'grasshopper' | 'conehead' | 'longhead' | 'katydid' | 'cricket' | 'molecricket' | 'mantis' | 'firefly';
 /** How a live insect moves around the field. */
 export type Move = 'flutter' | 'hover' | 'skim' | 'glide' | 'drift' | 'circle' | 'patrol' | 'perch'
   | 'sing' | 'crawl' | 'still' | 'hop' | 'dig' | 'nod' | 'walk' | 'dash' | 'roll';
@@ -16,7 +16,7 @@ export interface Species {
   plan: Plan; variant: number; size: 0 | 1 | 2; move: Move; flee: Flee; sings: boolean; description: string;
 }
 type Row = [name: string, minMm: number, maxMm: number, plan: Plan, variant: number, size: 0 | 1 | 2, move: Move, flee: Flee, description: string];
-// Each habitat lists 4 일반, 3 고급, 2 희귀 and 1 전설, in that order.
+// The first release: each habitat lists 4 일반, 3 고급, 2 희귀 and 1 전설, in that order.
 const ROWS: Record<Env, Row[]> = {
   air: [
     ['노랑나비', 20, 28, 'butterfly', 0, 1, 'flutter', 'up', '노란 날개에 작은 눈무늬. 꽃 높이에서 위아래로 팔랑인다.'],
@@ -55,15 +55,54 @@ const ROWS: Record<Env, Row[]> = {
     ['소똥구리', 8, 16, 'dung', 0, 0, 'roll', 'run', '작은 경단을 굴리는 딱정벌레. 국내에서 거의 사라졌다.']
   ]
 };
-const SINGERS = new Set(['참매미', '말매미', '유지매미', '왕귀뚜라미', '여치']);
-export const SPECIES: Species[] = ENVS.flatMap((env, e) => ROWS[env].map(([name, minMm, maxMm, plan, variant, size, move, flee, description], i) => ({
-  id: `bug-${e}-${i}`, name, env, rarity: i < 4 ? 0 : i < 7 ? 1 : i < 9 ? 2 : 3, minMm, maxMm, plan, variant, size, move, flee,
-  sings: SINGERS.has(name), description
-})));
+const FIRST_RARITY = [0, 0, 0, 0, 1, 1, 1, 2, 2, 3];
+/** Added with 신화: each row carries its rarity and keeps numbering after the first ten of its habitat. */
+const ADDED: Record<Env, [number, ...Row][]> = {
+  air: [
+    [0, '네발나비', 20, 30, 'butterfly', 6, 1, 'flutter', 'up', '주황 날개에 검은 점, 들쭉날쭉한 가장자리. 앞다리 한 쌍이 작아 발이 넷처럼 보인다.'],
+    [0, '된장잠자리', 37, 45, 'dragonfly', 3, 1, 'patrol', 'dart', '된장빛 누런 잠자리. 바다를 건너와 여름 하늘을 떼 지어 난다.'],
+    [1, '남방부전나비', 9, 14, 'butterfly', 7, 0, 'flutter', 'zigzag', '손톱만 한 하늘색 나비. 괭이밥 근처를 낮게 맴돈다.'],
+    [1, '물잠자리', 50, 60, 'damselfly', 1, 1, 'drift', 'hide', '검은 날개에 금속빛 초록 몸. 맑은 개울가에서 나풀나풀 난다.'],
+    [2, '긴꼬리제비나비', 55, 70, 'butterfly', 8, 2, 'glide', 'up', '길게 늘어진 꼬리와 붉은 점의 검은 나비. 그늘진 숲길을 따라 활공한다.'],
+    [2, '장수잠자리', 90, 110, 'dragonfly', 4, 2, 'patrol', 'zigzag', '노란 띠의 검은 몸, 초록 겹눈. 우리나라에서 가장 큰 잠자리.'],
+    [3, '산굴뚝나비', 25, 32, 'butterfly', 9, 1, 'perch', 'up', '눈알 무늬의 갈색 나비. 한라산 높은 곳에만 사는 천연기념물.'],
+    [4, '애반딧불이', 7, 10, 'firefly', 0, 0, 'drift', 'up', '꽁무니에서 연둣빛 불을 깜빡인다. 맑은 물가가 남은 여름밤에만 만날 수 있다.']
+  ],
+  tree: [
+    [0, '애매미', 26, 32, 'cicada', 3, 1, 'sing', 'buzz', '작은 초록 매미. "씨-요 씨-요" 하고 장난스럽게 운다.'],
+    [0, '흰점박이꽃무지', 17, 25, 'beetle', 1, 0, 'crawl', 'fly', '구릿빛 등에 흰 점이 흩어진 꽃무지. 수액에 모여든다.'],
+    [1, '털매미', 20, 25, 'cicada', 4, 1, 'sing', 'buzz', '얼룩덜룩한 잿빛 날개. 나무껍질에 붙으면 감쪽같이 숨는다.'],
+    [1, '남생이무당벌레', 8, 13, 'ladybug', 1, 0, 'crawl', 'fly', '가장 큰 무당벌레. 등의 검은 테두리가 거북 등딱지 같다.'],
+    [2, '왕사슴벌레', 27, 77, 'stag', 2, 2, 'still', 'hide', '굵게 안으로 휜 턱의 검은 사슴벌레. 참나무 구멍 깊이 숨어 지낸다.'],
+    [2, '루리하늘소', 16, 30, 'longhorn', 1, 1, 'crawl', 'fly', '하늘빛 몸에 검은 점. 더듬이 마디마다 검은 털뭉치가 달렸다.'],
+    [3, '두점박이사슴벌레', 25, 65, 'stag', 3, 2, 'crawl', 'hide', '황갈색 몸, 가슴에 검은 점 두 개. 제주 숲에만 사는 귀한 사슴벌레.'],
+    [4, '수염풍뎅이', 31, 40, 'beetle', 2, 1, 'still', 'fly', '부채 같은 더듬이에 흰 대리석 무늬. 수십 년째 자취를 감춘 전설 속 풍뎅이.']
+  ],
+  ground: [
+    [0, '팥중이', 25, 40, 'grasshopper', 1, 1, 'hop', 'hop', '팥빛이 도는 잿빛 메뚜기. 마른 땅에 앉으면 흙과 구별되지 않는다.'],
+    [0, '넓적배사마귀', 45, 70, 'mantis', 2, 1, 'walk', 'fly', '넓적한 배에 흰 점 하나. 풀숲에서 앞다리를 모으고 기다린다.'],
+    [0, '중베짱이', 33, 45, 'katydid', 1, 1, 'sing', 'hop', '등에 갈색 띠를 두른 베짱이. 낮에도 "쓰르륵" 운다.'],
+    [1, '긴꼬리', 13, 20, 'cricket', 1, 0, 'sing', 'hide', '연둣빛 가냘픈 귀뚜라미. 투명한 날개를 세워 "루루루" 맑게 운다.'],
+    [1, '풀무치', 45, 65, 'grasshopper', 2, 2, 'hop', 'hop', '굵고 큰 메뚜기. 한 번 뛰면 멀리 날아간다.'],
+    [2, '방울벌레', 15, 20, 'cricket', 2, 0, 'sing', 'hide', '넓적한 날개의 까만 귀뚜라미. "링-링" 방울 소리로 운다.'],
+    [2, '꼬마길앞잡이', 9, 12, 'tiger', 1, 0, 'dash', 'run', '흰 물결무늬의 작은 길앞잡이. 물가 모래밭을 쏜살같이 달린다.'],
+    [3, '애기뿔소똥구리', 13, 18, 'dung', 1, 0, 'roll', 'run', '머리에 작은 뿔이 솟은 소똥구리. 멸종위기 야생생물.'],
+    [4, '닻무늬길앞잡이', 13, 16, 'tiger', 2, 0, 'dash', 'run', '등에 흰 닻무늬를 새긴 길앞잡이. 서해 바닷가 모래밭에서만 드물게 발견된다.']
+  ]
+};
+const SINGERS = new Set(['참매미', '말매미', '유지매미', '왕귀뚜라미', '여치', '애매미', '털매미', '중베짱이', '긴꼬리', '방울벌레']);
+function species(env: Env, e: number, i: number, rarity: number, [name, minMm, maxMm, plan, variant, size, move, flee, description]: Row): Species {
+  return { id: `bug-${e}-${i}`, name, env, rarity, minMm, maxMm, plan, variant, size, move, flee, sings: SINGERS.has(name), description };
+}
+/** The first release keeps its catalog order (wire snapshots index into it); additions follow. */
+export const SPECIES: Species[] = [
+  ...ENVS.flatMap((env, e) => ROWS[env].map((row, i) => species(env, e, i, FIRST_RARITY[i], row))),
+  ...ENVS.flatMap((env, e) => ADDED[env].map(([rarity, ...row], i) => species(env, e, ROWS[env].length + i, rarity, row)))
+];
 export const SPECIES_BY_ID = new Map(SPECIES.map(s => [s.id, s]));
 /** Chance a new insect rolls 금색: every species, every rarity alike. */
 export const GOLDEN_CHANCE = 1 / 50;
-export const RARITY_WEIGHTS = [55, 28, 13, 4];
+export const RARITY_WEIGHTS = [55, 27, 13, 4, 1];
 export interface InsectCatch { id: string; speciesId: string; sizeMm: number; golden: boolean; caughtAt: string; favorite: boolean; released: boolean }
 export const SAVE_VERSION = 1;
 export interface InsectSave { version: typeof SAVE_VERSION; profileId: string; catches: InsectCatch[] }
