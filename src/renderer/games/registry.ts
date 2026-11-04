@@ -10,6 +10,7 @@ import { merandiModule } from './merandi/module.js';
 import { jumpmapModule } from './jumpmap/module.js';
 import { survivorModule } from './survivor/module.js';
 import { mergeModule } from './merge/module.js';
+import { slideModule } from './slide/module.js';
 import type { GameModule } from './types.js';
 
 /** Every game exposed in the matching panel. Add a new module here to expose it. */
@@ -25,6 +26,7 @@ export const GAME_MODULES: GameModule[] = [
   jumpmapModule,
   survivorModule,
   mergeModule,
+  slideModule,
   fishingModule
 ];
 
