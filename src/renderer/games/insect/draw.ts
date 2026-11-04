@@ -4,7 +4,7 @@ import type { Viewport } from '../types.js';
 import { star } from './art.js';
 import { beginSketchFrame, jitter, roughLimb, roughSegment, roughStroke } from '../../lib/sketch.js';
 import { drawEmoteIcon } from '../fishing/draw.js';
-import { bugMotion, bugPoint, personal, netPoint, CATCH_TICKS, HIT_STUN, MISS_STUN, NET_AHEAD, SWING_TICKS } from './engine.js';
+import { bugMotion, bugPoint, personal, netPoint, CATCH_TICKS, EMOTE_TICKS, HIT_STUN, MISS_STUN, NET_AHEAD, SWING_TICKS } from './engine.js';
 import type { Bug, Collector, InsectWorld } from './engine.js';
 import { WIDTH, HEIGHT, HABITATS, TREES, CAMP, behaviorOf, location } from './map.js';
 export const SEAT_INK = ['#303637', '#7a6353', '#756278', '#62747e'];
@@ -132,6 +132,18 @@ function face(c: CanvasRenderingContext2D, x: number, y: number, r: number, faci
   c.fillStyle = 'rgba(214,128,118,.28)'; for (const ex of eyes) { c.beginPath(); c.ellipse(ex + (ex < x + shift ? -1.6 : 1.6), y + r * .32, 1.6, 1, 0, 0, Math.PI * 2); c.fill(); }
   roughSegment(c, x + shift - 1.2, y + r * .4, x + shift + 1.2, y + r * .4, 1, color, 1);
 }
+/** A rounded speech bubble over the head whose tail points down at the collector; it pops in and fades out. */
+function emoteBubble(c:CanvasRenderingContext2D,x:number,y:number,kind:number,age:number,left:number,color:string) {
+  const pop=age<6?.6+.4*easeOut(age/6)+Math.sin(age/6*Math.PI)*.12:1,w=26,h=22,top=-h-7;
+  c.save();c.translate(x,y);c.scale(pop,pop);c.globalAlpha=Math.min(1,left/10);
+  const shape=()=>{c.beginPath();c.roundRect(-w/2,top,w,h,9);c.moveTo(-4,top+h-.5);c.lineTo(-1,-1);c.lineTo(4,top+h-.5);};
+  shape();c.strokeStyle=HALO;c.lineWidth=3.6;c.lineJoin='round';c.stroke();
+  shape();c.fillStyle=PAPER;c.fill();c.strokeStyle=color;c.lineWidth=1.2;c.stroke();
+  // Cover the seam where the tail meets the bubble so the outline reads as one shape.
+  c.fillRect(-3.4,top+h-1.6,6.8,2.2);
+  c.translate(0,top+h/2);c.scale(.68,.68);drawEmoteIcon(c,kind,age%120,color);
+  c.restore();
+}
 function collector(c:CanvasRenderingContext2D,p:Collector,tick:number,local:boolean) {
   const {x,y}=p,color=SEAT_INK[p.seat],walking=(p.move||p.moveY)&&!p.paused&&(p.phase==='free'||p.phase==='result');
   const facing=Math.cos(p.angle)<-.2?-1:1,view=Math.sin(p.angle),stride=walking?Math.sin(tick*.24):0,bob=walking?Math.abs(stride)*1.3:Math.sin(tick*.05)*.4;
@@ -175,9 +187,10 @@ function collector(c:CanvasRenderingContext2D,p:Collector,tick:number,local:bool
   if(p.phase==='catch'&&pose.held&&pose.held>.9&&tick%24<16)star(c,net.x+11,net.y-8,2,'#82785e');
   if(local)line(c,[[x-5,y+6],[x+5,y+6]],color,1);
   else label(c,p.name.slice(0,6),x,y+16,9,color,'center');
-  if(p.emojiUntil>tick){c.save();c.translate(x,y-62);c.scale(.75,.75);drawEmoteIcon(c,p.emoji,tick%120,color);c.restore();}
+  // The bubble sits clear of the net resting on the shoulder; a shown catch moves up above it.
+  const emoting=p.emojiUntil>tick;if(emoting)emoteBubble(c,x,y-58,p.emoji,tick-(p.emojiUntil-EMOTE_TICKS),p.emojiUntil-tick,color);
   const caught=p.showUntil>tick?p.shown:p.caughtUntil>tick?p.caught:undefined;
-  if(caught){const s=SPECIES_BY_ID.get(caught.speciesId)!;oval(c,x,y-66,3,3,'#171918');label(c,s.name,x,y-78,9,color,'center');}
+  if(caught){const s=SPECIES_BY_ID.get(caught.speciesId)!,top=emoting?y-96:y-66;oval(c,x,top,3,3,'#171918');label(c,s.name,x,top-12,9,color,'center');}
 }
 /** The escape offset as drawn, eased toward the authoritative one so a startled bug visibly flies off instead of teleporting. */
 const shownBugs=new Map<number,{ox:number;oy:number;heading:number;seen:number}>();
