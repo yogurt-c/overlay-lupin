@@ -250,6 +250,9 @@
   }
   #game-tabs button.active { background: #2f6b4f; border-color: #2f6b4f; color: #fff; }
   #game-tabs button:disabled { opacity: 0.4; cursor: default; }
+  #game-tabs button.graveyard-toggle { border-style: dashed; color: #5a5f62; background: transparent; }
+  #game-tabs.graveyard button:not(.graveyard-toggle) { background: rgba(20, 24, 26, 0.08); }
+  #game-tabs.graveyard button.active { background: #5a5f62; border-color: #5a5f62; color: #fff; }
 
   #mode-choice[hidden], #match-view[hidden] { display: none; }
   #mode-choice .btn-row { margin: 0; }

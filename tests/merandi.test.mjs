@@ -6,6 +6,7 @@
 import { MerandiEngine } from '../dist/renderer/games/merandi/engine.js';
 import { CELEBRATION_MIN_GRADE, GRADES } from '../dist/renderer/games/merandi/data.js';
 import { buildOutgoingPacket, encodeHeavyChunks, SnapshotAssembler } from '../dist/renderer/games/merandi/wire.js';
+import { ACTIVE_GAMES, GAME_MODULES, RETIRED_GAMES } from '../dist/renderer/games/registry.js';
 
 const STEP_MS = 1000 / 60;
 let failures = 0;
@@ -14,6 +15,16 @@ function check(name, cond, extra = '') {
   const mark = cond ? 'PASS' : 'FAIL';
   if (!cond) failures += 1;
   console.log(`${mark}  ${name}${extra ? ` — ${extra}` : ''}`);
+}
+
+// 메랜디 lives in the 무덤 tab: registered and playable, but out of the main row.
+{
+  const merandi = GAME_MODULES.find((m) => m.id === 'merandi');
+  check('merandi is still registered', Boolean(merandi));
+  check('merandi is retired to the graveyard', RETIRED_GAMES.includes(merandi) && !ACTIVE_GAMES.includes(merandi));
+  const volleyball = GAME_MODULES.find((m) => m.id === 'volleyball');
+  check('volleyball is retired to the graveyard', Boolean(volleyball) && RETIRED_GAMES.includes(volleyball) && !ACTIVE_GAMES.includes(volleyball));
+  check('main row keeps every other game', ACTIVE_GAMES.length + RETIRED_GAMES.length === GAME_MODULES.length && ACTIVE_GAMES.length > 0);
 }
 
 /** Forces rollGrade's single Math.random() draw (and every other random call in the same tick) to a
