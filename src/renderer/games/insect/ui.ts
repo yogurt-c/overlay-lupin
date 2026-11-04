@@ -24,11 +24,10 @@ body[data-game="insect"] #field{-webkit-app-region:no-drag}
 #insect-ui .fish-card .fish-name{font-size:12px}
 #insect-ui .bug-card{top:100px!important}
 #insect-ui .fish-top{align-items:center}
-/* The collection keeps the fishing notebook's pill so it reads as the main entry point; map and fold stay quiet text. */
-#insect-ui .fish-top button.bug-collection{font-size:11px;padding:2px 9px;min-height:22px;border:1.3px solid var(--ink);border-radius:999px;background:var(--paper);color:var(--ink);box-shadow:0 2px 0 var(--ink);text-shadow:none}
-#insect-ui .fish-top button.bug-collection:hover{transform:translateY(-1px);box-shadow:0 3px 0 var(--ink);background:var(--paper)}
-#insect-ui .fish-top button.bug-collection:active{transform:translateY(1px);box-shadow:0 1px 0 var(--ink)}
-#insect-ui .fish-top button.bug-collection kbd{font:inherit;font-size:9px;color:var(--muted);margin-left:4px}
+/* Collection and map share the fishing notebook's pill. */
+#insect-ui .fish-top button.bug-pill{font-size:11px;padding:2px 9px;min-height:22px;border:1.3px solid var(--ink);border-radius:999px;background:var(--paper);color:var(--ink);box-shadow:0 2px 0 var(--ink);text-shadow:none}
+#insect-ui .fish-top button.bug-pill:hover{transform:translateY(-1px);box-shadow:0 3px 0 var(--ink);background:var(--paper)}
+#insect-ui .fish-top button.bug-pill:active{transform:translateY(1px);box-shadow:0 1px 0 var(--ink)}
 @media(max-width:400px){#insect-ui .fish-top{right:22px;top:-27px}}
 #insect-ui .bug-gold{--rc:${GOLD}!important;border-color:${GOLD}!important;box-shadow:0 0 0 1px ${GOLD} inset}
 #insect-ui .bug-gold-chip{color:${GOLD};background:#fbf1d8}
@@ -57,8 +56,8 @@ export class InsectUi {
     if (!document.getElementById('insect-style')) { const style = el('style'); style.id = 'insect-style'; style.textContent = CSS; document.head.append(style); }
     this.root = el('div'); this.root.id = 'insect-ui';
     const top = el('div', undefined, 'fish-tools fish-top');
-    const collection = button('수집함', () => actions.open(), 'bug-collection'); collection.title = '수집함 (C)'; collection.setAttribute('aria-keyshortcuts', 'C'); collection.append(el('kbd', 'C')); top.append(collection);
-    top.append(button('지도', () => actions.map()));
+    const collection = button('수집함', () => actions.open(), 'bug-pill'); collection.title = '수집함 (C)'; collection.setAttribute('aria-keyshortcuts', 'C'); top.append(collection);
+    const map = button('지도', () => actions.map(), 'bug-pill'); map.title = '지도 (M)'; map.setAttribute('aria-keyshortcuts', 'M'); top.append(map);
     const grip = this.resizeGrip();
 
     this.panel = el('div', undefined, 'fish-panel'); this.panel.hidden = true;

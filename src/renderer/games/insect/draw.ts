@@ -254,7 +254,7 @@ export function drawInsectField(c:CanvasRenderingContext2D,v:Viewport,w:InsectWo
   }
   // Navigation stays available on M; no permanent map or opaque HUD plates.
   // Like the fishing pier, the shortcuts stay on screen; the walking hint gives way after the first few seconds.
-  label(c,w.tick<480?'WASD 걷기 · Space 내려찍기 · M 지도 · C 수집함':'E 감정표현 · C 수집함 · M 지도',320,456,10,'#7b8377','center');
+  label(c,w.tick<480?'WASD 걷기 · Space 내려찍기 · M 지도 · C 수집함':'E 감정표현 · C 수집함 · M 지도',320,456,12,'#7b8377','center');
   if(o.mapOpen){box(c,26,48,588,386,'#fffaf0');label(c,'숲 지도',48,78,22);label(c,'클릭해서 친구에게 발견 위치 알리기 · M / Esc 닫기',48,101,12);drawMap(c,w,id,40,114,560,295,true);}
   c.restore();
 }
