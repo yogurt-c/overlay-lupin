@@ -163,6 +163,7 @@ class WormMatch implements GameMatch {
 export const wormModule: GameModule = {
   id: 'worm',
   label: '지렁포',
+  retired: true,
   hint: '← → 이동 · ↑ ↓ 각도 · Shift 점프 · Space 꾹 눌러 파워 충전, 떼면 발사 · 먼저 5킬',
   matching: 'room',
   roomCapacity: ROOM_CAPACITY,
