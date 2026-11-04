@@ -6,7 +6,7 @@ import { drawInsect, SIDE_VIEW } from './art.js';
 import { RARITY_INK } from './draw.js';
 export interface InsectUiActions {
   open(): void; emoji(value: number): void; release(id: string): void; favorite(id: string): void; show(bug: InsectCatch): void;
-  retry(): void; export(): void; import(): void; continueSolo(): void; map(): void; compact(): void; resize(width: number, height: number): void;
+  retry(): void; export(): void; import(): void; continueSolo(): void; map(): void; resize(width: number, height: number): void;
 }
 /** What the fresh catch earned, shown as stamps on the result card. */
 export interface Badges { first: boolean; record: boolean; goldFirst: boolean }
@@ -23,6 +23,12 @@ body[data-game="insect"] #field{-webkit-app-region:no-drag}
 #insect-ui .fish-panel{font-size:14px;background:#fffaf0;inset:40px 12px 14px}
 #insect-ui .fish-card .fish-name{font-size:12px}
 #insect-ui .bug-card{top:100px!important}
+#insect-ui .fish-top{align-items:center}
+/* The collection keeps the fishing notebook's pill so it reads as the main entry point; map and fold stay quiet text. */
+#insect-ui .fish-top button.bug-collection{font-size:11px;padding:2px 9px;min-height:22px;border:1.3px solid var(--ink);border-radius:999px;background:var(--paper);color:var(--ink);box-shadow:0 2px 0 var(--ink);text-shadow:none}
+#insect-ui .fish-top button.bug-collection:hover{transform:translateY(-1px);box-shadow:0 3px 0 var(--ink);background:var(--paper)}
+#insect-ui .fish-top button.bug-collection:active{transform:translateY(1px);box-shadow:0 1px 0 var(--ink)}
+#insect-ui .fish-top button.bug-collection kbd{font:inherit;font-size:9px;color:var(--muted);margin-left:4px}
 @media(max-width:400px){#insect-ui .fish-top{right:22px;top:-27px}}
 #insect-ui .bug-gold{--rc:${GOLD}!important;border-color:${GOLD}!important;box-shadow:0 0 0 1px ${GOLD} inset}
 #insect-ui .bug-gold-chip{color:${GOLD};background:#fbf1d8}
@@ -51,10 +57,9 @@ export class InsectUi {
     if (!document.getElementById('insect-style')) { const style = el('style'); style.id = 'insect-style'; style.textContent = CSS; document.head.append(style); }
     this.root = el('div'); this.root.id = 'insect-ui';
     const top = el('div', undefined, 'fish-tools fish-top');
-    const collection = button('수집함', () => actions.open()); collection.title = '수집함 (C)'; top.append(collection);
+    const collection = button('수집함', () => actions.open(), 'bug-collection'); collection.title = '수집함 (C)'; collection.setAttribute('aria-keyshortcuts', 'C'); collection.append(el('kbd', 'C')); top.append(collection);
     top.append(button('지도', () => actions.map()));
     const grip = this.resizeGrip();
-    const fold = button('접기', () => { actions.compact(); fold.textContent = fold.textContent === '접기' ? '펼치기' : '접기'; grip.hidden = fold.textContent === '펼치기'; }); top.append(fold);
 
     this.panel = el('div', undefined, 'fish-panel'); this.panel.hidden = true;
     this.card = el('div', undefined, 'bug-card'); this.card.hidden = true; this.card.setAttribute('role', 'status');

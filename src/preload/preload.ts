@@ -17,7 +17,7 @@ contextBridge.exposeInMainWorld('overlayLupin', {
   fishingAct: (action: FishingAction): Promise<FishingReply> => ipcRenderer.invoke('fishing:act', action),
   fishingExport: (): Promise<FishingReply> => ipcRenderer.invoke('fishing:export'),
   fishingImport: (): Promise<FishingReply> => ipcRenderer.invoke('fishing:import'),
-  insectWindow: (mode: 'expand' | 'compact' | 'restore'): void => ipcRenderer.send('insect:window', mode),
+  insectWindow: (mode: 'expand' | 'restore'): void => ipcRenderer.send('insect:window', mode),
   insectResize: (width: number, height: number): void => ipcRenderer.send('insect:resize', width, height),
   insectLoad: (): Promise<InsectReply> => ipcRenderer.invoke('insect:load'),
   insectAct: (action: InsectAction): Promise<InsectReply> => ipcRenderer.invoke('insect:act', action),

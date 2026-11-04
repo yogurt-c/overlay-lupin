@@ -21,7 +21,7 @@ const DRIFT_PX = 40;
 export class InsectMatch implements GameMatch {
   private engine: InsectEngine | null; private world = emptyWorld(); private commands: Command[] = []; private seq = 0;
   private sender = new WorldSender(); private receiver = new WorldReceiver();
-  private moveY = 0; private paused = false; private mapOpen = false; private compact = false;
+  private moveY = 0; private paused = false; private mapOpen = false;
   private cameraX = CAMP.x; private cameraY = CAMP.y; private zoom = 1; private previewY?: number;
   private move = 0; private sneak = false; private ui?: InsectUi; private save: InsectSave = { version: SAVE_VERSION, profileId: '', catches: [] };
   private ready = false; private saving = false; private pending?: InsectCatch; private savedId = ''; private disposed = false; private closed = false;
@@ -32,7 +32,7 @@ export class InsectMatch implements GameMatch {
     this.engine = isHost ? new InsectEngine() : null; this.engine?.ensure(myId, myName);
     if (typeof document !== 'undefined') {
       this.ui = new InsectUi({ open: () => this.ui?.open(), emoji: value => this.command('emoji', { value }), release: id => void this.mutate({ kind: 'release', id }), favorite: id => void this.mutate({ kind: 'favorite', id }),
-        show: bug => this.show(bug), retry: () => void this.persist(), export: () => void this.transfer('export'), import: () => void this.transfer('import'), continueSolo: () => this.continueSolo(), map: () => { this.mapOpen = !this.mapOpen; }, compact: () => { this.compact = !this.compact; window.overlayLupin.insectWindow?.(this.compact ? 'compact' : 'expand'); },
+        show: bug => this.show(bug), retry: () => void this.persist(), export: () => void this.transfer('export'), import: () => void this.transfer('import'), continueSolo: () => this.continueSolo(), map: () => { this.mapOpen = !this.mapOpen; },
         resize: (width, height) => window.overlayLupin.insectResize?.(width, height) }, this.solo);
       window.overlayLupin.insectWindow?.('expand');
       document.getElementById('field')?.addEventListener('pointerdown', this.mapClick);
@@ -102,7 +102,7 @@ export class InsectMatch implements GameMatch {
     if (i?.map && !this.closed && !this.ui?.opened) this.mapOpen = !this.mapOpen;
     if (i?.collection && !this.closed) { if (this.ui?.opened) this.ui.close(); else this.ui?.open(); }
     if (i?.brag) { const bug = this.ui?.resultBrag(); if (bug) this.show(bug); }
-    const frozen = !!this.ui?.opened || this.closed || this.mapOpen || this.compact || (typeof document !== 'undefined' && (document.hidden || document.getElementById('settings-panel')?.hidden === false));
+    const frozen = !!this.ui?.opened || this.closed || this.mapOpen || (typeof document !== 'undefined' && (document.hidden || document.getElementById('settings-panel')?.hidden === false));
     if (typeof document !== 'undefined') document.body.dataset.insectPaused = String(frozen);
     this.paused = frozen; this.moveY = frozen ? 0 : i?.moveY ?? 0;
     if (i?.swing && !i.cancel && !frozen) this.swing();
@@ -128,7 +128,7 @@ export class InsectMatch implements GameMatch {
   render(ctx: CanvasRenderingContext2D, viewport: Viewport): void {
     const p = this.me(); this.zoom += (CAMERA_ZOOM - this.zoom) * .15;
     if (p) { this.cameraX += (clamp(this.previewX ?? p.x, 320 / this.zoom, WIDTH - 320 / this.zoom) - this.cameraX) * .15; this.cameraY += (clamp(this.previewY ?? p.y, 240 / this.zoom, HEIGHT - 240 / this.zoom) - this.cameraY) * .15; }
-    drawInsectField(ctx, viewport, this.view(), this.myId, { cameraX: this.cameraX, cameraY: this.cameraY, zoom: this.zoom, previewX: this.previewX, previewY: this.previewY, angle: !this.engine && p?.phase === 'free' && (this.move || this.moveY) ? Math.atan2(this.moveY, this.move) : undefined, mapOpen: this.mapOpen, compact: this.compact, hideEmotes: this.ui?.hideEmotes ?? false, solo: this.solo, known: this.known.length, gold: new Set(this.save.catches.filter(b => b.golden).map(b => b.speciesId)).size });
+    drawInsectField(ctx, viewport, this.view(), this.myId, { cameraX: this.cameraX, cameraY: this.cameraY, zoom: this.zoom, previewX: this.previewX, previewY: this.previewY, angle: !this.engine && p?.phase === 'free' && (this.move || this.moveY) ? Math.atan2(this.moveY, this.move) : undefined, mapOpen: this.mapOpen, hideEmotes: this.ui?.hideEmotes ?? false, solo: this.solo, known: this.known.length, gold: new Set(this.save.catches.filter(b => b.golden).map(b => b.speciesId)).size });
   }
   hud() { const w = this.view(); return { status: this.solo ? '곤충채집' : `곤충채집 · ${w.players.length}/${SEATS}`, banner: '', bannerKind: '' }; }
   isOver(): boolean { return false; }

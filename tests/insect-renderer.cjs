@@ -9,7 +9,7 @@ const reply=fn=>{try{return{ok:true,data:fn()};}catch(e){return{ok:false,error:e
 ipcMain.handle('net:whoami',()=>({id:'me',name:'테스트'}));ipcMain.handle('shortcuts:get',()=>({hide:'PageDown',show:'PageUp'}));ipcMain.handle('analytics:get',()=>false);ipcMain.handle('update:get',()=>({currentVersion:'test',state:{kind:'unsupported'}}));
 ipcMain.handle('insect:load',()=>reply(()=>store.load()));ipcMain.handle('insect:act',(_e,a)=>reply(()=>store.act(a)));
 ipcMain.handle('insect:export',()=>({ok:false,cancelled:true}));ipcMain.handle('insect:import',()=>({ok:false,cancelled:true}));
-ipcMain.on('insect:window',(_e,mode)=>{if(win)win.setSize(mode==='compact'?320:640,mode==='compact'?280:480);});
+ipcMain.on('insect:window',()=>{if(win)win.setSize(640,480);});
 const png=dataUrl=>Buffer.from(dataUrl.split(',')[1],'base64');
 app.whenReady().then(async()=>{
   win=new BrowserWindow({width:640,height:480,useContentSize:true,frame:false,show:false,transparent:true,webPreferences:{preload:path.join(root,'dist/preload/preload.js'),contextIsolation:true,backgroundThrottling:false}});

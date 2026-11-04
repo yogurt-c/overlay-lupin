@@ -215,7 +215,7 @@ function insect(c:CanvasRenderingContext2D,b:Bug,p:Collector,tick:number) {
   if(special&&legend&&(tick+b.seed*3)%70<10)star(c,x-5,by-6,1.6,RARITY_INK[3]);
   c.restore();
 }
-export interface FieldView { cameraX:number;cameraY:number;zoom:number;previewX?:number;previewY?:number;angle?:number;mapOpen:boolean;compact:boolean;hideEmotes:boolean;solo:boolean;known:number;gold:number }
+export interface FieldView { cameraX:number;cameraY:number;zoom:number;previewX?:number;previewY?:number;angle?:number;mapOpen:boolean;hideEmotes:boolean;solo:boolean;known:number;gold:number }
 export function drawMap(c:CanvasRenderingContext2D,w:InsectWorld,id:string,x:number,y:number,width:number,height:number,full=false) {
   box(c,x,y,width,height,'#fffaf0ef');c.save();c.beginPath();c.rect(x+8,y+8,width-16,height-16);c.clip();
   const sx=(width-16)/WIDTH,sy=(height-16)/HEIGHT;c.translate(x+8,y+8);c.scale(sx,sy);
@@ -228,7 +228,6 @@ export function drawMap(c:CanvasRenderingContext2D,w:InsectWorld,id:string,x:num
 export function drawInsectField(c:CanvasRenderingContext2D,v:Viewport,w:InsectWorld,id:string,o:FieldView):void {
   c.setTransform(v.pixelRatio,0,0,v.pixelRatio,0,0);c.clearRect(0,0,v.width,v.height);beginSketchFrame();
   const scale=Math.min(v.width/640,v.height/480);c.save();c.translate((v.width-640*scale)/2,(v.height-480*scale)/2);c.scale(scale,scale);
-  if(o.compact){label(c,`곤충채집 · ${o.known}/30`,320,245,16,INK,'center');label(c,'펼치기로 이어하기',320,275,12,INK,'center');c.restore();return;}
   const me=w.players.find(p=>p.id===id),p=me?{...me,x:o.previewX??me.x,y:o.previewY??me.y,angle:o.angle??me.angle}:undefined;
   c.save();c.beginPath();c.roundRect(0,34,640,410,16);c.clip();c.translate(320,240);c.scale(o.zoom,o.zoom);c.translate(-o.cameraX,-o.cameraY);
   terrain(c);
@@ -254,7 +253,8 @@ export function drawInsectField(c:CanvasRenderingContext2D,v:Viewport,w:InsectWo
     }
   }
   // Navigation stays available on M; no permanent map or opaque HUD plates.
-  if(w.tick<480)label(c,'WASD 걷기 · Space 내려찍기 · M 지도 · C 수집함',320,456,10,'#7b8377','center');
+  // Like the fishing pier, the shortcuts stay on screen; the walking hint gives way after the first few seconds.
+  label(c,w.tick<480?'WASD 걷기 · Space 내려찍기 · M 지도 · C 수집함':'E 감정표현 · C 수집함 · M 지도',320,456,10,'#7b8377','center');
   if(o.mapOpen){box(c,26,48,588,386,'#fffaf0');label(c,'숲 지도',48,78,22);label(c,'클릭해서 친구에게 발견 위치 알리기 · M / Esc 닫기',48,101,12);drawMap(c,w,id,40,114,560,295,true);}
   c.restore();
 }

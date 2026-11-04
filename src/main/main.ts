@@ -53,15 +53,13 @@ app.whenReady().then(() => {
   const INSECT_MIN = { width: 360, height: 270 };
   let insectBounds: Electron.Rectangle | undefined;
   let insectSize = { width: 480, height: 360 };
-  let insectCompact = false;
   ipcMain.on('insect:window', (event, mode: unknown) => {
     if (!win || event.sender !== win.webContents) return;
-    if (mode === 'expand') { insectBounds ??= win.getBounds(); insectCompact = false; win.setMinimumSize(INSECT_MIN.width, INSECT_MIN.height); win.setSize(insectSize.width, insectSize.height); }
-    if (mode === 'compact' && insectBounds) { insectCompact = true; win.setMinimumSize(160, 120); win.setSize(320, 280); }
-    if (mode === 'restore' && insectBounds) { insectCompact = false; win.setMinimumSize(160, 120); win.setBounds(insectBounds); insectBounds = undefined; }
+    if (mode === 'expand') { insectBounds ??= win.getBounds(); win.setMinimumSize(INSECT_MIN.width, INSECT_MIN.height); win.setSize(insectSize.width, insectSize.height); }
+    if (mode === 'restore' && insectBounds) { win.setMinimumSize(160, 120); win.setBounds(insectBounds); insectBounds = undefined; }
   });
   ipcMain.on('insect:resize', (event, width: unknown, height: unknown) => {
-    if (!win || event.sender !== win.webContents || !insectBounds || insectCompact) return;
+    if (!win || event.sender !== win.webContents || !insectBounds) return;
     if (typeof width !== 'number' || typeof height !== 'number' || !Number.isFinite(width) || !Number.isFinite(height)) return;
     const area = screen.getDisplayMatching(win.getBounds()).workArea;
     insectSize = {
