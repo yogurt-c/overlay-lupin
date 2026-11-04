@@ -1,4 +1,4 @@
-import { beginSketchFrame, roughSegment, roughStroke } from '../../lib/sketch.js';
+import { beginSketchFrame, roughSegment } from '../../lib/sketch.js';
 import { INK, PAPER } from '../merge/characters.js';
 import { cellX, cellY, strength } from './effects.js';
 import type { MergeEffects } from './effects.js';
@@ -8,7 +8,7 @@ import type { Viewport } from '../types.js';
 
 const HALO = 'rgba(255,255,255,0.94)', ACCENT = '#9a4a3f', GUIDE = '#7a827c';
 const PANEL_X = 50;
-const CELL_LINE = 'rgba(20,24,26,0.22)', CELL_HALO = 'rgba(255,255,255,0.3)';
+const CELL_LINE = 'rgba(20,24,26,0.16)', CELL_HALO = 'rgba(255,255,255,0.25)', FRAME_LINE = 'rgba(20,24,26,0.3)';
 
 export interface Records {
   best: number;
@@ -51,20 +51,27 @@ function drawTile(ctx: CanvasRenderingContext2D, exp: number, x: number, y: numb
   const size = CELL * scale, half = size / 2;
   const top = exp >= 11;
   roundRect(ctx, x - half, y - half, size, size, 6 * scale);
-  ctx.fillStyle = PAPER; ctx.fill();
-  // Higher steps sit on a slightly deeper wash, so progress reads at a glance.
-  ctx.fillStyle = top ? 'rgba(154,74,63,0.16)' : `rgba(42,38,34,${0.02 + 0.016 * exp})`;
+  // Like 오목's stones and grid: no solid plate, just a thin wash and a faint sketched outline,
+  // so the board blends into the desktop and the number carries the tile.
+  ctx.fillStyle = top ? 'rgba(154,74,63,0.07)' : `rgba(255,253,248,${Math.min(0.2, 0.06 + 0.013 * exp)})`;
   ctx.fill();
   if (flash > 0) {
     // Hit flash: the tile goes ink-dark for a few frames the moment it merges.
-    ctx.globalAlpha = flash * 0.92;
+    ctx.globalAlpha = flash * 0.85;
     ctx.fillStyle = top ? ACCENT : INK; ctx.fill();
     ctx.globalAlpha = 1;
   }
-  roughBox(ctx, x - half, y - half, size, size, top ? 2 : 1 + exp * 0.06, top ? ACCENT : INK);
+  const lineAlpha = Math.min(0.42, 0.14 + 0.025 * exp);
+  roughBox(ctx, x - half, y - half, size, size, 2, 'rgba(255,255,255,0.2)');
+  roughBox(ctx, x - half, y - half, size, size, top ? 1.3 : 0.7 + exp * 0.03, top ? ACCENT : `rgba(42,38,34,${lineAlpha})`);
   const value = tileValue(exp);
   ctx.font = `bold ${Math.round(tileFontSize(value) * scale * 10) / 10}px Menlo, Consolas, monospace`;
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
+  if (flash <= 0.45) {
+    // A white halo keeps the bare number readable on dark desktops.
+    ctx.lineWidth = 3; ctx.strokeStyle = HALO;
+    ctx.strokeText(String(value), x, y + 1 * scale);
+  }
   ctx.fillStyle = flash > 0.45 ? PAPER : top ? ACCENT : INK;
   ctx.fillText(String(value), x, y + 1 * scale);
   ctx.textBaseline = 'alphabetic';
@@ -105,10 +112,9 @@ function drawBoard(ctx: CanvasRenderingContext2D, engine: SlideEngine, effects: 
       t.merged ? effects.tileFlash(t.row, t.col) : 0);
   }
 
-  roughStroke(ctx, BOARD_X, BOARD_Y, BOARD_X + BOARD, BOARD_Y, 2, INK, HALO);
-  roughStroke(ctx, BOARD_X + BOARD, BOARD_Y, BOARD_X + BOARD, BOARD_Y + BOARD, 2, INK, HALO);
-  roughStroke(ctx, BOARD_X + BOARD, BOARD_Y + BOARD, BOARD_X, BOARD_Y + BOARD, 2.2, INK, HALO);
-  roughStroke(ctx, BOARD_X, BOARD_Y + BOARD, BOARD_X, BOARD_Y, 2, INK, HALO);
+  // The frame is drawn as lightly as the cells: a faint halo and a thin grey line, no solid ink.
+  roughBox(ctx, BOARD_X, BOARD_Y, BOARD, BOARD, 2.4, CELL_HALO);
+  roughBox(ctx, BOARD_X, BOARD_Y, BOARD, BOARD, 1, FRAME_LINE);
 }
 
 function drawPanel(ctx: CanvasRenderingContext2D, engine: SlideEngine, records: Records): void {
